@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { Users, Wallet, Activity, GitBranch, LogOut, ArrowLeft, X, UserPlus, PlusCircle, Link, Copy, Check, AlertTriangle, Download, BriefcaseBusiness } from 'lucide-react';
+import { Users, Wallet, Activity, GitBranch, LogOut, ArrowLeft, X, UserPlus, PlusCircle, Link, Copy, Check, AlertTriangle, Download, BriefcaseBusiness, UserCheck } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useTranslation } from 'react-i18next';
 import { useAuthStore } from '../store/authStore';
@@ -19,6 +19,7 @@ import { Zap, Hash, Droplets, Telescope } from 'lucide-react';
 import { downloadJsonExport } from '../lib/downloadExport';
 import BerryWalletPanel from '../components/BerryWalletPanel';
 import InsightPanel from '../components/InsightPanel';
+import ExternalCandidatePanel from '../components/ExternalCandidatePanel';
 
 export default function TreeDetail() {
   const { id } = useParams();
@@ -32,7 +33,7 @@ export default function TreeDetail() {
   const isMember = !!membership;
   const isVerified = membership?.status === 'VERIFIED';
   const isTreeAdmin = isMember && ((membership as any)?.role === 'ADMIN' || tree?.creatorId === currentUser?.id);
-  const [activeTab, setActiveTab] = useState<'DASHBOARD' | 'FINANCES' | 'AUTOSUSTENTO' | 'EXTERNAL_NEEDS' | 'MEMBERS' | 'BERRIES' | 'INSIGHT'>('DASHBOARD');
+  const [activeTab, setActiveTab] = useState<'DASHBOARD' | 'FINANCES' | 'AUTOSUSTENTO' | 'EXTERNAL_NEEDS' | 'MEMBERS' | 'BERRIES' | 'INSIGHT' | 'CANDIDATES'>('DASHBOARD');
   const [loading, setLoading] = useState(true);
   const [members, setMembers] = useState<any[]>([]);
   const [loadingMembers, setLoadingMembers] = useState(false);
@@ -470,6 +471,20 @@ export default function TreeDetail() {
             <BriefcaseBusiness size={18} /> Externas
           </button>
         )}
+        {isTreeAdmin && (
+          <button
+            onClick={() => setActiveTab('CANDIDATES')}
+            className="btn"
+            style={{
+              background: 'none', border: 'none',
+              borderBottom: activeTab === 'CANDIDATES' ? '2px solid var(--accent-primary)' : '2px solid transparent',
+              color: activeTab === 'CANDIDATES' ? 'var(--text-primary)' : 'var(--text-secondary)',
+              borderRadius: 0, padding: '1rem 0.5rem'
+            }}
+          >
+            <UserCheck size={18} /> Candidatos
+          </button>
+        )}
         <button 
           onClick={() => setActiveTab('MEMBERS')}
           className="btn"
@@ -606,6 +621,12 @@ export default function TreeDetail() {
       {activeTab === 'INSIGHT' && (
         <div className="glass-panel" style={{ padding: '1.5rem' }}>
           <InsightPanel treeId={id!} isAdmin={isTreeAdmin} />
+        </div>
+      )}
+
+      {activeTab === 'CANDIDATES' && (
+        <div className="glass-panel" style={{ padding: '1.5rem' }}>
+          <ExternalCandidatePanel treeId={id!} />
         </div>
       )}
 

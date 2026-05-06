@@ -76,6 +76,7 @@ model User {
   insightExternalApplications InsightExternalApplication[]
   insightOpeningsCreated      InsightExternalOpening[]    @relation("OpeningCreator")
   resolvedEndorsements         ExpertEndorsement[]          @relation("EndorsementResolver")
+  assignedCandidates           ExternalCandidate[]          @relation("CandidateAssigner")
 }
 
 model UserContact {
@@ -304,6 +305,7 @@ model Tree {
   insightSignals         InsightSignal[]
   externalOpenings       InsightExternalOpening[]  @relation("TreeExternalOpenings")
   expertEndorsements     ExpertEndorsement[]
+  externalCandidates     ExternalCandidate[]
 
   @@index([country, city, sector])
 }
@@ -2134,4 +2136,59 @@ model ExpertEndorsement {
   @@index([treeId, endorserId, status])
   @@index([treeId, endorsedId, status])
   @@index([treeId, expertise, status])
+}
+
+// ── External Candidate Validation ─────────────────────────────────────────
+
+enum ExternalCandidateStatus {
+  APPLIED
+  UNDER_REVIEW
+  EVALUATORS_ASSIGNED
+  PROVISIONAL
+  IN_PRACTICAL_TEST
+  VALIDATED
+  REJECTED
+}
+
+model ExternalCandidate {
+  id             String                    @id @default(uuid())
+  treeId         String
+  tree           Tree                      @relation(fields: [treeId], references: [id], onDelete: Cascade)
+
+  name           String
+  email          String?
+  skills         String                    @db.Text
+  experience     String?                   @db.Text
+  portfolioUrl   String?
+
+  status         ExternalCandidateStatus   @default(APPLIED)
+  reviewerNotes  String?                   @db.Text
+
+  evaluatorIds   String                    @default("[]") @db.Text
+  evaluatorMode  String?                   // "exact" | "similar" | "adjacent" | "fallback"
+
+  testDesign     String?                   @db.Text
+  testResult     String?                   @db.Text
+  testPassed     Boolean?
+
+  entryTaskId    String?
+  entryBranchId  String?
+
+  auditLevel     Int                       @default(80)
+
+  appliedAt      DateTime                  @default(now())
+  reviewedAt     DateTime?
+  provisionalAt  DateTime?
+  validatedAt    DateTime?
+  rejectedAt     DateTime?
+  rejectionReason String?                  @db.Text
+
+  assignedById   String?
+  assignedBy     User?                     @relation("CandidateAssigner", fields: [assignedById], references: [id], onDelete: SetNull)
+
+  createdAt      DateTime                  @default(now())
+  updatedAt      DateTime                  @updatedAt
+
+  @@index([treeId, status])
+  @@index([status])
 }

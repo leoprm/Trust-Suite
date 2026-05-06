@@ -1,0 +1,36 @@
+-- CreateTable ExternalCandidate
+CREATE TABLE `ExternalCandidate` (
+    `id` VARCHAR(191) NOT NULL,
+    `treeId` VARCHAR(191) NOT NULL,
+    `name` VARCHAR(191) NOT NULL,
+    `email` VARCHAR(191) NULL,
+    `skills` TEXT NOT NULL,
+    `experience` TEXT NULL,
+    `portfolioUrl` VARCHAR(191) NULL,
+    `status` ENUM('APPLIED', 'UNDER_REVIEW', 'EVALUATORS_ASSIGNED', 'PROVISIONAL', 'IN_PRACTICAL_TEST', 'VALIDATED', 'REJECTED') NOT NULL DEFAULT 'APPLIED',
+    `reviewerNotes` TEXT NULL,
+    `evaluatorIds` TEXT NOT NULL DEFAULT ('[]'),
+    `evaluatorMode` VARCHAR(191) NULL,
+    `testDesign` TEXT NULL,
+    `testResult` TEXT NULL,
+    `testPassed` BOOLEAN NULL,
+    `entryTaskId` VARCHAR(191) NULL,
+    `entryBranchId` VARCHAR(191) NULL,
+    `auditLevel` INTEGER NOT NULL DEFAULT 80,
+    `appliedAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    `reviewedAt` DATETIME(3) NULL,
+    `provisionalAt` DATETIME(3) NULL,
+    `validatedAt` DATETIME(3) NULL,
+    `rejectedAt` DATETIME(3) NULL,
+    `rejectionReason` TEXT NULL,
+    `assignedById` VARCHAR(191) NULL,
+    `createdAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    `updatedAt` DATETIME(3) NOT NULL,
+
+    PRIMARY KEY (`id`),
+    INDEX `ExternalCandidate_treeId_status_idx` (`treeId`, `status`),
+    INDEX `ExternalCandidate_status_idx` (`status`),
+
+    CONSTRAINT `ExternalCandidate_treeId_fkey` FOREIGN KEY (`treeId`) REFERENCES `Tree`(`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+    CONSTRAINT `ExternalCandidate_assignedById_fkey` FOREIGN KEY (`assignedById`) REFERENCES `User`(`id`) ON DELETE SET NULL ON UPDATE CASCADE
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;

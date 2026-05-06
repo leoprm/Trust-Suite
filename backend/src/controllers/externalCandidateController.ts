@@ -1,0 +1,241 @@
+import { Request, Response } from 'express';
+import {
+  createCandidate,
+  getCandidate,
+  listCandidates,
+  startReview,
+  matchEvaluators,
+  assignEvaluators,
+  promoteToProvisional,
+  startPracticalTest,
+  completePracticalTest,
+  rejectCandidate,
+} from '../services/externalCandidateService';
+import { getRequestContext, logEvent } from '../services/eventLogService';
+
+// ── POST /api/external-candidates ────────────────────────────────────────
+export const apply = async (req: Request, res: Response) => {
+  const ctx = getRequestContext(req);
+  try {
+    const { treeId, name, email, skills, experience, portfolioUrl } = req.body;
+
+    if (!treeId || !name || !skills?.length) {
+      return res.status(400).json({ error: 'treeId, name, and skills are required' });
+    }
+
+    // Verify user is member or admin of this tree
+    const membership = await (req as any).prisma?.treeMember.findFirst?.({
+      where: { treeId, userId: req.user!.id },
+    });
+    const isTreeMember = !!membership;
+
+    if (!isTreeMember && req.user!.role !== 'ADMINISTRATOR') {
+      return res.status(403).json({ error: 'You must be a member or admin of this tree' });
+    }
+
+    const candidate = await createCandidate(treeId, {
+      name,
+      email,
+      skills,
+      experience,
+      portfolioUrl,
+    }, req.user!.id);
+
+    void logEvent({
+      ...ctx,
+      treeId,
+      action: 'EXTERNAL_CANDIDATE_APPLIED',
+      entityType: 'ExternalCandidate',
+      entityId: candidate.id,
+      metadataJson: { name, skills: skills.join(','), treeId },
+      source: 'USER',
+    });
+
+    res.status(201).json(candidate);
+  } catch (error: any) {
+    console.error('[externalCandidate.apply]', error);
+    res.status(500).json({ error: 'Failed to create candidate' });
+  }
+};
+
+// ── GET /api/external-candidates/:id ─────────────────────────────────────
+export const get = async (req: Request, res: Response) => {
+  try {
+    const candidate = await getCandidate(req.params.id);
+    if (!candidate) return res.status(404).json({ error: 'Candidate not found' });
+    res.json(candidate);
+  } catch (error: any) {
+    console.error('[externalCandidate.get]', error);
+    res.status(500).json({ error: 'Failed to get candidate' });
+  }
+};
+
+// ── GET /api/external-candidates?treeId=&status= ─────────────────────────
+export const list = async (req: Request, res: Response) => {
+  try {
+    const { treeId, status } = req.query;
+    if (!treeId) return res.status(400).json({ error: 'treeId is required' });
+
+    const candidates = await listCandidates(treeId as string, status as any);
+    res.json(candidates);
+  } catch (error: any) {
+    console.error('[externalCandidate.list]', error);
+    res.status(500).json({ error: 'Failed to list candidates' });
+  }
+};
+
+// ── POST /api/external-candidates/:id/review ─────────────────────────────
+export const review = async (req: Request, res: Response) => {
+  const ctx = getRequestContext(req);
+  try {
+    const candidate = await startReview(req.params.id);
+
+    void logEvent({
+      ...ctx,
+      treeId: candidate.treeId,
+      action: 'EXTERNAL_CANDIDATE_REVIEW_STARTED',
+      entityType: 'ExternalCandidate',
+      entityId: candidate.id,
+      source: 'ADMIN',
+    });
+
+    res.json(candidate);
+  } catch (error: any) {
+    console.error('[externalCandidate.review]', error);
+    res.status(500).json({ error: 'Failed to start review' });
+  }
+};
+
+// ── POST /api/external-candidates/:id/assign-evaluators ───────────────────
+export const assignEvals = async (req: Request, res: Response) => {
+  const ctx = getRequestContext(req);
+  try {
+    const candidate = await getCandidate(req.params.id);
+    if (!candidate) return res.status(404).json({ error: 'Candidate not found' });
+
+    const skills = JSON.parse(candidate.skills || '[]');
+    const result = await matchEvaluators(candidate.treeId, skills);
+
+    const updated = await assignEvaluators(
+      candidate.id,
+      result.evaluators.map(e => e.userId),
+      result.mode,
+    );
+
+    void logEvent({
+      ...ctx,
+      treeId: candidate.treeId,
+      action: 'EXTERNAL_CANDIDATE_EVALUATORS_ASSIGNED',
+      entityType: 'ExternalCandidate',
+      entityId: candidate.id,
+      metadataJson: { evaluatorCount: result.evaluators.length, mode: result.mode, evaluators: result.evaluators.map(e => e.userId) },
+      source: 'ADMIN',
+    });
+
+    res.json({ ...updated, evaluators: result.evaluators });
+  } catch (error: any) {
+    console.error('[externalCandidate.assignEvals]', error);
+    res.status(500).json({ error: 'Failed to assign evaluators' });
+  }
+};
+
+// ── POST /api/external-candidates/:id/promote ────────────────────────────
+export const promote = async (req: Request, res: Response) => {
+  const ctx = getRequestContext(req);
+  try {
+    const { notes } = req.body;
+    const candidate = await promoteToProvisional(req.params.id, notes);
+
+    void logEvent({
+      ...ctx,
+      treeId: candidate.treeId,
+      action: 'EXTERNAL_CANDIDATE_PROMOTED',
+      entityType: 'ExternalCandidate',
+      entityId: candidate.id,
+      metadataJson: { notes },
+      source: 'ADMIN',
+    });
+
+    res.json(candidate);
+  } catch (error: any) {
+    console.error('[externalCandidate.promote]', error);
+    res.status(500).json({ error: 'Failed to promote candidate' });
+  }
+};
+
+// ── POST /api/external-candidates/:id/start-test ─────────────────────────
+export const beginTest = async (req: Request, res: Response) => {
+  const ctx = getRequestContext(req);
+  try {
+    const { testDesign } = req.body;
+    if (!testDesign) return res.status(400).json({ error: 'testDesign is required' });
+
+    const candidate = await startPracticalTest(req.params.id, testDesign);
+
+    void logEvent({
+      ...ctx,
+      treeId: candidate.treeId,
+      action: 'EXTERNAL_CANDIDATE_TEST_STARTED',
+      entityType: 'ExternalCandidate',
+      entityId: candidate.id,
+      source: 'ADMIN',
+    });
+
+    res.json(candidate);
+  } catch (error: any) {
+    console.error('[externalCandidate.beginTest]', error);
+    res.status(500).json({ error: 'Failed to start test' });
+  }
+};
+
+// ── POST /api/external-candidates/:id/complete-test ──────────────────────
+export const finishTest = async (req: Request, res: Response) => {
+  const ctx = getRequestContext(req);
+  try {
+    const { passed, testResult } = req.body;
+    if (typeof passed !== 'boolean') return res.status(400).json({ error: 'passed (boolean) is required' });
+
+    const candidate = await completePracticalTest(req.params.id, passed, testResult);
+
+    void logEvent({
+      ...ctx,
+      treeId: candidate.treeId,
+      action: passed ? 'EXTERNAL_CANDIDATE_VALIDATED' : 'EXTERNAL_CANDIDATE_TEST_FAILED',
+      entityType: 'ExternalCandidate',
+      entityId: candidate.id,
+      metadataJson: { passed, testResult, auditLevel: candidate.auditLevel },
+      severity: passed ? 'INFO' : 'WARNING',
+      source: 'ADMIN',
+    });
+
+    res.json(candidate);
+  } catch (error: any) {
+    console.error('[externalCandidate.finishTest]', error);
+    res.status(500).json({ error: 'Failed to complete test' });
+  }
+};
+
+// ── POST /api/external-candidates/:id/reject ─────────────────────────────
+export const reject = async (req: Request, res: Response) => {
+  const ctx = getRequestContext(req);
+  try {
+    const { reason } = req.body;
+    const candidate = await rejectCandidate(req.params.id, reason || 'No reason provided');
+
+    void logEvent({
+      ...ctx,
+      treeId: candidate.treeId,
+      action: 'EXTERNAL_CANDIDATE_REJECTED',
+      entityType: 'ExternalCandidate',
+      entityId: candidate.id,
+      metadataJson: { reason },
+      severity: 'WARNING',
+      source: 'ADMIN',
+    });
+
+    res.json(candidate);
+  } catch (error: any) {
+    console.error('[externalCandidate.reject]', error);
+    res.status(500).json({ error: 'Failed to reject candidate' });
+  }
+};

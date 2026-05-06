@@ -45,6 +45,7 @@ import branchOsLedgerRoutes from './routes/branchOsLedgerRoutes';
 import berryFlowRoutes from './routes/berryFlowRoutes';
 import insightRoutes from './routes/insightRoutes';
 import expertEndorsementRoutes from './routes/expertEndorsementRoutes';
+import externalCandidateRoutes from './routes/externalCandidateRoutes';
 import { startCronJobs } from './cron/weeklyResolution';
 import { startMonthlyJob } from './cron/monthlyEconomy';
 import { startMaterialFallbackJob } from './cron/materialFallback';
@@ -205,6 +206,7 @@ app.use('/api', branchOsLedgerRoutes);
 app.use('/api', berryFlowRoutes);
 app.use('/api', insightRoutes);
 app.use('/api/expert-endorsements', expertEndorsementRoutes);
+app.use('/api/external-candidates', externalCandidateRoutes);
 app.use('/api', externalNeedRoutes);
 
 startCronJobs();
