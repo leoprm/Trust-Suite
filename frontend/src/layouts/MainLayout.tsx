@@ -1,5 +1,5 @@
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
-import { LogOut, Globe, Shield, CheckSquare, Users, TrendingUp } from 'lucide-react';
+import { LogOut, Globe, Shield, Eye, CheckSquare, Users, TrendingUp } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import TreeSidebar from '../components/TreeSidebar';
 import PWAInstallPrompt from '../components/PWAInstallPrompt';
@@ -129,6 +129,10 @@ export default function MainLayout() {
                     <Shield size={18} />
                   </button>
                 )}
+                
+                <button onClick={() => navigate('/privacy')} className="btn btn-outline" style={{ padding: '0.4rem', width: '36px', height: '36px' }} title="Privacidad">
+                  <Eye size={18} />
+                </button>
                 
                 <button onClick={handleLogout} className="btn btn-outline" style={{ padding: '0.4rem', width: '36px', height: '36px' }} title={t('nav.logout')}>
                   <LogOut size={18} />

@@ -136,6 +136,8 @@ export default function PrivacySettingsPanel() {
   const [success, setSuccess] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [exportSuccess, setExportSuccess] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteSuccess, setDeleteSuccess] = useState(false);
 
   useEffect(() => {
     api.get('/privacy-settings/me')
@@ -190,11 +192,29 @@ export default function PrivacySettingsPanel() {
     setExportSuccess(false);
     try {
       await downloadJsonExport('/exports/me/profile');
-      setExportSuccess(true);
     } catch (e: any) {
       setError(e?.response?.data?.error || 'No se pudo exportar tu perfil.');
+      setExportSuccess(false);
     } finally {
       setExporting(false);
+    }
+  };
+
+  const requestDeletion = async () => {
+    if (!window.confirm('¿Estás seguro? Esta acción es irreversible. Se eliminarán tus datos personales (nombre, email, foto). Las contribuciones pasadas quedarán anónimas.')) return;
+    setDeleting(true);
+    setError(null);
+    try {
+      await api.post('/users/me/request-deletion');
+      setDeleteSuccess(true);
+      setTimeout(() => {
+        localStorage.removeItem('token');
+        window.location.href = '/login';
+      }, 2000);
+    } catch (e: any) {
+      setError(e?.response?.data?.error || 'No se pudo procesar la solicitud.');
+    } finally {
+      setDeleting(false);
     }
   };
 
@@ -298,6 +318,35 @@ export default function PrivacySettingsPanel() {
           >
             <Download size={14} />
             {exporting ? 'Exportando...' : 'Exportar'}
+          </button>
+        </div>
+      </section>
+
+      <section style={styles.section}>
+        <div style={{ ...styles.row, alignItems: 'flex-start' }}>
+          <div style={styles.iconBox}><AlertTriangle size={18} color="#ef4444" /></div>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <h3 style={{ ...styles.title, color: '#fca5a5' }}>Derecho al olvido</h3>
+            <p style={styles.description}>
+              Solicita la eliminacion de tus datos personales. Tu cuenta sera anonimizada: se eliminara tu nombre, email, foto y configuracion. Las tareas y contribuciones pasadas se conservan sin dato personal asociado. Esta accion es irreversible.
+            </p>
+            {deleteSuccess && <p style={{ marginTop: '0.5rem', fontSize: '0.62rem', color: '#86efac' }}>✅ Solicitud procesada. Seras redirigido al login.</p>}
+          </div>
+          <button
+            type="button"
+            onClick={requestDeletion}
+            disabled={deleting}
+            style={{
+              ...styles.smallButton,
+              background: 'rgba(239,68,68,0.14)',
+              border: '1px solid rgba(239,68,68,0.28)',
+              color: '#fca5a5',
+              opacity: deleting ? 0.6 : 1,
+              cursor: deleting ? 'not-allowed' : 'pointer',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            {deleting ? 'Procesando...' : 'Eliminar datos'}
           </button>
         </div>
       </section>

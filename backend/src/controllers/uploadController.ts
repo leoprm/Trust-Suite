@@ -93,7 +93,7 @@ async function createEvidenceFileRecord(req: Request, taskId: string) {
   const requestedVisibility = req.body?.visibility as EvidenceVisibility | undefined;
   const visibility = requestedVisibility && ALLOWED_VISIBILITIES.has(requestedVisibility)
     ? requestedVisibility
-    : 'TASK_PARTICIPANTS';
+    : 'PRIVATE';
 
   ensureUploadRoot();
   const { storedName, relativeDir, relativePath } = buildEvidenceStoragePath(validation.extension);

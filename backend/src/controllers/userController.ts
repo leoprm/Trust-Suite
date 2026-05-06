@@ -646,3 +646,72 @@ export const getPublicProfile = async (req: any, res: Response) => {
     res.status(500).json({ error: 'Error al cargar perfil público' });
   }
 };
+
+// ── POST /users/me/request-deletion ──────────────────────────────────────
+// GDPR "Right to be forgotten" — anonymizes identifiable data and logs request
+export const requestDataDeletion = async (req: any, res: Response) => {
+  try {
+    const userId = req.user.id;
+
+    const user = await (prisma as any).user.findUnique({ where: { id: userId } });
+    if (!user) return res.status(404).json({ error: 'Usuario no encontrado' });
+
+    const anonymizedUsername = `deleted_${crypto.randomBytes(6).toString('hex')}`;
+    const anonymizedEmail = `${anonymizedUsername}@deleted.trust`;
+
+    await (prisma as any).user.update({
+      where: { id: userId },
+      data: {
+        username: anonymizedUsername,
+        email: anonymizedEmail,
+        password: null,
+        profilePic: null,
+        is_guest: true,
+        is_onboarded: false,
+        publicProfileEnabled: false,
+        visibleForRecruitment: false,
+        seekingWork: false,
+      },
+    });
+
+    // Anonymize privacy settings
+    await (prisma as any).privacySettings.upsert({
+      where: { userId },
+      create: {
+        userId,
+        traceProfileVisibility: 'PRIVATE',
+        taskHistoryVisibility: 'PRIVATE',
+        evidenceVisibility: 'PRIVATE',
+        showInTalentSearch: false,
+        allowAggregatedMetrics: false,
+      },
+      update: {
+        traceProfileVisibility: 'PRIVATE',
+        taskHistoryVisibility: 'PRIVATE',
+        evidenceVisibility: 'PRIVATE',
+        showInTalentSearch: false,
+        allowAggregatedMetrics: false,
+      },
+    });
+
+    void logEvent({
+      ...getRequestContext(req),
+      actorId: userId,
+      action: 'USER_REQUESTED_DELETION',
+      entityType: 'User',
+      entityId: userId,
+      metadataJson: getRequestMetadata(req, {
+        originalUsername: user.username,
+        anonymizedAs: anonymizedUsername,
+        result: 'success',
+      }),
+      severity: 'CRITICAL',
+      source: 'USER',
+    });
+
+    res.json({ message: 'Solicitud de eliminación procesada. Tus datos han sido anonimizados.' });
+  } catch (error: any) {
+    console.error('[requestDataDeletion]', error);
+    res.status(500).json({ error: 'Error al procesar la solicitud de eliminación' });
+  }
+};

@@ -1,3 +1,4 @@
+import { getRequestContext, getRequestMetadata, logEvent } from '../services/eventLogService';
 import { Response } from 'express';
 import { prisma } from '../index';
 import { createNotification } from './notificationController';
@@ -92,6 +93,14 @@ export const addContact = async (req: any, res: Response) => {
     ]);
 
     res.status(201).json({ message: 'Connected' });
+
+    void logEvent({
+      ...getRequestContext(req),
+      actorId: userId,
+      action: 'CONTACT_ADDED',
+      entityType: 'UserContact',
+      source: 'USER',
+    });
   } catch (error) {
     res.status(500).json({ error: 'Failed to add contact' });
   }
@@ -198,6 +207,14 @@ export const connectViaToken = async (req: any, res: Response) => {
     ]);
 
     res.json({ message: 'Conexión establecida', connectedWith: creator?.username });
+
+    void logEvent({
+      ...getRequestContext(req),
+      actorId: userId,
+      action: 'CONTACT_CONNECTED_VIA_TOKEN',
+      entityType: 'UserContact',
+      source: 'USER',
+    });
   } catch (error) {
     res.status(500).json({ error: 'Failed to connect' });
   }

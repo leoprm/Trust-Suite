@@ -1010,7 +1010,7 @@ export const getPendingEvidence = async (req: any, res: Response) => {
 export const toggleCrisisMode = async (req: Request, res: Response) => {
   try {
     const treeId = req.params.id as string;
-    const userId = (req as any).user.userId as string;
+    const userId = req.user!.id;
     const { subjects } = req.body; // Array de hashtags opcionales
 
     const tree = await (prisma as any).tree.findUnique({ where: { id: treeId } });
@@ -1056,7 +1056,7 @@ export const toggleCrisisMode = async (req: Request, res: Response) => {
 export const broadcastCrisisSignal = async (req: Request, res: Response) => {
   try {
     const senderTreeId = req.params.id as string;
-    const userId = (req as any).user.userId as string;
+    const userId = req.user!.id;
     const { hashtag, severity, scope, targetLocation } = req.body;
 
     // Check sender auth

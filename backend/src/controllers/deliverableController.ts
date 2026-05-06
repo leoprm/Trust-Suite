@@ -1,3 +1,4 @@
+import { getRequestContext, getRequestMetadata, logEvent } from '../services/eventLogService';
 import { Request, Response } from 'express';
 import { prisma } from '../index';
 
@@ -6,15 +7,25 @@ export const getDeliverable = async (req: any, res: Response) => {
     const { branchId, phase } = req.params;
 
     const deliverable = await prisma.phaseDeliverable.findFirst({
-      where: { branchId, phase: phase as any },
-      include: {
-        ratings: true
-      }
+    // Update branch phase deliverables
+    const branch = await (prisma as any).branch.findUnique({
+      where: { id: deliverable.branchId },
+      select: { treeId: true },
     });
 
-    res.json(deliverable || null);
+    res.json(deliverable);
+
+    void logEvent({
+      ...getRequestContext(req),
+      treeId: branch.treeId,
+      actorId: userId,
+      action: 'DELIVERABLE_SUBMITTED',
+      entityType: 'PhaseDeliverable',
+      entityId: deliverable.id,
+      source: 'USER',
+    });
   } catch (error) {
-    res.status(500).json({ error: 'Failed to fetch deliverable' });
+    res.status(500).json({ error: 'Failed to submit deliverable' });
   }
 };
 
@@ -107,6 +118,15 @@ export const submitDeliverable = async (req: any, res: Response) => {
     }
 
     res.json(deliverable);
+
+    void logEvent({
+      ...getRequestContext(req),
+      actorId: userId,
+      action: 'DELIVERABLE_COMPLETED',
+      entityType: 'PhaseDeliverable',
+      entityId: deliverable.id,
+      source: 'USER',
+    });
   } catch (error) {
     res.status(500).json({ error: 'Failed to submit deliverable' });
   }

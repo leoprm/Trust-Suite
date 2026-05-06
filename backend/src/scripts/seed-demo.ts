@@ -37,6 +37,11 @@ async function main() {
     await prisma.needTree.deleteMany();
     await prisma.idea.deleteMany();
     await prisma.need.deleteMany();
+    // External needs cascade: delete children first
+    await (prisma as any).budgetLine.deleteMany();
+    await (prisma as any).solutionProposal.deleteMany();
+    await (prisma as any).scopePreference.deleteMany();
+    await (prisma as any).externalAgent.deleteMany();
     await prisma.externalNeed.deleteMany();
     await prisma.tree.deleteMany();
     // Delete demo users (keep originals: Leo, testuser123, usuariotest999)
@@ -216,6 +221,98 @@ async function main() {
     ],
   });
   console.log('   ✅ 2 external needs');
+
+  // External agents
+  console.log('👤 Creating external agents...');
+  const agent1Id = uuid(), agent2Id = uuid(), agent3Id = uuid();
+  await (prisma as any).externalAgent.createMany({
+    data: [
+      { id: agent1Id, externalNeedId: extNeed1Id, name: 'Laura Mendoza', email: 'laura@tiendalocal.cl', organization: 'TiendaLocal SpA', role: 'CLIENT', consentAccepted: true },
+      { id: agent2Id, externalNeedId: extNeed2Id, name: 'Roberto Fuentes', email: 'rfuentes@colegio.cl', organization: 'Colegio Municipal Los Álamos', role: 'CLIENT', consentAccepted: true },
+      { id: agent3Id, externalNeedId: extNeed2Id, name: 'Carolina Pizarro', email: 'cpizarro@colegio.cl', organization: 'Colegio Municipal Los Álamos', role: 'APPROVER', consentAccepted: true },
+    ],
+  });
+  console.log('   ✅ 3 external agents');
+
+  // Scope preferences (Puntos de Alcance)
+  console.log('🎯 Creating scope preferences...');
+  await (prisma as any).scopePreference.createMany({
+    data: [
+      // TiendaLocal app
+      { id: uuid(), externalNeedId: extNeed1Id, label: 'Rapidez de entrega', score: 9, description: 'El delivery debe ser rápido, con tracking en tiempo real', agentId: agent1Id, labelKey: 'rapidez de entrega', createdById: uid('Ana Martínez') },
+      { id: uuid(), externalNeedId: extNeed1Id, label: 'Bajo costo', score: 7, description: 'Presupuesto ajustado a pequeña empresa', agentId: agent1Id, labelKey: 'bajo costo', createdById: uid('Ana Martínez') },
+      { id: uuid(), externalNeedId: extNeed1Id, label: 'Facilidad de uso', score: 10, description: 'Interfaz simple para vendedores no técnicos', agentId: agent1Id, labelKey: 'facilidad de uso', createdById: uid('Ana Martínez') },
+      { id: uuid(), externalNeedId: extNeed1Id, label: 'Escalabilidad', score: 5, description: 'Solo 5 sucursales por ahora', agentId: agent1Id, labelKey: 'escalabilidad', createdById: uid('Ana Martínez') },
+      // Colegio Municipal
+      { id: uuid(), externalNeedId: extNeed2Id, label: 'Seguridad de datos', score: 10, description: 'Datos de menores — máxima protección legal', agentId: agent2Id, labelKey: 'seguridad de datos', createdById: uid('Pedro Rodríguez') },
+      { id: uuid(), externalNeedId: extNeed2Id, label: 'Facilidad de uso', score: 9, description: 'Profesores mayores deben poder usarlo sin capacitación', agentId: agent2Id, labelKey: 'facilidad de uso', createdById: uid('Pedro Rodríguez') },
+      { id: uuid(), externalNeedId: extNeed2Id, label: 'Soporte posterior', score: 8, description: 'Mantención durante año escolar', agentId: agent2Id, labelKey: 'soporte posterior', createdById: uid('Pedro Rodríguez') },
+      { id: uuid(), externalNeedId: extNeed2Id, label: 'Bajo costo', score: 6, description: 'Presupuesto municipal limitado', agentId: agent2Id, labelKey: 'bajo costo', createdById: uid('Pedro Rodríguez') },
+    ],
+  });
+  console.log('   ✅ 8 scope preferences');
+
+  // Solution proposals with budgets
+  console.log('📋 Creating solution proposals...');
+  const sol1Id = uuid(), sol2Id = uuid(), sol3Id = uuid();
+  await (prisma as any).solutionProposal.createMany({
+    data: [
+      {
+        id: sol1Id, externalNeedId: extNeed1Id, createdById: uid('Diego Morales'),
+        title: 'App React Native + Firebase', description: 'App móvil nativa con backend Firebase. Tracking GPS, catálogo con imágenes, pasarela WebPay.', status: 'SUBMITTED',
+        estimatedFiatMin: 2500000, estimatedFiatExpected: 3400000, estimatedFiatMax: 4500000, currency: 'CLP', estimatedDurationDays: 60, riskLevel: 'MEDIUM',
+        assumptions: 'Cliente proporciona imágenes de productos y logo', included: 'Desarrollo app iOS/Android, panel admin web, Firebase hosting 1 año, capacitación 4h',
+        excluded: 'Campaña de marketing, contenido de productos, hardware', deliverables: 'APK + IPA publicables, panel admin, documentación técnica',
+        acceptanceCriteria: 'App funcional en 5 sucursales, tracking GPS < 30s de延迟, pasarela de pago operativa', maintenanceNotes: 'Firebase ~$30 USD/mes, actualizaciones OS anuales',
+      },
+      {
+        id: sol2Id, externalNeedId: extNeed1Id, createdById: uid('Carlos López'),
+        title: 'PWA económica con Supabase', description: 'Progressive Web App con Supabase. Más económica, funciona offline, sin necesidad de tiendas.', status: 'SUBMITTED',
+        estimatedFiatMin: 1200000, estimatedFiatExpected: 1800000, estimatedFiatMax: 2200000, currency: 'CLP', estimatedDurationDays: 45, riskLevel: 'LOW',
+        assumptions: 'Clientes usan Chrome/Safari moderno', included: 'PWA responsive, panel admin, Supabase hosting 1 año, capacitación 2h',
+        excluded: 'App nativa, notificaciones push en iOS', deliverables: 'URL de PWA, panel admin, documentación',
+        acceptanceCriteria: 'PWA instalable en 5 dispositivos, pedidos offline sincronizan al conectar', maintenanceNotes: 'Supabase ~$25 USD/mes, actualizaciones trimestrales',
+      },
+      {
+        id: sol3Id, externalNeedId: extNeed2Id, createdById: uid('Diego Morales'),
+        title: 'Sistema web Full-Stack Node.js + PostgreSQL', description: 'Aplicación web responsive con roles, generación PDF, notificaciones email. Deploy en VPS.', status: 'SUBMITTED',
+        estimatedFiatMin: 2000000, estimatedFiatExpected: 2800000, estimatedFiatMax: 3200000, currency: 'CLP', estimatedDurationDays: 75, riskLevel: 'MEDIUM',
+        assumptions: 'Colegio proporciona formato de notas actual', included: 'Sistema web, 3 roles, reportes PDF, notificaciones, VPS 1 año, capacitación 8h, migración de datos históricos',
+        excluded: 'App móvil nativa, integración con Mineduc', deliverables: 'URL del sistema, manuales por rol, backup automático configurado',
+        acceptanceCriteria: '1000 alumnos cargados, reportes PDF < 5s, email notificaciones < 2min', maintenanceNotes: 'VPS ~$40 USD/mes, backups diarios, soporte 6 meses incluido',
+      },
+    ],
+  });
+  console.log('   ✅ 3 solution proposals');
+
+  // Budget lines for each solution
+  console.log('💰 Creating budget lines...');
+  await (prisma as any).budgetLine.createMany({
+    data: [
+      // Sol1: React Native + Firebase
+      { id: uuid(), solutionProposalId: sol1Id, label: 'Desarrollo frontend (React Native)', type: 'LABOR', estimatedFiat: 1200000, estimatedBerries: 0, currency: 'CLP', quantity: 1, unit: 'proyecto' },
+      { id: uuid(), solutionProposalId: sol1Id, label: 'Desarrollo backend (Firebase)', type: 'LABOR', estimatedFiat: 800000, estimatedBerries: 0, currency: 'CLP', quantity: 1, unit: 'proyecto' },
+      { id: uuid(), solutionProposalId: sol1Id, label: 'Diseño UI/UX', type: 'LABOR', estimatedFiat: 500000, estimatedBerries: 0, currency: 'CLP', quantity: 1, unit: 'proyecto' },
+      { id: uuid(), solutionProposalId: sol1Id, label: 'Testing y QA', type: 'LABOR', estimatedFiat: 400000, estimatedBerries: 0, currency: 'CLP', quantity: 1, unit: 'proyecto' },
+      { id: uuid(), solutionProposalId: sol1Id, label: 'Hosting Firebase 1 año', type: 'INFRASTRUCTURE', estimatedFiat: 360000, estimatedBerries: 0, currency: 'CLP', quantity: 12, unit: 'meses', unitCostFiat: 30000 },
+      { id: uuid(), solutionProposalId: sol1Id, label: 'Reserva de contingencia (15%)', type: 'RESERVE', estimatedFiat: 489000, estimatedBerries: 0, currency: 'CLP', quantity: 1, unit: 'global' },
+      // Sol2: PWA + Supabase
+      { id: uuid(), solutionProposalId: sol2Id, label: 'Desarrollo PWA', type: 'LABOR', estimatedFiat: 800000, estimatedBerries: 0, currency: 'CLP', quantity: 1, unit: 'proyecto' },
+      { id: uuid(), solutionProposalId: sol2Id, label: 'Configuración Supabase', type: 'LABOR', estimatedFiat: 300000, estimatedBerries: 0, currency: 'CLP', quantity: 1, unit: 'proyecto' },
+      { id: uuid(), solutionProposalId: sol2Id, label: 'Diseño UI', type: 'LABOR', estimatedFiat: 250000, estimatedBerries: 0, currency: 'CLP', quantity: 1, unit: 'proyecto' },
+      { id: uuid(), solutionProposalId: sol2Id, label: 'Hosting Supabase 1 año', type: 'INFRASTRUCTURE', estimatedFiat: 300000, estimatedBerries: 0, currency: 'CLP', quantity: 12, unit: 'meses', unitCostFiat: 25000 },
+      { id: uuid(), solutionProposalId: sol2Id, label: 'Reserva (10%)', type: 'RESERVE', estimatedFiat: 165000, estimatedBerries: 0, currency: 'CLP', quantity: 1, unit: 'global' },
+      // Sol3: Full-Stack Node.js
+      { id: uuid(), solutionProposalId: sol3Id, label: 'Desarrollo backend (Node.js + PostgreSQL)', type: 'LABOR', estimatedFiat: 900000, estimatedBerries: 0, currency: 'CLP', quantity: 1, unit: 'proyecto' },
+      { id: uuid(), solutionProposalId: sol3Id, label: 'Desarrollo frontend (React)', type: 'LABOR', estimatedFiat: 600000, estimatedBerries: 0, currency: 'CLP', quantity: 1, unit: 'proyecto' },
+      { id: uuid(), solutionProposalId: sol3Id, label: 'Migración de datos históricos', type: 'LABOR', estimatedFiat: 400000, estimatedBerries: 0, currency: 'CLP', quantity: 1, unit: 'proyecto' },
+      { id: uuid(), solutionProposalId: sol3Id, label: 'Diseño UI/UX', type: 'LABOR', estimatedFiat: 350000, estimatedBerries: 0, currency: 'CLP', quantity: 1, unit: 'proyecto' },
+      { id: uuid(), solutionProposalId: sol3Id, label: 'VPS + dominio 1 año', type: 'INFRASTRUCTURE', estimatedFiat: 480000, estimatedBerries: 0, currency: 'CLP', quantity: 12, unit: 'meses', unitCostFiat: 40000 },
+      { id: uuid(), solutionProposalId: sol3Id, label: 'Capacitación (8h)', type: 'EXTERNAL_SERVICE', estimatedFiat: 200000, estimatedBerries: 0, currency: 'CLP', quantity: 8, unit: 'horas', unitCostFiat: 25000 },
+      { id: uuid(), solutionProposalId: sol3Id, label: 'Reserva (10%)', type: 'RESERVE', estimatedFiat: 293000, estimatedBerries: 0, currency: 'CLP', quantity: 1, unit: 'global' },
+    ],
+  });
+  console.log('   ✅ 18 budget lines');
 
   // ══════════════════════════════════════════
   // 5. IDEAS (1-2 per need)

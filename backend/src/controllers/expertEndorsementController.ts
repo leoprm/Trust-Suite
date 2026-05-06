@@ -5,6 +5,7 @@ import {
   getEndorsementBoostStatus,
   getEndorsementsForTree,
 } from '../services/expertEndorsementService';
+import { getRequestContext, getRequestMetadata, logEvent } from '../services/eventLogService';
 
 export async function createEndorsementHandler(req: Request, res: Response) {
   try {
@@ -19,6 +20,22 @@ export async function createEndorsementHandler(req: Request, res: Response) {
       requiredTasks,
       satisfactionThreshold,
     });
+
+    void logEvent({
+      ...getRequestContext(req),
+      treeId,
+      actorId: req.user!.id,
+      action: 'EXPERT_ENDORSEMENT_CREATED',
+      entityType: 'ExpertEndorsement',
+      entityId: result.endorsement?.id ?? result.id,
+      metadataJson: getRequestMetadata(req, {
+        endorserId: req.user!.id,
+        endorsedMemberId,
+        expertise,
+      }),
+      source: 'USER',
+    });
+
     return res.status(201).json(result);
   } catch (err: any) {
     return res.status(400).json({ error: err.message });
@@ -40,6 +57,22 @@ export async function resolveEndorsementHandler(req: Request, res: Response) {
       completedTasks,
       resolutionNote,
     });
+
+    void logEvent({
+      ...getRequestContext(req),
+      actorId: req.user!.id,
+      action: 'EXPERT_ENDORSEMENT_RESOLVED',
+      entityType: 'ExpertEndorsement',
+      entityId: endorsementId,
+      metadataJson: getRequestMetadata(req, {
+        status,
+        completedTasks,
+        avgSatisfaction,
+      }),
+      severity: status === 'FAILED_FRAUD' ? 'CRITICAL' : 'INFO',
+      source: 'USER',
+    });
+
     return res.json(result);
   } catch (err: any) {
     return res.status(400).json({ error: err.message });

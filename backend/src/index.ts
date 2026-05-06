@@ -7,7 +7,7 @@ import path from 'path';
 import fs from 'fs';
 import mysql from 'mysql2/promise';
 import { PrismaClient } from '@prisma/client';
-import { corsOptions, logCorsConfiguration } from './config/cors';
+import { corsOptions, logCorsConfiguration, isProduction, allowedOrigins, allowAllInDev } from './config/cors';
 
 import authRoutes from './routes/authRoutes';
 import userRoutes from './routes/userRoutes';
@@ -119,9 +119,29 @@ async function bootstrapDatabase(): Promise<void> {
 }
 
 logCorsConfiguration();
+
+// Production safety guard: refuse to start with empty CORS allowlist
+if (isProduction && allowedOrigins.length === 0 && !allowAllInDev) {
+  console.error('[CORS] FATAL: production mode requires CORS_ALLOWED_ORIGINS to be set.');
+  console.error('[CORS] Add CORS_ALLOWED_ORIGINS=https://your-domain.com to your .env file.');
+  process.exit(1);
+}
+
 app.use(cors(corsOptions));
 app.options(/.*/, cors(corsOptions));
 app.use(express.json());
+
+// Security headers (production-ready)
+app.use((_req, res, next) => {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'DENY');
+  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+  res.setHeader('X-Permitted-Cross-Domain-Policies', 'none');
+  if (isProduction) {
+    res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+  }
+  next();
+});
 
 // Uploads are intentionally not served as public static files.
 // Evidence files must go through /api/files/:fileId for permission checks.

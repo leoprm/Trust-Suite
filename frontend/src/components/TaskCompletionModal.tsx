@@ -88,6 +88,7 @@ export default function TaskCompletionModal({ taskId, taskName, onClose, onSucce
   };
 
   const [comment, setComment] = useState(initialData?.completionComment || '');
+  const [visibility, setVisibility] = useState<'TASK_PARTICIPANTS' | 'TREE_ONLY' | 'PRIVATE'>('PRIVATE');
   const [photos, setPhotos] = useState<PhotoEntry[]>(() => buildInitialPhotos(initialData));
   const [uploading, setUploading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -147,7 +148,7 @@ export default function TaskCompletionModal({ taskId, taskName, onClose, onSucce
         if (photo.blob) {
           const formData = new FormData();
           formData.append('file', photo.blob, 'evidence.jpg');
-          formData.append('visibility', 'TASK_PARTICIPANTS');
+          formData.append('visibility', visibility);
           const { data: uploadData } = await api.post(`/tasks/${taskId}/evidence`, formData, {
             headers: { 'Content-Type': 'multipart/form-data' }
           });
@@ -355,6 +356,43 @@ export default function TaskCompletionModal({ taskId, taskName, onClose, onSucce
             <p style={{ margin: '0.6rem 0 0', fontSize: '0.68rem', lineHeight: 1.4, color: 'var(--text-secondary)' }}>
               No subas datos sensibles innecesarios. La evidencia queda registrada con hash y visible solo segun permisos de la tarea.
             </p>
+          </div>
+
+          {/* Visibility Selector */}
+          <div>
+            <label style={{ fontSize: '0.85rem', fontWeight: 600, display: 'block', marginBottom: '0.5rem' }}>
+              Visibilidad de la evidencia
+            </label>
+            <div style={{ display: 'flex', gap: '0.4rem' }}>
+              {([
+                { value: 'PRIVATE', label: 'Solo yo', desc: 'Nadie más ve esta evidencia' },
+                { value: 'TASK_PARTICIPANTS', label: 'Equipo', desc: 'Visible para participantes de la tarea y auditores' },
+                { value: 'TREE_ONLY', label: 'Tree', desc: 'Visible para todo el Tree' },
+              ] as const).map(opt => {
+                const active = visibility === opt.value;
+                return (
+                  <button
+                    key={opt.value}
+                    type="button"
+                    onClick={() => setVisibility(opt.value)}
+                    style={{
+                      flex: 1, padding: '0.55rem 0.45rem', borderRadius: 10, textAlign: 'center',
+                      border: active ? '1px solid rgba(59,130,246,0.5)' : '1px solid rgba(255,255,255,0.08)',
+                      background: active ? 'rgba(59,130,246,0.14)' : 'rgba(255,255,255,0.03)',
+                      cursor: 'pointer', color: 'inherit', fontFamily: 'inherit',
+                      transition: 'all 0.2s',
+                    }}
+                  >
+                    <div style={{ fontSize: '0.7rem', fontWeight: 700, color: active ? '#93c5fd' : '#fff', marginBottom: '0.15rem' }}>
+                      {opt.label}
+                    </div>
+                    <div style={{ fontSize: '0.55rem', color: 'rgba(255,255,255,0.45)', lineHeight: 1.25 }}>
+                      {opt.desc}
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
           </div>
 
           {/* Error */}

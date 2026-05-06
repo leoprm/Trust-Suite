@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import { prisma } from '../index';
 import { createNotification } from './notificationController';
+import { getRequestContext, getRequestMetadata, logEvent } from '../services/eventLogService';
 
 const TRIAL_TASKS_REQUIRED = 3;
 const TREATY_WINDOW        = 7;   // max attempts in rolling window
@@ -101,6 +102,22 @@ export const initiateMigration = async (req: Request, res: Response) => {
       });
 
       return res.status(201).json({ migration, treatyApproved: true });
+
+      void logEvent({
+        ...getRequestContext(req),
+        treeId: targetTreeId,
+        actorId: userId,
+        action: 'SKILL_MIGRATION_INITIATED',
+        entityType: 'SkillMigration',
+        entityId: migration.id,
+        metadataJson: getRequestMetadata(req, {
+          hashtag: normalizedHashtag,
+          sourceTreeId,
+          targetTreeId,
+          treatyApproved: true,
+        }),
+        source: 'USER',
+      });
     }
 
     // No treaty → create trial migration
@@ -126,6 +143,22 @@ export const initiateMigration = async (req: Request, res: Response) => {
     });
 
     res.status(201).json({ migration, treatyApproved: false });
+
+    void logEvent({
+      ...getRequestContext(req),
+      treeId: targetTreeId,
+      actorId: userId,
+      action: 'SKILL_MIGRATION_INITIATED',
+      entityType: 'SkillMigration',
+      entityId: migration.id,
+      metadataJson: getRequestMetadata(req, {
+        hashtag: normalizedHashtag,
+        sourceTreeId,
+        targetTreeId,
+        treatyApproved: false,
+      }),
+      source: 'USER',
+    });
   } catch (e: any) {
     console.error('[initiateMigration]', e);
     res.status(500).json({ error: e.message });

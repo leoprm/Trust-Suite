@@ -1,3 +1,4 @@
+import { getRequestContext, getRequestMetadata, logEvent } from '../services/eventLogService';
 import { Request, Response } from 'express';
 import { prisma } from '../index';
 
@@ -188,8 +189,29 @@ export const createBonus = async (req: any, res: Response) => {
     // pero mantiene coherencia)
     await recalculateBonusPercentages(treeId);
 
-    res.status(201).json(bonus);
-  } catch (error: any) {
+    res.status(201).json({ bonus });
+
+    void logEvent({
+      ...getRequestContext(req),
+      treeId,
+      actorId: userId,
+      action: 'BONUS_CREATED',
+      entityType: 'BonusVote',
+      entityId: bonus.id,
+      metadataJson: getRequestMetadata(req, { treeId, title: req.body.title }),
+      source: 'USER',
+    res.json({ vote });
+
+    void logEvent({
+      ...getRequestContext(req),
+      actorId: userId,
+      action: 'BONUS_VOTED',
+      entityType: 'BonusVote',
+      entityId: req.body.bonusId,
+      metadataJson: getRequestMetadata(req, { support: req.body.support }),
+      source: 'USER',
+    });
+  } catch
     console.error('[BonusPool] createBonus error:', error);
     res.status(500).json({ error: 'Error al crear bono' });
   }

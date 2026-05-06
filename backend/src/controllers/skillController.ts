@@ -2,6 +2,7 @@ import { Response } from 'express';
 import { prisma } from '../index';
 import { createNotification } from './notificationController';
 import { getHashtagPhase, getRequiredEndorsements } from '../utils/genesisPhase';
+import { getRequestContext, getRequestMetadata, logEvent } from '../services/eventLogService';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // POST /skills/propose — Propose a new skill within a tree
@@ -63,6 +64,17 @@ export const proposeSkill = async (req: any, res: Response) => {
     }
 
     res.status(201).json({ proposal, phase: phaseInfo });
+
+    void logEvent({
+      ...getRequestContext(req),
+      treeId,
+      actorId: userId,
+      action: 'SKILL_PROPOSED',
+      entityType: 'SkillProposal',
+      entityId: proposal.id,
+      metadataJson: getRequestMetadata(req, { hashtag: normalizedHashtag, status }),
+      source: 'USER',
+    });
   } catch (error) {
     console.error('[proposeSkill] error:', error);
     res.status(500).json({ error: 'Error al proponer habilidad' });
@@ -150,6 +162,23 @@ export const endorseSkillProposal = async (req: any, res: Response) => {
     }
 
     res.json({ endorsementCount: newCount, promoted: newCount >= 3 });
+
+    void logEvent({
+      ...getRequestContext(req),
+      treeId: proposal.treeId,
+      actorId: endorserId,
+      action: newCount >= 3 ? 'SKILL_ENDORSEMENT_PROMOTED' : 'SKILL_ENDORSED',
+      entityType: 'SkillProposal',
+      entityId: proposalId,
+      metadataJson: getRequestMetadata(req, {
+        endorserId,
+        candidateId: proposal.userId,
+        hashtag: proposal.hashtag,
+        endorsementCount: newCount,
+        promoted: newCount >= 3,
+      }),
+      source: 'USER',
+    });
   } catch (error) {
     console.error('[endorseSkillProposal] error:', error);
     res.status(500).json({ error: 'Error al avalar' });
@@ -230,6 +259,23 @@ export const recordTrialTask = async (req: any, res: Response) => {
 
       return res.json({ status: 'APROBADO', tasksCompleted: proposal.tasksCompleted });
     }
+
+    void logEvent({
+      ...getRequestContext(req),
+      treeId: proposal.treeId,
+      actorId: req.user!.id,
+      action: proposal.tasksCompleted >= 7 ? 'SKILL_TRIAL_PASSED' : 'SKILL_TRIAL_PROGRESS',
+      entityType: 'SkillProposal',
+      entityId: proposalId,
+      metadataJson: getRequestMetadata(req, {
+        taskId,
+        passed,
+        tasksCompleted: proposal.tasksCompleted,
+        tasksFailed: proposal.tasksFailed,
+        hashtag: proposal.hashtag,
+      }),
+      source: 'USER',
+    });
 
     // Update progress
     await (prisma as any).skillProposal.update({

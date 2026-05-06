@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import { prisma } from '../index';
 import bcrypt from 'bcryptjs';
+import { getRequestContext, getRequestMetadata, logEvent } from '../services/eventLogService';
 
 const handleAdminError = (res: Response, error: any) => {
   console.error('[Admin Error]', error);
@@ -23,8 +24,19 @@ export const createUser = async (req: Request, res: Response) => {
       },
       select: { id: true, username: true, email: true, role: true }
     });
-    res.status(201).json(user);
-  } catch (error) { handleAdminError(res, error); }
+    res.status(201).json({ user: newUser });
+
+    void logEvent({
+      ...getRequestContext(req),
+      actorId: req.user!.id,
+      action: 'ADMIN_USER_CREATED',
+      entityType: 'User',
+      entityId: newUser.id,
+      metadataJson: getRequestMetadata(req, { createdUsername: newUser.username }),
+      severity: 'WARNING',
+      source: 'ADMIN',
+    });
+  } catch
 };
 
 export const getUsers = async (req: Request, res: Response) => {
@@ -62,6 +74,16 @@ export const deleteUser = async (req: Request, res: Response) => {
     const id = req.params.id as string;
     await prisma.user.delete({ where: { id } });
     res.json({ message: 'User deleted' });
+
+    void logEvent({
+      ...getRequestContext(req),
+      actorId: req.user!.id,
+      action: 'ADMIN_USER_DELETED',
+      entityType: 'User',
+      entityId: req.params.id,
+      severity: 'CRITICAL',
+      source: 'ADMIN',
+    });
   } catch (error) { handleAdminError(res, error); }
 };
 
@@ -107,6 +129,16 @@ export const deleteTree = async (req: Request, res: Response) => {
     const id = req.params.id as string;
     await prisma.tree.delete({ where: { id } });
     res.json({ message: 'Tree deleted' });
+
+    void logEvent({
+      ...getRequestContext(req),
+      actorId: req.user!.id,
+      action: 'ADMIN_TREE_DELETED',
+      entityType: 'Tree',
+      entityId: req.params.id,
+      severity: 'CRITICAL',
+      source: 'ADMIN',
+    });
   } catch (error) { handleAdminError(res, error); }
 };
 

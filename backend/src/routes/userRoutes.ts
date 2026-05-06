@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { getAllUsers, createUser, updateUser, deleteUser, getContacts, searchUsers, addContact, getProfile, uploadProfilePic, updatePublicProfile, getPublicProfile, getSkillStar } from '../controllers/userController';
+import { getAllUsers, createUser, updateUser, deleteUser, getContacts, searchUsers, addContact, getProfile, uploadProfilePic, updatePublicProfile, getPublicProfile, getSkillStar, requestDataDeletion } from '../controllers/userController';
 import { authenticateJWT, optionalAuth, requireAdmin } from '../middleware/authMiddleware';
 import { upload } from '../middleware/upload';
 
@@ -15,6 +15,7 @@ router.get('/profile', getProfile);
 router.get('/skill-star', getSkillStar);
 router.post('/profile-pic', upload.single('image'), uploadProfilePic);
 router.put('/public-profile', updatePublicProfile);
+router.post('/me/request-deletion', requestDataDeletion);
 
 // Publicly available to members
 router.get('/search', searchUsers);
