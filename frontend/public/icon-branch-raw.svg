@@ -1,0 +1,39 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <rect width="512" height="512" fill="#10111f"/>
+
+  <!-- Central hub circle -->
+  <circle cx="256" cy="256" r="40" fill="none" stroke="#fe78cd" stroke-width="18"/>
+
+  <!-- Branch 1: Top-right -->
+  <line x1="292" y1="226" x2="380" y2="130" stroke="#fe78cd" stroke-width="16" stroke-linecap="round"/>
+  <circle cx="395" cy="115" r="16" fill="#fe78cd"/>
+
+  <!-- Branch 2: Top-left -->
+  <line x1="220" y1="226" x2="130" y2="130" stroke="#fe78cd" stroke-width="16" stroke-linecap="round"/>
+  <circle cx="115" cy="115" r="16" fill="#fe78cd"/>
+
+  <!-- Branch 3: Bottom-left -->
+  <line x1="220" y1="286" x2="100" y2="380" stroke="#fe78cd" stroke-width="16" stroke-linecap="round"/>
+  <circle cx="85" cy="395" r="16" fill="#fe78cd"/>
+
+  <!-- Branch 4: Bottom-right -->
+  <line x1="292" y1="286" x2="410" y2="380" stroke="#fe78cd" stroke-width="16" stroke-linecap="round"/>
+  <circle cx="425" cy="395" r="16" fill="#fe78cd"/>
+
+  <!-- Sub-branches for extra tree feel -->
+  <!-- Branch left from top-right -->
+  <line x1="340" y1="175" x2="280" y2="110" stroke="#fe78cd" stroke-width="10" stroke-linecap="round"/>
+  <circle cx="270" cy="100" r="10" fill="#fe78cd"/>
+
+  <!-- Branch right from top-left -->
+  <line x1="172" y1="175" x2="235" y2="100" stroke="#fe78cd" stroke-width="10" stroke-linecap="round"/>
+  <circle cx="245" cy="93" r="10" fill="#fe78cd"/>
+
+  <!-- Small sub-node off bottom-left -->
+  <line x1="155" y1="340" x2="110" y2="285" stroke="#fe78cd" stroke-width="10" stroke-linecap="round"/>
+  <circle cx="103" cy="278" r="10" fill="#fe78cd"/>
+
+  <!-- Small sub-node off bottom-right -->
+  <line x1="360" y1="340" x2="405" y2="280" stroke="#fe78cd" stroke-width="10" stroke-linecap="round"/>
+  <circle cx="412" cy="273" r="10" fill="#fe78cd"/>
+</svg>

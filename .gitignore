@@ -1,9 +1,14 @@
-
-~$ust English.docx
-~$ust English.docx
-~$ust English.docx
-~$ust Español.docx
-~WRL0031.tmp
-*.tmp
-~$ust ADN Español.docx
-~$ust DNA English.docx
+node_modules/
+dist/
+.env
+*.log
+run-logs/
+uploads/
+.turbo
+*.tsbuildinfo
+.DS_Store
+backend/*.txt
+backend/prisma/*.txt
+frontend/*errors*.txt
+frontend/*log*.txt
+backend/.env.bak*

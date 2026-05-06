@@ -1,0 +1,2137 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        String   @id @default(uuid())
+  username  String   @unique
+  email     String?  @unique
+  password  String?
+  is_guest  Boolean  @default(false)
+  is_onboarded Boolean @default(false)
+  role      Role     @default(PERSON)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  memberships         TreeMember[]
+  invitedMembers      TreeMember[]         @relation("Inviter")
+  createdNeeds        Need[]               @relation("NeedCreator")
+  needFundings        NeedFunding[]
+  ideas               Idea[]
+  plantillas          PlantillaArbol[]     @relation("CreadorPlantilla")
+  taskVotes           TaskVote[]
+  branches            Branch[]
+  taskQuestions       TaskQuestion[]
+  satisfactionRatings SatisfactionRating[]
+  evaluators          SatisfaccionEvaluador[]
+  branchMemberships   BranchMember[]
+  difficultyVotes     DifficultyVote[]
+  difficultyVoteLikes DifficultyVoteLike[]
+  createdTokens       TokenInvitacion[]
+
+  sharingCode String        @unique @default(uuid()) // fallback to uuid if dbgenerated fails in some environments
+  profilePic  String?       // URL to uploaded profile photo
+  publicProfileEnabled Boolean @default(false)
+  publicShowLevels     Boolean @default(true)
+  publicShowTreeSize   Boolean @default(true)
+  publicShowTaskHistory Boolean @default(true)
+  visibleForRecruitment Boolean @default(false) // opt-in: visible to external recruiters
+  seekingWork           Boolean @default(false) // actively looking for opportunities
+  contacts    UserContact[] @relation("UserContacts")
+  contactOf   UserContact[] @relation("ContactOf")
+  branchNeedVotes BranchNeedVote[]
+  IdeaLike    IdeaLike[]
+  auditorias  Auditoria[]
+  promisesPledged PromiseP2P[] @relation("Sponsor")
+  bonusVotes      BonusVote[]
+  notifications      Notification[]
+  skillMigrations    SkillMigration[]
+  connectionTokens   ConnectionToken[]
+  skillProposals     SkillProposal[]
+  skillEndorsements  SkillEndorsement[]
+  searchPasses       SearchPass[]
+  sentInvitations    InterviewInvitation[] @relation("InvitationSender")
+  receivedInvitations InterviewInvitation[] @relation("InvitationReceiver")
+  privacySettings    PrivacySettings?
+  eventLogs          EventLog[]            @relation("EventActor")
+  evidenceFiles      EvidenceFile[]        @relation("EvidenceUploader")
+  externalNeedsCreated ExternalNeed[]      @relation("ExternalNeedCreator")
+  solutionProposalsCreated SolutionProposal[] @relation("SolutionProposalCreator")
+  solutionProposalsSelected SolutionProposal[] @relation("SolutionProposalSelector")
+  scopePreferencesCreated ScopePreference[] @relation("ScopePreferenceCreator")
+  autosustentoBranchConfigsCreated AutosustentoBranchConfig[] @relation("AutosustentoBranchConfigCreator")
+  autosustentoIdeasCreated    AutosustentoIdea[]    @relation("AutosustentoIdeaCreator")
+  autosustentoIdeaSupports    AutosustentoIdeaSupport[]
+  fiatTransactionsCreated     FiatTransaction[]     @relation("FiatTransactionCreator")
+  fiatTransactionsCertified   FiatTransaction[]     @relation("FiatTransactionCertifier")
+  berryTransactions           BerryTransaction[]
+  insightSignalsCreated       InsightSignal[]       @relation("InsightSignalCreator")
+  insightInternalMatches      InsightInternalMatch[]
+  insightExternalApplications InsightExternalApplication[]
+  insightOpeningsCreated      InsightExternalOpening[]    @relation("OpeningCreator")
+  resolvedEndorsements         ExpertEndorsement[]          @relation("EndorsementResolver")
+}
+
+model UserContact {
+  id        String   @id @default(uuid())
+  userId    String
+  contactId String
+  createdAt DateTime @default(now())
+
+  user    User @relation("UserContacts", fields: [userId], references: [id], onDelete: Cascade)
+  contact User @relation("ContactOf", fields: [contactId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, contactId])
+}
+
+model ConnectionToken {
+  id        String   @id @default(uuid())
+  token     String   @unique @default(uuid())
+  userId    String
+  expiresAt DateTime
+  usedById  String?
+  usedAt    DateTime?
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([token])
+  @@index([userId])
+}
+
+enum Role {
+  PERSON
+  ADMINISTRATOR
+}
+
+enum TreeVisibility {
+  PRIVATE
+  PUBLIC
+}
+
+enum JoinPolicy {
+  OPEN
+  INVITE_ONLY
+  REQUEST
+}
+
+enum GovernanceModel {
+  DICTATORSHIP
+  DEMOCRACY
+}
+
+enum PowerAssignment {
+  EQUAL
+  HIERARCHICAL
+}
+
+enum TreeEconomyMode {
+  NO_ECONOMY
+  LEGACY_FIAT
+  BERRIES_LATENT
+  BERRIES_ACTIVE
+  TRUST_FULL
+}
+
+enum Visibility {
+  PUBLIC
+  PRIVATE
+}
+
+enum VisibilityLevel {
+  PRIVATE
+  TREE_ONLY
+  TRUST_NETWORK
+  PUBLIC
+}
+
+enum EventSeverity {
+  INFO
+  WARNING
+  CRITICAL
+}
+
+enum EventSource {
+  USER
+  SYSTEM
+  ADMIN
+  AUTOMATION
+}
+
+enum EvidenceVisibility {
+  PRIVATE
+  TASK_PARTICIPANTS
+  TREE_ONLY
+  TRUST_NETWORK
+  PUBLIC_METADATA
+  PUBLIC
+}
+
+enum EvidenceFileStatus {
+  ACTIVE
+  DELETED
+  QUARANTINED
+}
+
+model PrivacySettings {
+  id                         String          @id @default(uuid())
+  userId                     String          @unique
+  user                       User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  traceProfileVisibility     VisibilityLevel @default(TREE_ONLY)
+  taskHistoryVisibility      VisibilityLevel @default(PRIVATE)
+  evidenceVisibility         VisibilityLevel @default(PRIVATE)
+  showInTalentSearch         Boolean         @default(false)
+  allowAggregatedMetrics     Boolean         @default(true)
+  createdAt                  DateTime        @default(now())
+  updatedAt                  DateTime        @updatedAt
+
+  @@index([traceProfileVisibility])
+  @@index([showInTalentSearch])
+}
+
+enum HashtagCreationPolicy {
+  ADMIN_ONLY
+  USERS_ONLY
+  ADMIN_AND_USERS
+}
+
+enum AdmissionPolicy {
+  OPEN
+  INVITE_ONLY
+}
+
+enum LocationPrivacy {
+  EXACTA
+  SECTOR
+  OCULTA
+}
+
+enum MemberStatus {
+  UNVERIFIED
+  VERIFIED
+  BANNED
+}
+
+enum MembershipRole {
+  ADMIN
+  MEMBER
+}
+
+enum EvidenceStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+model Tree {
+  id                       String                @id @default(uuid())
+  name                     String
+  icono                    String                @default("🌳")
+  description              String?               @db.Text
+  inviteCode               String                @unique
+  creatorId                String?
+  createdAt                DateTime              @default(now())
+  
+  // Territorial & Geographic Discovery
+  capacidades              String                @default("[]") @db.Text
+  country                  String?
+  city                     String?
+  sector                   String?
+  
+  // Ubicación Exacta GPS
+  latitude                 Float?
+  longitude                Float?
+  direccionExacta          String?
+  locationPrivacy          LocationPrivacy @default(SECTOR)
+  
+  // Verificación Local / Fachada
+  fachadaUrl               String?         @db.Text
+  googlePlaceId            String?
+  isLocationVerified       Boolean         @default(false)
+  
+  settings                 String?               @db.Text
+  visibility               TreeVisibility        @default(PRIVATE)
+  admissionPolicy          AdmissionPolicy       @default(INVITE_ONLY)
+  allowHashtags            Boolean               @default(true)
+  allowTraditionalBranches Boolean               @default(true)
+  hashtagCreationPolicy    HashtagCreationPolicy @default(ADMIN_AND_USERS)
+  modoCrisis               Boolean               @default(false)
+  crisisSubjects           String                @default("[]") @db.Text
+  crisisExpiresAt          DateTime?
+  
+  // Economic Engine Settings
+  economyMode              TreeEconomyMode       @default(NO_ECONOMY)
+  presupuestoTotal         Float                 @default(100)
+  limiteSemanasEstabilidad Int                   @default(24)
+  factorDesgaste           Float                 @default(0.15)
+  
+  // Governance Settings
+  modoGobierno             String                @default("DEMOCRATICO")
+  creacionRamaDirecta      Boolean               @default(false)
+  creacionRamaComunitaria  Boolean               @default(true)
+
+  // Relations
+  members          TreeMember[]
+  needLinks        NeedTree[]
+  assetFunds       AssetFund[]
+  fiatTransactions FiatTransaction[]
+  fiatTemplates    FiatTemplate[]
+  branches         Branch[]
+  tokensInvitacion TokenInvitacion[]
+  relationsInitiated TreeRelation[] @relation("TreeRelationsSource")
+  relationsReceived  TreeRelation[] @relation("TreeRelationsTarget")
+  alertasZonales     AlertaZonal[]
+  bonusPools         BonusPool[]
+  migrationsAsSource SkillMigration[] @relation("MigrationSource")
+  migrationsAsTarget SkillMigration[] @relation("MigrationTarget")
+  treatiesAsSource   TrustTreaty[]    @relation("TreatySource")
+  treatiesAsTarget   TrustTreaty[]    @relation("TreatyTarget")
+  eventLogs          EventLog[]
+  evidenceFiles      EvidenceFile[]
+  externalNeeds      ExternalNeed[]
+  autosustentoBranchConfigs AutosustentoBranchConfig[]
+  autosustentoIdeas  AutosustentoIdea[]
+  sustainabilityCycles SustainabilityCycle[]
+  berryConfig        BerryConfig?
+  berryTransactions  BerryTransaction[]
+  berryCycles        BerryMonthlyCycle[]
+  insightSignals         InsightSignal[]
+  externalOpenings       InsightExternalOpening[]  @relation("TreeExternalOpenings")
+  expertEndorsements     ExpertEndorsement[]
+
+  @@index([country, city, sector])
+}
+
+model ExternalNeed {
+  id             String                 @id @default(uuid())
+  treeId         String
+  tree           Tree                   @relation(fields: [treeId], references: [id], onDelete: Cascade)
+  createdById    String?
+  createdBy      User?                  @relation("ExternalNeedCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  title          String
+  description    String                 @db.Text
+  status         ExternalNeedStatus     @default(DRAFT)
+  clientSummary  String?                @db.Text
+  desiredOutcome String?                @db.Text
+  constraints    String?                @db.Text
+  deadline       DateTime?
+  budgetMinFiat  Float?
+  budgetMaxFiat  Float?
+  currency       String?                @default("CLP")
+  visibility     ExternalNeedVisibility @default(TREE_ONLY)
+  metadataJson   Json?
+  createdAt      DateTime               @default(now())
+  updatedAt      DateTime               @updatedAt
+
+  agents          ExternalAgent[]
+  scopePoints     ScopePreference[]
+  solutions       SolutionProposal[]
+  fiatTransactions FiatTransaction[]
+
+  @@index([treeId])
+  @@index([status])
+  @@index([createdById])
+  @@index([createdAt])
+}
+
+model ExternalAgent {
+  id              String            @id @default(uuid())
+  externalNeedId  String
+  externalNeed    ExternalNeed      @relation(fields: [externalNeedId], references: [id], onDelete: Cascade)
+  name            String
+  email           String?
+  organization    String?
+  role            ExternalAgentRole @default(CLIENT)
+  notes           String?           @db.Text
+  consentAccepted Boolean           @default(false)
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+  scopePreferences ScopePreference[]
+
+  @@index([externalNeedId])
+  @@index([email])
+}
+
+model ScopePreference {
+  id               String         @id @default(uuid())
+  externalNeedId   String
+  externalNeed     ExternalNeed   @relation(fields: [externalNeedId], references: [id], onDelete: Cascade)
+  agentId          String?
+  agent            ExternalAgent? @relation(fields: [agentId], references: [id], onDelete: SetNull)
+  label            String
+  labelKey         String
+  score            Int
+  description      String?        @db.Text
+  normalizedWeight Float?
+  createdById      String?
+  createdBy        User?          @relation("ScopePreferenceCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+
+  @@index([externalNeedId])
+  @@index([agentId])
+  @@index([label])
+  @@index([labelKey])
+  @@index([createdById])
+}
+
+model SolutionProposal {
+  id                    String                 @id @default(uuid())
+  externalNeedId        String
+  externalNeed          ExternalNeed           @relation(fields: [externalNeedId], references: [id], onDelete: Cascade)
+  createdById           String?
+  createdBy             User?                  @relation("SolutionProposalCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  title                 String
+  description           String                 @db.Text
+  status                SolutionProposalStatus @default(DRAFT)
+  estimatedFiatMin      Float?
+  estimatedFiatExpected Float?
+  estimatedFiatMax      Float?
+  currency              String?                @default("CLP")
+  estimatedBerries      Int?
+  estimatedDurationDays Int?
+  riskLevel             RiskLevel              @default(MEDIUM)
+  assumptions           String?                @db.Text
+  included              String?                @db.Text
+  excluded              String?                @db.Text
+  deliverables          String?                @db.Text
+  acceptanceCriteria    String?                @db.Text
+  maintenanceNotes      String?                @db.Text
+  scopeAlignmentJson    Json?
+  metadataJson          Json?
+  selectedAt            DateTime?
+  selectedById          String?
+  selectedBy            User?                  @relation("SolutionProposalSelector", fields: [selectedById], references: [id], onDelete: SetNull)
+  approvedByClientAt    DateTime?
+  approvedByTreeAt      DateTime?
+  createdAt             DateTime               @default(now())
+  updatedAt             DateTime               @updatedAt
+
+  budgetLines           BudgetLine[]
+
+  @@index([externalNeedId])
+  @@index([createdById])
+  @@index([selectedById])
+  @@index([status])
+  @@index([riskLevel])
+}
+
+model BudgetLine {
+  id                 String         @id @default(uuid())
+  solutionProposalId String
+  solutionProposal   SolutionProposal @relation(fields: [solutionProposalId], references: [id], onDelete: Cascade)
+  label              String
+  description        String?        @db.Text
+  type               BudgetLineType
+  estimatedFiat      Float?
+  estimatedBerries   Int?
+  currency           String?        @default("CLP")
+  quantity           Float?
+  unit               String?
+  unitCostFiat       Float?
+  createdAt          DateTime       @default(now())
+  updatedAt          DateTime       @updatedAt
+
+  @@index([solutionProposalId])
+  @@index([type])
+}
+
+enum ExternalNeedStatus {
+  DRAFT
+  OPEN
+  UNDER_REVIEW
+  SOLUTIONS_PROPOSED
+  APPROVED
+  REJECTED
+  CONVERTED_TO_TASKS
+  CANCELLED
+  COMPLETED
+}
+
+enum ExternalNeedVisibility {
+  PRIVATE
+  TREE_ONLY
+  TRUST_NETWORK
+  PUBLIC_METADATA
+  PUBLIC
+}
+
+enum ExternalAgentRole {
+  CLIENT
+  SPONSOR
+  CONTACT
+  APPROVER
+  OBSERVER
+}
+
+enum SolutionProposalStatus {
+  DRAFT
+  SUBMITTED
+  UNDER_REVIEW
+  APPROVED_BY_TREE
+  APPROVED_BY_CLIENT
+  REJECTED
+  SELECTED
+  ARCHIVED
+  CONVERTED_TO_TASKS
+}
+
+enum RiskLevel {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+enum BudgetLineType {
+  LABOR
+  MATERIALS
+  INFRASTRUCTURE
+  TAXES
+  RESERVE
+  TREE_FUND
+  MAINTENANCE
+  EXTERNAL_SERVICE
+  OTHER
+}
+
+model EventLog {
+  id           String        @id @default(uuid())
+  treeId       String?
+  tree         Tree?         @relation(fields: [treeId], references: [id], onDelete: SetNull)
+  actorId      String?
+  actor        User?         @relation("EventActor", fields: [actorId], references: [id], onDelete: SetNull)
+  action       String
+  entityType   String
+  entityId     String?
+  beforeJson   Json?
+  afterJson    Json?
+  metadataJson Json?
+  ipAddress    String?
+  userAgent    String?       @db.Text
+  severity     EventSeverity @default(INFO)
+  source       EventSource   @default(USER)
+  createdAt    DateTime      @default(now())
+
+  @@index([treeId])
+  @@index([actorId])
+  @@index([entityType, entityId])
+  @@index([action])
+  @@index([createdAt])
+  @@index([severity])
+}
+
+model EvidenceFile {
+  id             String             @id @default(uuid())
+  uploaderId     String
+  uploader       User               @relation("EvidenceUploader", fields: [uploaderId], references: [id], onDelete: Cascade)
+  treeId         String?
+  tree           Tree?              @relation(fields: [treeId], references: [id], onDelete: SetNull)
+  taskId         String?
+  task           Task?              @relation(fields: [taskId], references: [id], onDelete: SetNull)
+  auditId        String?
+  originalName   String
+  storedName     String
+  storagePath    String             @db.Text
+  mimeType       String
+  extension      String
+  sizeBytes      Int
+  visibility     EvidenceVisibility @default(TASK_PARTICIPANTS)
+  status         EvidenceFileStatus @default(ACTIVE)
+  checksumSha256 String?
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @updatedAt
+
+  fiatTransactions     FiatTransaction[]
+  insightApplications  InsightExternalApplication[]
+
+  @@index([uploaderId])
+  @@index([treeId])
+  @@index([taskId])
+  @@index([visibility])
+  @@index([status])
+}
+
+model TreeMember {
+  id               String         @id @default(uuid())
+  userId           String
+  treeId           String
+  invitedById      String?
+  weeklyNeedPoints Int            @default(100)
+  bayasBalance     Float          @default(0)
+  lastBerriesUpdate DateTime      @default(now())
+  lastCycleKey      String?
+  strikesEconomicos String        @default("[]") @db.Text
+  status           MemberStatus   @default(UNVERIFIED)
+  xp               Float          @default(0)
+  level            Int            @default(1)
+  skills           String         @default("[]") @db.Text
+  goldenTickets    String         @default("{}") @db.Text  // JSON: { "#Skill": { tickets: 3, usedOnCritical: [], streakTaskIds: [] } }
+  role             MembershipRole @default(MEMBER)
+  joinedAt         DateTime       @default(now())
+  bonoMentoriaActivo Boolean      @default(false)
+  bonoMentoriaExpira DateTime?    // null = no active bonus
+  avalBanHasta       DateTime?    // null = not banned from endorsing
+  endorsementsGiven   ExpertEndorsement[] @relation("EndorsementsGiven")
+  endorsementsReceived ExpertEndorsement[] @relation("EndorsementsReceived")
+
+  user      User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tree      Tree  @relation(fields: [treeId], references: [id], onDelete: Cascade)
+  invitedBy User? @relation("Inviter", fields: [invitedById], references: [id], onDelete: SetNull)
+
+  @@unique([userId, treeId])
+}
+
+model Need {
+  id                  String     @id @default(uuid())
+  creatorId           String
+  title               String
+  description         String     @db.Text
+  totalPointsAssigned Int        @default(0)
+  failedAttempts      Int        @default(0)
+  createdAt           DateTime   @default(now())
+  status              NeedStatus @default(ACTIVE)
+  taskId              String?
+  proposesHashtag     Boolean    @default(false)
+
+  creator   User          @relation("NeedCreator", fields: [creatorId], references: [id])
+  task      Task?         @relation(fields: [taskId], references: [id])
+  treeLinks NeedTree[]
+  fundings  NeedFunding[]
+  ideas     Idea[]
+}
+
+enum NeedStatus {
+  ACTIVE
+  IN_PROGRESS
+  RESOLVED
+}
+
+model NeedTree {
+  id     String @id @default(uuid())
+  needId String
+  treeId String
+
+  need Need @relation(fields: [needId], references: [id], onDelete: Cascade)
+  tree Tree @relation(fields: [treeId], references: [id], onDelete: Cascade)
+
+  @@unique([needId, treeId])
+}
+
+model NeedFunding {
+  id        String   @id @default(uuid())
+  userId    String
+  needId    String
+  treeId    String? // Optional for backwards compatibility, but we should populate it going forward
+  points    Int
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  need Need @relation(fields: [needId], references: [id], onDelete: Cascade)
+}
+
+model Idea {
+  id          String   @id @default(uuid())
+  needId      String
+  creatorId   String
+  title       String
+  description String   @db.Text
+  likesCount  Int      @default(0)
+  createdAt   DateTime @default(now())
+
+  proposedPhasesJson String? @db.Text // JSON array of BranchPhase selected by creator
+
+  // Resource estimates (optional, filled by the idea creator)
+  requiredPeople     Int?
+  requiredSkills     String? @db.Text // JSON array e.g. ["design","coding"]
+  estimatedMaterials String? @db.Text // free text description
+  estimatedFiatCost  Float?
+
+  need    Need       @relation(fields: [needId], references: [id], onDelete: Cascade)
+  creator User       @relation(fields: [creatorId], references: [id])
+  branch  Branch?
+  likes   IdeaLike[]
+}
+
+model IdeaLike {
+  id        String   @id @default(uuid())
+  ideaId    String
+  userId    String
+  createdAt DateTime @default(now())
+
+  idea Idea @relation(fields: [ideaId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([ideaId, userId])
+}
+
+model Branch {
+  id                String      @id @default(uuid())
+  ideaId            String?     @unique
+  treeId            String?
+  name              String? // For hashtag branches that don't have an Idea
+  type              BranchType  @default(NORMAL)
+  xpPool            Float       @default(0)
+  isDesire          Boolean     @default(false)
+  isHashtag         Boolean     @default(false)
+  bayasFund         Float       @default(0)
+  
+  // Consensus & Governance
+  esVotable         Boolean     @default(true)
+  valorSugerido     Float?
+  valorOficial      Float       @default(0)
+
+  phase             BranchPhase @default(INVESTIGATION)
+  activePhasesJson  String?     @db.Text // JSON array of BranchPhase, set during Idea promotion
+  currentPhaseIndex Int         @default(0)
+  expiresAt         DateTime?
+  createdAt         DateTime    @default(now())
+
+  idea             Idea?              @relation(fields: [ideaId], references: [id])
+  tree             Tree?              @relation(fields: [treeId], references: [id])
+  members          BranchMember[]
+  tasks            Task[]
+  deliverables     PhaseDeliverable[]
+  fiatTransactions FiatTransaction[]
+  autosustentoConfig AutosustentoBranchConfig?
+  User             User?              @relation(fields: [userId], references: [id])
+  userId           String?
+  needVotes        BranchNeedVote[]
+  sustainabilityCycles SustainabilityCycle[]
+
+  @@index([treeId])
+  @@index([type])
+}
+
+model AutosustentoBranchConfig {
+  id                        String              @id @default(uuid())
+  branchId                  String              @unique
+  branch                    Branch              @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  treeId                    String
+  tree                      Tree                @relation(fields: [treeId], references: [id], onDelete: Cascade)
+  businessName              String?
+  productOrService          String
+  targetClient              String?             @db.Text
+  valueProposition          String?             @db.Text
+  status                    AutosustentoStatus  @default(PROPOSED)
+  viabilitySummary          String?             @db.Text
+  requiredResources         String?             @db.Text
+  legalRisks                String?             @db.Text
+  operationalRisks          String?             @db.Text
+  startupCostFiat           Float?
+  expectedMonthlyIncomeFiat Float?
+  expectedMonthlyCostFiat   Float?
+  currency                  String?             @default("CLP")
+  reviewPeriodDays          Int?                @default(90)
+  nextReviewAt              DateTime?
+  closureCriteria           String?             @db.Text
+  metadataJson              Json?
+  createdById               String?
+  createdBy                 User?               @relation("AutosustentoBranchConfigCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt                 DateTime            @default(now())
+  updatedAt                 DateTime            @updatedAt
+
+  split                     SustainabilitySplit?
+
+  @@index([treeId])
+  @@index([status])
+  @@index([createdById])
+}
+
+model SustainabilitySplit {
+  id             String                   @id @default(uuid())
+  configId       String                   @unique
+  config         AutosustentoBranchConfig @relation(fields: [configId], references: [id], onDelete: Cascade)
+  materialsPct   Float                    @default(0)
+  laborPct       Float                    @default(0)
+  operationsPct  Float                    @default(0)
+  taxPct         Float                    @default(0)
+  reservePct     Float                    @default(0)
+  maintenancePct Float                    @default(0)
+  treeFundPct    Float                    @default(0)
+  otherPct       Float                    @default(0)
+  notes          String?                  @db.Text
+  createdAt      DateTime                 @default(now())
+  updatedAt      DateTime                 @updatedAt
+}
+
+model BranchMember {
+  id           String   @id @default(uuid())
+  userId       String
+  branchId     String
+  joinedPhases String   @default("[]") @db.Text // JSON array of BranchPhase the user has joined
+  joinedAt     DateTime @default(now())
+
+  branch Branch @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, branchId])
+}
+
+model Task {
+  id          String      @id @default(uuid())
+  branchId    String
+  name        String      @default("Task")
+  description String      @db.Text
+  status      TaskStatus  @default(OPEN)
+  assignedTo  String?
+  creatorId   String?
+  phase       BranchPhase @default(INVESTIGATION)
+
+  evidenceUrl    String?         @db.Text
+  evidenceStatus EvidenceStatus?
+
+  // Start photo (optional "before" evidence uploaded when task is assigned)
+  startPhotoUrl String? @db.Text
+
+  // Completion details (filled when task is marked complete)
+  completionComment  String?   @db.Text
+  completedAt        DateTime?
+  completionPhotoUrl String?   @db.Text
+
+  // Effort Evaluation
+  requiredHours  Float?
+  difficulty     Float? // 1.0 to 7.0
+  isAnonymous    Boolean @default(false)
+  requiresVoting Boolean @default(false)
+  auditada       Boolean @default(false)
+  deadlineAt     DateTime? // 1.3x requiredHours after assignment
+
+  createdAt DateTime @default(now())
+
+  branch    Branch         @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  tags      TaskTag[]
+  votes     TaskVote[]
+  questions       TaskQuestion[]
+  needs           Need[]
+  difficultyVotes DifficultyVote[]
+  auditorias       Auditoria[]
+  promises         PromiseP2P[]
+  evidenceFiles    EvidenceFile[]
+  fiatTransactions FiatTransaction[]
+}
+
+enum TaskStatus {
+  OPEN
+  IN_PROGRESS
+  COMPLETED
+}
+
+model TaskTag {
+  id        String @id @default(uuid())
+  taskId    String
+  skillName String
+
+  task Task @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  @@unique([taskId, skillName])
+}
+
+model TaskVote {
+  id               String   @id @default(uuid())
+  taskId           String
+  userId           String
+  effortValue      Float? // Keeping this for backwards compatibility or general effort
+  requiredHours    Float?
+  difficulty       Float?
+  isRandomAssignee Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  task Task @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([taskId, userId])
+}
+
+model TaskQuestion {
+  id        String   @id @default(uuid())
+  taskId    String
+  userId    String
+  createdAt DateTime @default(now())
+
+  task Task @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([taskId, userId])
+}
+
+model AssetFund {
+  id        String    @id @default(uuid())
+  treeId    String
+  balance   Float     @default(0)
+  type      AssetType
+  createdAt DateTime  @default(now())
+
+  tree Tree @relation(fields: [treeId], references: [id], onDelete: Cascade)
+}
+
+enum AssetType {
+  FIAT
+  PROPERTY
+}
+
+enum BranchPhase {
+  INVESTIGATION
+  DEVELOPMENT
+  PRODUCTION
+  DISTRIBUTION
+  MAINTENANCE
+  RECYCLING
+}
+
+enum BranchType {
+  NORMAL
+  HASHTAG
+  AUTOSUSTENTO
+  EXTERNAL_CONTRACT
+}
+
+enum AutosustentoStatus {
+  PROPOSED
+  UNDER_REVIEW
+  APPROVED
+  ACTIVE
+  PAUSED
+  REJECTED
+  CLOSED
+}
+
+model PhaseDeliverable {
+  id               String            @id @default(uuid())
+  branchId         String
+  phase            BranchPhase
+  deliverableUrl   String            @db.Text
+  status           DeliverableStatus @default(PENDING_REVIEW)
+  initialXpAwarded Boolean           @default(false)
+  createdAt        DateTime          @default(now())
+
+  branch      Branch                  @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  evaluators  SatisfaccionEvaluador[]
+  ratings     SatisfactionRating[]
+}
+
+model SatisfaccionEvaluador {
+  id            String   @id @default(uuid())
+  deliverableId String
+  userId        String
+  hasEvaluated  Boolean  @default(false)
+  createdAt     DateTime @default(now())
+
+  deliverable   PhaseDeliverable @relation(fields: [deliverableId], references: [id], onDelete: Cascade)
+  user          User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([deliverableId, userId])
+}
+
+model PlantillaArbol {
+  id            String   @id @default(uuid())
+  nombre        String
+  descripcion   String?
+  icono         String?
+  esGlobal      Boolean  @default(false)
+  creadorId     String
+  configuracion String   @db.Text
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  creador       User     @relation("CreadorPlantilla", fields: [creadorId], references: [id])
+}
+
+model SatisfactionRating {
+  id            String   @id @default(uuid())
+  deliverableId String
+  userId        String
+  rating        Float // 0 to 100
+  createdAt     DateTime @default(now())
+
+  deliverable PhaseDeliverable @relation(fields: [deliverableId], references: [id], onDelete: Cascade)
+  user        User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([deliverableId, userId])
+}
+
+enum DeliverableStatus {
+  PENDING_REVIEW
+  COMPLETED
+}
+
+enum TransactionType {
+  INCOME
+  EXPENSE
+  INVESTMENT
+  SALARY
+  MATERIALS
+  INFRASTRUCTURE
+  TAX
+  RESERVE
+  MAINTENANCE
+  TREE_FUND
+  EXTERNAL_CONTRACT
+  REFUND
+}
+
+enum TransactionCategory {
+  WATER
+  ELECTRICITY
+  GAS
+  MORTGAGE
+  FUEL
+  SHOPPING
+  EQUIPMENT
+  MATERIAL
+  MONEY
+  OTHER
+}
+
+enum FiatPeriodicity {
+  BEGINNING_OF_YEAR
+  BEGINNING_OF_MONTH
+  BEGINNING_OF_WEEK
+  CUSTOM_DAYS
+}
+
+enum FiatVerificationStatus {
+  DECLARED
+  BACKED_BY_RECEIPT
+  RECONCILED
+  AUDITED
+  API_VERIFIED
+  REJECTED
+}
+
+enum FiatCounterpartyType {
+  CLIENT
+  SUPPLIER
+  MEMBER
+  EXTERNAL_WORKER
+  INSTITUTION
+  OTHER
+}
+
+model FiatTemplate {
+  id          String              @id @default(uuid())
+  treeId      String
+  amount      Float? // Fixed amount if set
+  type        TransactionType
+  category    TransactionCategory
+  description String?             @db.Text
+  isPeriodic  Boolean             @default(false)
+  periodicity FiatPeriodicity?
+  daysCount   Int? // Used if CUSTOM_DAYS
+  isFixed     Boolean             @default(false)
+  createdAt   DateTime            @default(now())
+  lastUsedAt  DateTime?
+
+  tree         Tree              @relation(fields: [treeId], references: [id], onDelete: Cascade)
+  transactions FiatTransaction[]
+}
+
+model FiatTransaction {
+  id                 String                 @id @default(uuid())
+  treeId             String
+  branchId           String?
+  taskId             String?
+  externalNeedId     String?
+  createdById        String?
+  templateId         String?
+  certifiedById      String?
+  solutionProposalId String?
+  amount             Float
+  currency           String                 @default("CLP")
+  type               TransactionType
+  category           TransactionCategory
+  description        String?                @db.Text
+  counterpartyName   String?                @db.Text
+  counterpartyType   FiatCounterpartyType?
+  verificationStatus FiatVerificationStatus @default(DECLARED)
+  receiptEvidenceId  String?
+  rejectionReason    String?                @db.Text
+  certifiedAt        DateTime?
+  metadataJson       Json?
+  date               DateTime               @default(now())
+  createdAt          DateTime               @default(now())
+  updatedAt          DateTime               @updatedAt
+  isAutomatic        Boolean                @default(false)
+
+  tree            Tree           @relation(fields: [treeId], references: [id], onDelete: Cascade)
+  branch          Branch?        @relation(fields: [branchId], references: [id], onDelete: SetNull)
+  task            Task?          @relation(fields: [taskId], references: [id], onDelete: SetNull)
+  externalNeed    ExternalNeed?  @relation(fields: [externalNeedId], references: [id], onDelete: SetNull)
+  template        FiatTemplate?  @relation(fields: [templateId], references: [id], onDelete: SetNull)
+  createdBy       User?          @relation("FiatTransactionCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  certifiedBy     User?          @relation("FiatTransactionCertifier", fields: [certifiedById], references: [id], onDelete: SetNull)
+  receiptEvidence EvidenceFile?  @relation(fields: [receiptEvidenceId], references: [id], onDelete: SetNull)
+
+  @@index([treeId])
+  @@index([branchId])
+  @@index([taskId])
+  @@index([createdById])
+  @@index([certifiedById])
+  @@index([solutionProposalId])
+  @@index([type])
+  @@index([counterpartyType])
+  @@index([verificationStatus])
+  @@index([date])
+}
+
+model DifficultyVote {
+  id        String   @id @default(uuid())
+  taskId    String
+  userId    String
+  value     Int      // 1 to 10
+  comment   String?  @db.Text
+  status    String   @default("valido")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  task  Task                 @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  user  User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  likes DifficultyVoteLike[]
+
+  @@unique([userId, taskId], name: "user_task_unique")
+}
+
+model DifficultyVoteLike {
+  id        String   @id @default(uuid())
+  voteId    String
+  userId    String
+  createdAt DateTime @default(now())
+
+  vote DifficultyVote @relation(fields: [voteId], references: [id], onDelete: Cascade)
+  user User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([voteId, userId])
+}
+
+model BranchNeedVote {
+  id        String   @id @default(uuid())
+  branchId  String
+  userId    String
+  score     Int      @default(5) // 1 to 10
+  createdAt DateTime @default(now())
+
+  branch Branch @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([branchId, userId])
+}
+
+model TokenInvitacion {
+  id        String   @id @default(uuid())
+  arbolId   String
+  creadorId String
+  usado     Boolean  @default(false)
+  createdAt DateTime @default(now())
+  expiresAt DateTime?
+
+  arbol   Tree @relation(fields: [arbolId], references: [id], onDelete: Cascade)
+  creador User @relation(fields: [creadorId], references: [id], onDelete: Cascade)
+}
+
+model Auditoria {
+  id            String   @id @default(uuid())
+  usuarioId     String
+  taskId        String
+  notaSugerida  Int
+  fechaCreacion DateTime @default(now())
+
+  usuario User @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+  task    Task @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  @@index([usuarioId])
+  @@index([taskId])
+}
+
+model TreeRelation {
+  id                     String   @id @default(uuid())
+  sourceTreeId           String
+  targetTreeId           String
+  relationType           String   // e.g. "LOGISTICA_FISICA", "INTERCAMBIO_CONOCIMIENTO"
+  socialDistanceCategory String   // e.g. "MISMO_SECTOR", "INTERNACIONAL", etc.
+  createdAt              DateTime @default(now())
+
+  sourceTree Tree @relation("TreeRelationsSource", fields: [sourceTreeId], references: [id], onDelete: Cascade)
+  targetTree Tree @relation("TreeRelationsTarget", fields: [targetTreeId], references: [id], onDelete: Cascade)
+
+  @@unique([sourceTreeId, targetTreeId, relationType])
+}
+
+model PromiseP2P {
+  id                String   @id @default(uuid())
+  taskId            String
+  sponsorId         String
+  amount            Float
+  currencyType      CurrencyType
+  status            PromiseStatus @default(PENDING)
+  comprobanteUrl    String?  @db.Text
+  motivoCancelacion String?  @db.Text
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  task              Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  sponsor           User     @relation("Sponsor", fields: [sponsorId], references: [id], onDelete: Cascade)
+
+  @@index([taskId])
+  @@index([sponsorId])
+}
+
+enum CurrencyType {
+  FIAT
+  BERRY
+}
+
+enum PromiseStatus {
+  PENDING
+  PAYMENT_SENT
+  COMPLETED
+  DISPUTED
+  CANCELLED
+}
+
+model AlertaZonal {
+  id             String      @id @default(uuid())
+  emisorId       String
+  hashtag        String
+  gravedad       Int         @default(1)
+  scope          AlertaScope
+  targetLocation String
+  createdAt      DateTime    @default(now())
+  expiresAt      DateTime
+
+  emisor         Tree        @relation(fields: [emisorId], references: [id], onDelete: Cascade)
+
+  @@index([scope, targetLocation])
+  @@index([expiresAt])
+}
+
+enum AlertaScope {
+  PAIS
+  CIUDAD
+  SECTOR
+}
+
+// ── Bolsa de Valores Éticos (Bonus Pool) ──────────────────────────────────────
+// Global per-tree pool of ethical bonus categories. The sum of all percentages
+// always equals exactly MAX_TOTAL_BONUS (100%).
+
+model BonusPool {
+  id                      String   @id @default(uuid())
+  treeId                  String
+  hashtag                 String   // e.g. "%Ecológico", "%Sostenible"
+  puntosImportanciaTotal  Float    @default(0) // sum of all votes (1-10)
+  porcentajeActual        Float    @default(0) // calculated proportional %  (0.0 – 1.0)
+  createdAt               DateTime @default(now())
+  updatedAt               DateTime @updatedAt
+
+  tree  Tree        @relation(fields: [treeId], references: [id], onDelete: Cascade)
+  votes BonusVote[]
+
+  @@unique([treeId, hashtag])
+  @@index([treeId])
+}
+
+model BonusVote {
+  id          String   @id @default(uuid())
+  bonusPoolId String
+  userId      String
+  score       Int      @default(5) // 1 to 10
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  bonusPool BonusPool @relation(fields: [bonusPoolId], references: [id], onDelete: Cascade)
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([bonusPoolId, userId])
+  @@index([bonusPoolId])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Notification
+// ─────────────────────────────────────────────────────────────────────────────
+enum NotificationType {
+  TASK_AUDIT       // Operativa: tarea pendiente de auditoría
+  BUDGET_COMPLETE  // Económica: presupuesto de rama 100%
+  LEVEL_UP         // Mérito: cambio de nivel
+  XP_GAIN          // Mérito: ganancia de XP
+  SKILL_UNLOCK     // Mérito: arroba dorado
+  AVAL_RISK        // Riesgo: candidato avalado en riesgo
+  TASK_ASSIGNED    // Operativa: te asignaron tarea
+  TASK_COMPLETED   // Operativa: tarea completada
+  BRANCH_VOTE      // Flujo: votación de rama
+  GENERAL          // General
+}
+
+enum NotificationCategory {
+  URGENTE  // Auditorías, avales
+  FLUJO    // Dinero, progreso ramas
+  MERITO   // XP, niveles
+}
+
+model Notification {
+  id         String               @id @default(uuid())
+  userId     String
+  type       NotificationType     @default(GENERAL)
+  category   NotificationCategory @default(FLUJO)
+  title      String
+  body       String               @db.Text
+  entityType String?              // 'arbol' | 'necesidad' | 'rama' | 'tarea'
+  entityAction String?            // 'crear' | 'hacer' | 'medir'
+  entityId   String?              // ID of related entity for deep-link
+  isRead     Boolean              @default(false)
+  createdAt  DateTime             @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, isRead])
+  @@index([userId, createdAt])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Protocolo de Migración de Oficio (Skill Interoperability)
+// ─────────────────────────────────────────────────────────────────────────────
+
+enum MigrationStatus {
+  EN_PRUEBA       // Foreign specialist completing 3 trial tasks
+  APROBADO        // Passed — local ESPECIALISTA
+  REPROBADO       // Failed — did not pass trial
+}
+
+// Individual user skill migration attempt between two trees for a specific hashtag
+model SkillMigration {
+  id               String          @id @default(uuid())
+  userId           String
+  hashtag          String          // The skill/arroba being migrated
+  sourceTreeId     String          // Tree where skill was originally certified
+  targetTreeId     String          // Tree where user wants to use skill
+  status           MigrationStatus @default(EN_PRUEBA)
+  tasksCompleted   Int             @default(0)  // 0-3 trial tasks completed successfully
+  tasksFailed      Int             @default(0)  // failed trial tasks
+  autoApproved     Boolean         @default(false) // true if approved via TrustTreaty
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+
+  user       User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  sourceTree Tree @relation("MigrationSource", fields: [sourceTreeId], references: [id], onDelete: Cascade)
+  targetTree Tree @relation("MigrationTarget", fields: [targetTreeId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, hashtag, sourceTreeId, targetTreeId])
+  @@index([targetTreeId, hashtag])
+  @@index([userId, status])
+}
+
+// Trust treaty between two trees for a specific hashtag (mass-critical validation)
+model TrustTreaty {
+  id                    String   @id @default(uuid())
+  sourceTreeId          String   // Tree sending specialists
+  targetTreeId          String   // Tree receiving specialists
+  hashtag               String   // Specific skill hashtag
+  exitosos              Int      @default(0) // successful migrations (max counted: 7 window)
+  totalIntentos         Int      @default(0) // total attempts (max 7 rolling window)
+  activo                Boolean  @default(false) // true when exitosos >= 6 of 7
+  revocadoPorCorrupcion Boolean  @default(false) // true if auto-revoked
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  sourceTree Tree @relation("TreatySource", fields: [sourceTreeId], references: [id], onDelete: Cascade)
+  targetTree Tree @relation("TreatyTarget", fields: [targetTreeId], references: [id], onDelete: Cascade)
+
+  @@unique([sourceTreeId, targetTreeId, hashtag])
+  @@index([targetTreeId, hashtag, activo])
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Intra-tree skill acquisition (Genesis Phase + Maturity Phase)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+enum ProposalStatus {
+  PENDIENTE_AVALES  // Waiting for 3 peer endorsements (Maturity Phase)
+  EN_PRUEBA         // User must complete 7 tasks diff 1-3
+  APROBADO          // Passed trial → skill granted
+  RECHAZADO         // Failed/rejected
+}
+
+model SkillProposal {
+  id              String         @id @default(uuid())
+  userId          String
+  treeId          String
+  hashtag         String         // e.g. "#Diseño"
+  status          ProposalStatus @default(PENDIENTE_AVALES)
+  tasksCompleted  Int            @default(0)  // 0-7 trial tasks completed
+  tasksFailed     Int            @default(0)
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+
+  user         User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  endorsements SkillEndorsement[]
+
+  @@unique([userId, treeId, hashtag])
+  @@index([treeId, hashtag, status])
+}
+
+model SkillEndorsement {
+  id           String   @id @default(uuid())
+  proposalId   String
+  endorserId   String
+  createdAt    DateTime @default(now())
+
+  proposal SkillProposal @relation(fields: [proposalId], references: [id], onDelete: Cascade)
+  endorser User          @relation(fields: [endorserId], references: [id], onDelete: Cascade)
+
+  @@unique([proposalId, endorserId])
+}
+
+// ── Search Pass (30-day paid access for external recruiters) ────────────────
+model SearchPass {
+  id        String   @id @default(uuid())
+  userId    String
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, expiresAt])
+}
+
+// ── Skill-Based XP Accumulation (independent of tree level) ─────────────────
+model UserSkillXP {
+  id                String   @id @default(uuid())
+  userId            String
+  skillTag          String   // the @ / # skill name
+  treeId            String
+  accumulatedPoints Int      @default(0)
+  completedTasks    Int      @default(0)
+  cachedPercentile  Int?     // 0-100, recalculated by cron
+  updatedAt         DateTime @updatedAt
+
+  @@unique([userId, skillTag, treeId])
+  @@index([skillTag, treeId, accumulatedPoints])
+}
+
+// ── Interview Invitations (Recruitment) ─────────────────────────────────────
+enum InvitationStatus {
+  PENDING
+  ACCEPTED
+  REJECTED
+}
+
+model InterviewInvitation {
+  id          String           @id @default(uuid())
+  senderId    String
+  recipientId String
+  message     String           @db.Text
+  status      InvitationStatus @default(PENDING)
+  createdAt   DateTime         @default(now())
+  respondedAt DateTime?
+
+  sender    User @relation("InvitationSender", fields: [senderId], references: [id], onDelete: Cascade)
+  recipient User @relation("InvitationReceiver", fields: [recipientId], references: [id], onDelete: Cascade)
+
+  @@index([recipientId, status])
+  @@index([senderId])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Ideas de Autosustento
+// Propuestas de negocio/servicio externo para financiar al Tree.
+// NO usan Puntos de Necesidad, NO otorgan XP, NO crean transacciones fiat.
+// "Las Ideas de Autosustento no definen prioridades vitales del Tree;
+//  proponen medios para financiarlo en el mundo externo."
+// ─────────────────────────────────────────────────────────────────────────────
+
+enum AutosustentoIdeaStatus {
+  PROPOSED
+  GATHERING_SUPPORT
+  UNDER_REVIEW
+  APPROVED
+  REJECTED
+  CONVERTED_TO_BRANCH
+  ARCHIVED
+}
+
+enum AutosustentoSupportType {
+  LIKE
+  WOULD_PARTICIPATE
+  KNOWS_CLIENTS_OR_WOULD_BUY
+}
+
+model AutosustentoIdea {
+  id                        String                 @id @default(uuid())
+  treeId                    String
+  tree                      Tree                   @relation(fields: [treeId], references: [id], onDelete: Cascade)
+  createdById               String?
+  createdBy                 User?                  @relation("AutosustentoIdeaCreator", fields: [createdById], references: [id], onDelete: SetNull)
+
+  title                     String
+  description               String                 @db.Text
+  status                    AutosustentoIdeaStatus @default(PROPOSED)
+
+  productOrService          String?
+  targetClient              String?                @db.Text
+  valueProposition          String?                @db.Text
+  requiredResources         String?                @db.Text
+
+  estimatedStartupCostFiat  Float?
+  expectedMonthlyIncomeFiat Float?
+  expectedMonthlyCostFiat   Float?
+  currency                  String?                @default("CLP")
+
+  legalRisks                String?                @db.Text
+  operationalRisks          String?                @db.Text
+  socialRisks               String?                @db.Text
+
+  viabilitySummary          String?                @db.Text
+  closureCriteria           String?                @db.Text
+  reviewPeriodDays          Int?                   @default(90)
+
+  convertedBranchId         String?
+  convertedAt               DateTime?
+  convertedById             String?
+
+  metadataJson              Json?
+
+  createdAt                 DateTime               @default(now())
+  updatedAt                 DateTime               @updatedAt
+
+  supports                  AutosustentoIdeaSupport[]
+
+  @@index([treeId])
+  @@index([createdById])
+  @@index([status])
+  @@index([createdAt])
+}
+
+model AutosustentoIdeaSupport {
+  id          String                  @id @default(uuid())
+  ideaId      String
+  idea        AutosustentoIdea        @relation(fields: [ideaId], references: [id], onDelete: Cascade)
+  userId      String
+  user        User                    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  supportType AutosustentoSupportType
+  createdAt   DateTime                @default(now())
+  updatedAt   DateTime                @updatedAt
+
+  @@unique([ideaId, userId, supportType])
+  @@index([ideaId])
+  @@index([userId])
+  @@index([supportType])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Excedente de Sostenibilidad — Sustainability Cycles
+// Snapshot periódico del resultado financiero de una Rama de Autosustento.
+// NO otorga XP, nivel, votos, autoridad ni Berries.
+// "El fiat puede financiar recursos, pero no comprar autoridad."
+// ─────────────────────────────────────────────────────────────────────────────
+
+enum SustainabilityCycleStatus {
+  DRAFT
+  CALCULATED
+  REVIEWED
+  APPROVED
+  LOCKED
+}
+
+enum SustainabilityAllocationType {
+  RESERVE
+  MAINTENANCE
+  TREE_FUND
+  REINVESTMENT
+  OTHER
+}
+
+model SustainabilityCycle {
+  id                 String                   @id @default(uuid())
+  treeId             String
+  tree               Tree                     @relation(fields: [treeId], references: [id], onDelete: Cascade)
+  branchId           String
+  branch             Branch                   @relation(fields: [branchId], references: [id], onDelete: Cascade)
+
+  periodStart        DateTime
+  periodEnd          DateTime
+  currency           String                   @default("CLP")
+
+  // Aggregated from FiatTransactions
+  totalIncomeFiat    Float                    @default(0)
+  totalExpenseFiat   Float                    @default(0)
+  totalInvestmentFiat Float                   @default(0)
+  netFiat            Float                    @default(0)
+  surplusFiat        Float                    @default(0)
+  deficitFiat        Float                    @default(0)
+  marginPct          Float                    @default(0)
+
+  // Expense breakdown by category (mapped from TransactionCategory)
+  materialsFiat      Float                    @default(0)
+  laborFiat          Float                    @default(0)
+  operationsFiat     Float                    @default(0)
+  taxFiat            Float                    @default(0)
+  reserveFiat        Float                    @default(0)
+  maintenanceFiat    Float                    @default(0)
+  reinvestmentFiat   Float                    @default(0)
+  otherFiat          Float                    @default(0)
+
+  // Suggested allocation from surplus (based on SustainabilitySplit)
+  treeFundFiat       Float                    @default(0)
+
+  // Verification quality
+  transactionsCount  Int                      @default(0)
+  verifiedAmountFiat Float                    @default(0)
+  includeOnlyVerified Boolean                 @default(false)
+  multiCurrencyWarning Boolean                @default(false)
+
+  status             SustainabilityCycleStatus @default(DRAFT)
+  calculatedAt       DateTime?
+  approvedAt         DateTime?
+  approvedById       String?
+  lockedAt           DateTime?
+  lockedById         String?
+
+  notes              String?                  @db.Text
+  metadataJson       Json?
+
+  createdAt          DateTime                 @default(now())
+  updatedAt          DateTime                 @updatedAt
+
+  allocations        SustainabilityAllocation[]
+
+  @@index([treeId])
+  @@index([branchId])
+  @@index([status])
+  @@index([periodStart, periodEnd])
+  @@index([createdAt])
+}
+
+model SustainabilityAllocation {
+  id          String                       @id @default(uuid())
+  cycleId     String
+  cycle       SustainabilityCycle          @relation(fields: [cycleId], references: [id], onDelete: Cascade)
+  type        SustainabilityAllocationType
+  amountFiat  Float
+  currency    String                       @default("CLP")
+  notes       String?                      @db.Text
+  createdAt   DateTime                     @default(now())
+  updatedAt   DateTime                     @updatedAt
+
+  @@index([cycleId])
+  @@index([type])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Berries — circulación interna del Tree
+// El fiat no compra Berries. Las Berries no compran XP, votos ni autoridad.
+// Reducción mensual: 10% sobre saldo al inicio del ciclo. El 10% se destruye.
+// ─────────────────────────────────────────────────────────────────────────────
+
+enum BerryTransactionType {
+  TASK_REWARD
+  AUDIT_REWARD
+  LEVEL_REWARD
+  P2P_TRANSFER_IN
+  P2P_TRANSFER_OUT
+  MONTHLY_FLOW_LOSS
+  ADJUSTMENT
+  REVERSAL
+}
+
+enum BerryCycleStatus {
+  RUNNING
+  COMPLETED
+  FAILED
+}
+
+model BerryConfig {
+  id                  String   @id @default(uuid())
+  treeId              String   @unique
+  tree                Tree     @relation(fields: [treeId], references: [id], onDelete: Cascade)
+  berriesEnabled      Boolean  @default(false)
+  monthlyFlowRate     Float    @default(0.10)
+  monthlyFlowDay      Int      @default(1)
+  allowP2PTransfers   Boolean  @default(false)
+  allowTaskRewards    Boolean  @default(true)
+  allowAuditRewards   Boolean  @default(true)
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  @@index([treeId])
+}
+
+model BerryTransaction {
+  id            String               @id @default(uuid())
+  treeId        String
+  tree          Tree                 @relation(fields: [treeId], references: [id], onDelete: Cascade)
+  userId        String?
+  user          User?                @relation(fields: [userId], references: [id], onDelete: SetNull)
+  fromUserId    String?
+  toUserId      String?
+  type          BerryTransactionType
+  amount        Float
+  balanceBefore Float?
+  balanceAfter  Float?
+  cycleKey      String?
+  sourceType    String?
+  sourceId      String?
+  description   String?              @db.Text
+  metadataJson  Json?
+  createdAt     DateTime             @default(now())
+
+  @@index([treeId])
+  @@index([userId])
+  @@index([type])
+  @@index([cycleKey])
+  @@index([createdAt])
+}
+
+model BerryMonthlyCycle {
+  id             String           @id @default(uuid())
+  treeId         String
+  tree           Tree             @relation(fields: [treeId], references: [id], onDelete: Cascade)
+  cycleKey       String
+  startedAt      DateTime         @default(now())
+  completedAt    DateTime?
+  status         BerryCycleStatus @default(RUNNING)
+  usersProcessed Int              @default(0)
+  totalDestroyed Float            @default(0)
+  metadataJson   Json?
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+
+  @@unique([treeId, cycleKey])
+  @@index([treeId])
+  @@index([cycleKey])
+  @@index([status])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Trust Insight
+// Escalamiento de necesidades persistentes no resueltas.
+// "Primero resolver internamente; luego atraer personas externas;
+//  solo finalmente derivar a empresas externas."
+// NO otorga XP. NO crea pagos fiat. NO emite Berries.
+// NO expone datos personales.
+// ─────────────────────────────────────────────────────────────────────────────
+
+enum InsightSourceType {
+  INTERNAL_NEED
+  EXTERNAL_NEED
+  BRANCH
+  SOLUTION_PROPOSAL
+  TASK_PATTERN
+  MANUAL
+}
+
+enum InsightSignalStatus {
+  DRAFT
+  ACTIVE
+  INTERNAL_SEARCH
+  INTERNAL_SOLUTION_FOUND
+  EXTERNAL_PEOPLE_OPEN
+  EXTERNAL_PEOPLE_IN_REVIEW
+  EXTERNAL_PEOPLE_FAILED
+  CORPORATE_REFERRAL_OPEN
+  CORPORATE_REFERRAL_SELECTED
+  RESOLVED
+  CANCELLED
+  ARCHIVED
+}
+
+enum InsightEscalationLevel {
+  INTERNAL_TRUST
+  EXTERNAL_PEOPLE
+  EXTERNAL_COMPANY
+}
+
+enum InsightVisibility {
+  PRIVATE
+  TREE_ONLY
+  TRUST_NETWORK
+  PUBLIC_METADATA
+  PUBLIC_OPENING
+}
+
+enum InternalMatchType {
+  USER
+  BRANCH
+  TREE
+  AUTOSUSTENTO_BRANCH
+  PREVIOUS_TASK
+  SOLUTION
+}
+
+enum InternalMatchStatus {
+  SUGGESTED
+  CONTACTED
+  ACCEPTED
+  DECLINED
+  INSUFFICIENT_CAPACITY
+  SELECTED
+}
+
+enum ExternalOpeningStatus {
+  DRAFT
+  INTERNAL_REVIEW
+  OPEN
+  PAUSED
+  CLOSED
+  ENOUGH_CANDIDATES
+  NOT_ENOUGH_CANDIDATES
+  CANCELLED
+  CONVERTED_TO_VALIDATION
+  ARCHIVED
+}
+
+enum ExternalApplicationStatus {
+  RECEIVED
+  BASIC_REVIEW
+  MORE_INFO_REQUESTED
+  INVITED_TO_VALIDATION
+  REJECTED
+  WITHDRAWN
+  ACCEPTED_FOR_NEXT_STEP
+  CONVERTED_TO_USER
+  ARCHIVED
+}
+
+enum ExternalWorkMode {
+  REMOTE_ONLY
+  ON_SITE_ONLY
+  HYBRID
+  REMOTE_ALLOWED
+}
+
+enum ExternalPaymentMode {
+  FIAT
+  BERRIES
+  MIXED
+  UNPAID_VOLUNTEER
+}
+
+enum OpeningUrgencyLevel {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+enum OpeningRiskLevel {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+enum ExternalOpeningVisibility {
+  PRIVATE
+  TREE_ONLY
+  TRUST_NETWORK
+  PUBLIC_METADATA
+  PUBLIC_APPLICATION
+}
+
+enum CorporateReferralStatus {
+  DRAFT
+  OPEN
+  CONTACTED
+  PROPOSAL_RECEIVED
+  SELECTED
+  REJECTED
+  CANCELLED
+}
+
+model InsightSignal {
+  id                   String                 @id @default(uuid())
+
+  treeId               String
+  tree                 Tree                   @relation(fields: [treeId], references: [id], onDelete: Cascade)
+
+  sourceType           InsightSourceType      @default(MANUAL)
+  // String refs to source records — no formal FK to avoid coupling existing models
+  sourceNeedId         String?
+  sourceExternalNeedId String?
+  sourceBranchId       String?
+  sourceSolutionId     String?
+
+  createdById          String?
+  createdBy            User?                  @relation("InsightSignalCreator", fields: [createdById], references: [id], onDelete: SetNull)
+
+  title                String
+  description          String                 @db.Text
+
+  status               InsightSignalStatus    @default(DRAFT)
+  escalationLevel      InsightEscalationLevel @default(INTERNAL_TRUST)
+  visibility           InsightVisibility      @default(TREE_ONLY)
+
+  persistenceScore     Float?
+  capacityGapScore     Float?
+  urgencyScore         Float?
+  strategicValueScore  Float?
+
+  requiredSkillTags    Json?
+  requiredResources    String?                @db.Text
+  locationText         String?
+  remoteAllowed        Boolean                @default(true)
+
+  budgetFiatMin        Float?
+  budgetFiatExpected   Float?
+  budgetFiatMax        Float?
+  currency             String?                @default("CLP")
+
+  estimatedBerries     Int?
+
+  internalSearchStartedAt  DateTime?
+  internalSearchEndedAt    DateTime?
+  externalPeopleOpenedAt   DateTime?
+  externalPeopleClosedAt   DateTime?
+  corporateOpenedAt        DateTime?
+  corporateClosedAt        DateTime?
+
+  resolutionNotes      String?                @db.Text
+  metadataJson         Json?
+
+  createdAt            DateTime               @default(now())
+  updatedAt            DateTime               @updatedAt
+
+  internalMatches      InsightInternalMatch[]
+  externalOpenings     InsightExternalOpening[]
+  corporateReferrals   InsightCorporateReferral[]
+
+  @@index([treeId])
+  @@index([status])
+  @@index([escalationLevel])
+  @@index([sourceType])
+  @@index([createdAt])
+}
+
+model InsightInternalMatch {
+  id                String              @id @default(uuid())
+
+  insightSignalId   String
+  insightSignal     InsightSignal       @relation(fields: [insightSignalId], references: [id], onDelete: Cascade)
+
+  userId            String?
+  user              User?               @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  branchId          String?
+  treeId            String?
+
+  matchType         InternalMatchType
+  matchScore        Float?
+
+  skillTags         Json?
+  evidenceSummary   String?             @db.Text
+  availabilityNote  String?             @db.Text
+
+  status            InternalMatchStatus @default(SUGGESTED)
+
+  createdAt         DateTime            @default(now())
+  updatedAt         DateTime            @updatedAt
+
+  @@index([insightSignalId])
+  @@index([userId])
+  @@index([branchId])
+  @@index([status])
+}
+
+model InsightExternalOpening {
+  id                     String                     @id @default(uuid())
+
+  insightSignalId        String
+  insightSignal          InsightSignal              @relation(fields: [insightSignalId], references: [id], onDelete: Cascade)
+
+  treeId                 String?
+  tree                   Tree?                      @relation("TreeExternalOpenings", fields: [treeId], references: [id], onDelete: Cascade)
+
+  createdById            String?
+  createdBy              User?                      @relation("OpeningCreator", fields: [createdById], references: [id], onDelete: SetNull)
+
+  title                  String
+  summary                String?                    @db.Text
+  description            String                     @db.Text
+
+  status                 ExternalOpeningStatus      @default(DRAFT)
+
+  requiredSkillTags      Json?
+  adjacentSkillTags      Json?
+  desiredExperience      String?                    @db.Text
+  desiredEvidence        String?                    @db.Text
+  practicalTestNote      String?                    @db.Text
+
+  workMode               ExternalWorkMode           @default(REMOTE_ALLOWED)
+  remoteAllowed          Boolean                    @default(true)
+  locationText           String?
+
+  paymentMode            ExternalPaymentMode        @default(FIAT)
+  paymentFiatMin         Float?
+  paymentFiatExpected    Float?
+  paymentFiatMax         Float?
+  currency               String?                    @default("CLP")
+  paymentBerries         Int?
+  paymentBerriesMin      Int?
+  paymentBerriesExpected Int?
+  paymentBerriesMax      Int?
+
+  estimatedDurationDays  Int?
+  estimatedHours         Int?
+
+  urgencyLevel           OpeningUrgencyLevel        @default(MEDIUM)
+  riskLevel              OpeningRiskLevel           @default(MEDIUM)
+
+  applicationDeadline    DateTime?
+  maxCandidates          Int?
+  minCandidatesNeeded    Int?                       @default(1)
+
+  publicVisibility       ExternalOpeningVisibility  @default(TRUST_NETWORK)
+  externalShareToken     String?                    @unique
+
+  openedAt               DateTime?
+  closedAt               DateTime?
+  cancelledAt            DateTime?
+
+  metadataJson           Json?
+
+  createdAt              DateTime                   @default(now())
+  updatedAt              DateTime                   @updatedAt
+
+  applications           InsightExternalApplication[]
+
+  @@index([insightSignalId])
+  @@index([treeId])
+  @@index([status])
+  @@index([createdById])
+  @@index([openedAt])
+  @@index([applicationDeadline])
+}
+
+model InsightExternalApplication {
+  id                    String                    @id @default(uuid())
+
+  openingId             String
+  opening               InsightExternalOpening    @relation(fields: [openingId], references: [id], onDelete: Cascade)
+
+  insightSignalId       String?
+  treeId                String?
+
+  applicantName         String
+  applicantEmail        String?
+  applicantPhone        String?
+  applicantLocation     String?
+
+  applicantSummary      String?                   @db.Text
+  motivation            String?                   @db.Text
+  experienceSummary     String?                   @db.Text
+
+  portfolioUrl          String?
+  externalProfileUrl    String?
+  evidenceNote          String?                   @db.Text
+  skillTags             Json?
+
+  requestedFiat         Float?
+  requestedBerries      Int?
+  currency              String?                   @default("CLP")
+
+  availabilityNote      String?
+  earliestStartDate     DateTime?
+
+  status                ExternalApplicationStatus @default(RECEIVED)
+
+  privacyConsent        Boolean                   @default(false)
+  termsAccepted         Boolean                   @default(false)
+
+  linkedUserId          String?
+  linkedUser            User?                     @relation(fields: [linkedUserId], references: [id], onDelete: SetNull)
+
+  evidenceFileId        String?
+  evidenceFile          EvidenceFile?             @relation(fields: [evidenceFileId], references: [id], onDelete: SetNull)
+
+  reviewedById          String?
+  reviewedAt            DateTime?
+  reviewNotes           String?                   @db.Text
+
+  invitedToValidationAt DateTime?
+  rejectedAt            DateTime?
+  rejectionReason       String?                   @db.Text
+
+  metadataJson          Json?
+
+  createdAt             DateTime                  @default(now())
+  updatedAt             DateTime                  @updatedAt
+
+  @@index([openingId])
+  @@index([insightSignalId])
+  @@index([treeId])
+  @@index([status])
+  @@index([linkedUserId])
+  @@index([applicantEmail])
+  @@index([createdAt])
+}
+
+model InsightCorporateReferral {
+  id                  String                  @id @default(uuid())
+
+  insightSignalId     String
+  insightSignal       InsightSignal           @relation(fields: [insightSignalId], references: [id], onDelete: Cascade)
+
+  providerName        String
+  providerContact     String?
+  providerWebsite     String?
+
+  status              CorporateReferralStatus @default(DRAFT)
+
+  reasonForEscalation String?                 @db.Text
+  expectedScope       String?                 @db.Text
+
+  estimatedFiatMin    Float?
+  estimatedFiatMax    Float?
+  currency            String?                 @default("CLP")
+
+  selectedAt          DateTime?
+  notes               String?                 @db.Text
+  metadataJson        Json?
+
+  createdAt           DateTime                @default(now())
+  updatedAt           DateTime                @updatedAt
+
+  @@index([insightSignalId])
+  @@index([status])
+}
+
+// ── Expert Endorsement ───────────────────────────────────────────────────────
+
+enum ExpertEndorsementStatus {
+  ACTIVE
+  SUCCESS
+  FAILED_PERFORMANCE
+  FAILED_FRAUD
+}
+
+model ExpertEndorsement {
+  id                   String                   @id @default(uuid())
+  treeId               String
+  tree                 Tree                     @relation(fields: [treeId], references: [id], onDelete: Cascade)
+  endorserId           String
+  endorser             TreeMember               @relation("EndorsementsGiven", fields: [endorserId], references: [id], onDelete: Cascade)
+  endorsedId           String
+  endorsed             TreeMember               @relation("EndorsementsReceived", fields: [endorsedId], references: [id], onDelete: Cascade)
+  expertise            String
+  status               ExpertEndorsementStatus  @default(ACTIVE)
+  requiredTasks        Int                      @default(3)
+  completedTasks       Int                      @default(0)
+  satisfactionThreshold Float                   @default(80)
+  avgSatisfaction      Float?
+  boostApplied         Boolean                  @default(true)
+  evidenceTaskIds      String                   @default("[]") @db.Text
+  createdAt            DateTime                 @default(now())
+  resolvedAt           DateTime?
+  resolvedById         String?
+  resolvedBy           User?                    @relation("EndorsementResolver", fields: [resolvedById], references: [id], onDelete: SetNull)
+  resolutionNote       String?                  @db.Text
+
+  @@index([endorserId, endorsedId, treeId, expertise])
+  @@index([treeId, endorserId, status])
+  @@index([treeId, endorsedId, status])
+  @@index([treeId, expertise, status])
+}

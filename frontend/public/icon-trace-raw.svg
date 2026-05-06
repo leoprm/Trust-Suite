@@ -1,0 +1,39 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <rect width="512" height="512" fill="#10111f"/>
+
+  <!-- Concentric trace arcs - fingerprint/audit trail pattern -->
+
+  <!-- Outermost ring: arc from top-right around to bottom-left (gap top-left) -->
+  <path d="M 370 180 A 140 140 0 1 1 160 380"
+        fill="none" stroke="#fbbf24" stroke-width="16" stroke-linecap="round"/>
+
+  <!-- Second ring: arc from bottom around to top-right (gap bottom-left) -->
+  <path d="M 180 380 A 110 110 0 1 0 370 190"
+        fill="none" stroke="#fbbf24" stroke-width="16" stroke-linecap="round"/>
+
+  <!-- Third ring: arc from top-left around to bottom-right (gap top-right) -->
+  <path d="M 160 200 A 80 80 0 1 1 340 340"
+        fill="none" stroke="#fbbf24" stroke-width="14" stroke-linecap="round"/>
+
+  <!-- Fourth ring: arc from bottom around to top -->
+  <path d="M 200 340 A 52 52 0 1 0 310 220"
+        fill="none" stroke="#fbbf24" stroke-width="14" stroke-linecap="round"/>
+
+  <!-- Inner trace: tight arc -->
+  <path d="M 220 280 A 30 30 0 0 1 290 240"
+        fill="none" stroke="#fbbf24" stroke-width="12" stroke-linecap="round"/>
+
+  <!-- Verification dots at arc endpoints for "audit trail" feel -->
+  <circle cx="370" cy="180" r="10" fill="#fbbf24"/>
+  <circle cx="160" cy="380" r="10" fill="#fbbf24"/>
+  <circle cx="370" cy="190" r="10" fill="#fbbf24"/>
+  <circle cx="180" cy="380" r="10" fill="#fbbf24"/>
+  <circle cx="340" cy="340" r="8" fill="#fbbf24"/>
+  <circle cx="160" cy="200" r="8" fill="#fbbf24"/>
+  <circle cx="310" cy="220" r="8" fill="#fbbf24"/>
+  <circle cx="200" cy="340" r="8" fill="#fbbf24"/>
+
+  <!-- Center verification mark (check-like element) -->
+  <polyline points="240,260 255,275 278,248"
+            fill="none" stroke="#fbbf24" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>
