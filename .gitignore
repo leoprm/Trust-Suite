@@ -6,8 +6,12 @@ uploads/*
 backend/uploads/*
 !backend/uploads/.gitkeep
 *.log
-*.txt
 .env.bak*
+backend_*.txt
+tsc_*.txt
+prisma_*.txt
+frontend_*.txt
+build_*.txt
 .DS_Store
 backend_debug_*
 backend_error*

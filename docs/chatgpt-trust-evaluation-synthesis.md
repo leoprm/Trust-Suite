@@ -1,6 +1,6 @@
 # Síntesis de conversación previa — Evaluación y evolución de Trust Suite
 
-Fuente: `/home/leo/.hermes/cache/documents/doc_d42456259958_ChatGPT-Evaluación sistema Trust.md`  
+Fuente: ChatGPT-Evaluación sistema Trust  
 Propósito: convertir la conversación previa con otra IA en contexto técnico accionable para el desarrollo de **Trust Suite**.
 
 > Este documento no reemplaza `trust-adn-implementation-context.md`. Ese archivo resume la visión constitucional de Trust ADN. Este resume la evolución práctica/producto discutida en la conversación: qué quedó vigente, qué quedó obsoleto, qué módulos se definieron y qué falta implementar/verificar.
