@@ -18,6 +18,7 @@ backend_error*
 backend_start*
 backend_full*
 backend_log*
+PENDIENTES.md
 crash*
 diag*
 err*

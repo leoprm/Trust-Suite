@@ -70,80 +70,213 @@ async function createInvestigationTask(branchId: string, idea: any, treeId?: str
   return task;
 }
 
-// Check if >60% tree members liked any idea → promote need to Branch
-async function checkAndPromoteNeed(needId: string) {
-  const need = await prisma.need.findUnique({
-    where: { id: needId },
-    include: {
-      treeLinks: true,
-      ideas: {
-        include: { likes: true },
-        orderBy: { likesCount: 'desc' }
+// ── Weighted vote calculation ────────────────────────────────────────────────
+
+/**
+ * Calculate the weight of a like on an idea.
+ * weight = influence(skill) × concentrationMultiplier
+ * - influence: from SkillInfluence table (20%–80% based on guild difficulty)
+ * - concentrationMultiplier: ×2 if user put >85% of weekly points in this need
+ */
+async function calculateVoteWeight(userId: string, idea: any, treeIds: string[]): Promise<number> {
+  // Default weight if no influence data
+  let influenceWeight = 0.2; // minimum 20%
+
+  // Get skill tags from the idea
+  let requiredSkills: string[] = [];
+  try { requiredSkills = JSON.parse(idea.requiredSkills || '[]'); } catch {}
+
+  // Get the best influence across all tree+skill combinations
+  for (const treeId of treeIds) {
+    for (const skill of requiredSkills) {
+      try {
+        const record = await (prisma as any).skillInfluence.findUnique({
+          where: { treeId_skillTag: { treeId, skillTag: skill } },
+          select: { finalInfluence: true },
+        });
+        if (record && record.finalInfluence > influenceWeight) {
+          influenceWeight = record.finalInfluence;
+        }
+      } catch {}
+    }
+  }
+
+  // Normalize: divide by 100 to get multiplier (20% → 0.2, 80% → 0.8)
+  const influenceMultiplier = influenceWeight / 100;
+
+  // Check concentration: user put >85% of weekly points in this need?
+  let concentrationMultiplier = 1;
+  try {
+    const needId = idea.needId;
+    const userFundings = await prisma.needFunding.findMany({
+      where: { userId },
+      include: { need: { select: { id: true, status: true } } },
+    });
+
+    if (userFundings.length > 0) {
+      let total = 0;
+      let inThisNeed = 0;
+      for (const f of userFundings) {
+        total += f.points;
+        if (f.needId === needId && f.need.status === 'ACTIVE') {
+          inThisNeed += f.points;
+        }
+      }
+      if (total > 0 && inThisNeed / total >= 0.85) {
+        concentrationMultiplier = 2;
       }
     }
+  } catch {}
+
+  const weight = Math.round(influenceMultiplier * concentrationMultiplier * 100) / 100;
+  return weight;
+}
+
+// ── Podium-based promotion ──────────────────────────────────────────────────
+
+/**
+ * Podium model: promote top idea if it has >50% of the top 3's total likes.
+ * Only runs if relevanceThresholdMet AND quorumMet are both true.
+ */
+async function promoteByPodium(needId: string): Promise<boolean> {
+  const need = await prisma.need.findUnique({
+    where: { id: needId },
+    select: {
+      status: true,
+      relevanceThresholdMet: true,
+      quorumMet: true,
+      ideas: {
+        orderBy: { likesCount: 'desc' },
+        take: 3,
+        select: { id: true, likesCount: true, creatorId: true, title: true, proposedPhasesJson: true },
+      },
+      treeLinks: { select: { treeId: true } },
+      totalPointsAssigned: true,
+      failedAttempts: true,
+    },
   });
 
-  if (!need || need.status !== 'ACTIVE') return;
+  if (!need || need.status !== 'ACTIVE') return false;
+  if (!need.relevanceThresholdMet || !need.quorumMet) return false;
 
-  const treeIds = need.treeLinks.map((tl: any) => tl.treeId);
-  const allMembers = await prisma.treeMember.findMany({
-    where: { treeId: { in: treeIds } },
-    select: { userId: true }
-  });
-  const uniqueMemberIds = new Set(allMembers.map((m: any) => m.userId));
-  const totalMembers = uniqueMemberIds.size;
-  if (totalMembers === 0) return;
+  const top3 = need.ideas;
+  if (top3.length === 0) return false;
 
-  const allLikes = need.ideas.flatMap((idea: any) => idea.likes.map((l: any) => l.userId));
-  const uniqueLikers = new Set(allLikes);
-  if (uniqueLikers.size / totalMembers <= 0.6) return;
+  // 1 idea → auto-promote
+  if (top3.length === 1) {
+    await promoteIdeaToBranch(needId, top3, need);
+    return true;
+  }
 
-  // --- PROMOTION ---
-  const top3 = need.ideas.slice(0, 3);
-  const top1 = top3[0];
-  if (!top1) return;
+  // Calculate top 3 total
+  const top3Total = top3.reduce((sum, i) => sum + i.likesCount, 0);
+  if (top3Total === 0) return false;
 
-  const xpReward = need.totalPointsAssigned * Math.max(need.failedAttempts, 1);
+  // Top idea needs >50% of top 3 total
+  const topRatio = top3[0].likesCount / top3Total;
+  if (topRatio > 0.5) {
+    await promoteIdeaToBranch(needId, top3, need);
+    return true;
+  }
+
+  return false;
+}
+
+async function promoteIdeaToBranch(needId: string, top3: any[], need: any) {
   const treeId = need.treeLinks?.[0]?.treeId;
+  const xpReward = need.totalPointsAssigned * Math.max(need.failedAttempts || 1, 1);
 
+  // Award XP to top 3 creators
   for (const idea of top3) {
     if (treeId) {
       await prisma.treeMember.updateMany({
         where: { userId: idea.creatorId, treeId },
-        data: { xp: { increment: xpReward } }
+        data: { xp: { increment: xpReward } },
       });
     }
   }
 
-  let branch = await prisma.branch.findUnique({ where: { ideaId: top1.id } });
-    if (!branch) {
-      branch = await prisma.branch.create({
-        data: { 
-        ideaId: top1.id, 
-        xpPool: xpReward, 
-        isDesire: false, 
+  const topIdea = top3[0];
+  let branch = await prisma.branch.findUnique({ where: { ideaId: topIdea.id } });
+  if (!branch) {
+    branch = await prisma.branch.create({
+      data: {
+        ideaId: topIdea.id,
+        xpPool: xpReward,
+        isDesire: false,
         bayasFund: 0,
-        activePhasesJson: top1.proposedPhasesJson 
-      }
-      });
-      // Auto-create Investigation task
-      await createInvestigationTask(branch.id, top1);
-      void logEvent({
-        treeId: treeId ?? null,
-        actorId: top1.creatorId,
-        action: 'BRANCH_CREATED',
-        entityType: 'Branch',
-        entityId: branch.id,
-        afterJson: { id: branch.id, ideaId: top1.id, xpPool: branch.xpPool },
-        metadataJson: { via: 'need_promotion', needId },
-        source: 'SYSTEM',
-      });
-    }
+        activePhasesJson: topIdea.proposedPhasesJson || '["INVESTIGATION"]',
+      },
+    });
+    // Auto-create Investigation task
+    await createInvestigationTask(branch.id, topIdea, treeId);
+    void logEvent({
+      treeId: treeId ?? null,
+      actorId: topIdea.creatorId,
+      action: 'BRANCH_CREATED',
+      entityType: 'Branch',
+      entityId: branch.id,
+      afterJson: { id: branch.id, ideaId: topIdea.id, xpPool: branch.xpPool },
+      metadataJson: { via: 'podium_promotion', needId, topRatio: top3[0].likesCount / top3.reduce((s,i) => s + i.likesCount, 0) },
+      source: 'SYSTEM',
+    });
+  }
 
   await prisma.need.update({
     where: { id: needId },
-    data: { status: 'IN_PROGRESS' }
+    data: { status: 'IN_PROGRESS' },
   });
+}
+
+// Check if 60% of affected people (funders) have liked at least 1 idea
+async function checkQuorum(needId: string) {
+  try {
+    const need = await prisma.need.findUnique({
+      where: { id: needId },
+      select: { quorumMet: true, relevanceThresholdMet: true },
+    });
+    if (!need || need.quorumMet || !need.relevanceThresholdMet) return;
+
+    // Get all unique funders of this need
+    const fundings = await prisma.needFunding.findMany({
+      where: { needId },
+      select: { userId: true },
+    });
+    const funderIds = [...new Set(fundings.map(f => f.userId))];
+    if (funderIds.length === 0) return;
+
+    // Count how many funders have liked at least 1 idea for this need
+    const ideas = await prisma.idea.findMany({
+      where: { needId },
+      include: { likes: { select: { userId: true } } },
+    });
+
+    const likerIds = new Set<string>();
+    for (const idea of ideas) {
+      for (const like of idea.likes) {
+        likerIds.add(like.userId);
+      }
+    }
+
+    // Intersection: funders who liked
+    const fundersWhoVoted = funderIds.filter(fid => likerIds.has(fid));
+    const ratio = fundersWhoVoted.length / funderIds.length;
+
+    if (ratio >= 0.6) {
+      await prisma.need.update({
+        where: { id: needId },
+        data: { quorumMet: true },
+      });
+      console.log(`[Quorum] Need ${needId}: ${fundersWhoVoted.length}/${funderIds.length} funders voted (${(ratio*100).toFixed(0)}%) — quorum met`);
+    }
+  } catch (err) {
+    console.error('[Quorum] checkQuorum error:', err);
+  }
+}
+
+// Promote need → branch using the podium model (thresholds + top 3 >50%)
+async function checkAndPromoteNeed(needId: string) {
+  await promoteByPodium(needId);
 }
 
 export const createIdea = async (req: any, res: Response) => {
@@ -300,21 +433,29 @@ export const toggleLikeIdea = async (req: any, res: Response) => {
     });
 
     if (existing) {
+      const removedWeight = existing.weight || 1;
       await prisma.ideaLike.delete({ where: { id: existing.id } });
-      await prisma.idea.update({ where: { id }, data: { likesCount: { decrement: 1 } } });
+      await prisma.idea.update({ where: { id }, data: { likesCount: { decrement: removedWeight } } });
       void logEvent({
         ...getRequestContext(req),
         treeId: treeIds[0] ?? null,
         action: 'IDEA_VOTED',
         entityType: 'Idea',
         entityId: id,
-        metadataJson: getRequestMetadata(req, { vote: 'removed', result: 'success' }),
+        metadataJson: getRequestMetadata(req, { vote: 'removed', weight: removedWeight, result: 'success' }),
         source: 'USER',
       });
       return res.json({ message: 'Idea unliked', promoted: false });
     } else {
-      await prisma.ideaLike.create({ data: { ideaId: id, userId } });
-      await prisma.idea.update({ where: { id }, data: { likesCount: { increment: 1 } } });
+      // ── Calculate weighted like ────────────────────────────────────────
+      const voteWeight = await calculateVoteWeight(userId, idea, treeIds);
+
+      await prisma.ideaLike.create({ data: { ideaId: id, userId, weight: voteWeight } });
+      await prisma.idea.update({ where: { id }, data: { likesCount: { increment: voteWeight } } });
+
+      // ── Quorum check ──────────────────────────────────────────────────
+      await checkQuorum(idea.needId);
+
       await checkAndPromoteNeed(idea.needId);
       const updatedNeed = await prisma.need.findUnique({ where: { id: idea.needId }, select: { status: true } });
       void logEvent({

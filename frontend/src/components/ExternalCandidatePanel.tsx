@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { UserCheck, UserX, Search, ArrowRight, Clock } from 'lucide-react';
+import { UserCheck, UserX, Search, ArrowRight, Clock, Trees } from 'lucide-react';
 import api from '../lib/api';
 
 type Candidate = {
@@ -17,6 +17,16 @@ type Candidate = {
   provisionalAt?: string;
 };
 
+type EvaluatorInfo = {
+  userId: string;
+  username: string;
+  matchType: string;
+  skillTag: string;
+  level: number;
+  treeId: string;
+  treeName: string;
+};
+
 const STATUS_LABELS: Record<string, { label: string; color: string }> = {
   APPLIED: { label: 'Aplicó', color: '#60a5fa' },
   UNDER_REVIEW: { label: 'En revisión', color: '#fbbf24' },
@@ -31,6 +41,7 @@ export default function ExternalCandidatePanel({ treeId }: { treeId: string }) {
   const [candidates, setCandidates] = useState<Candidate[]>([]);
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState<Candidate | null>(null);
+  const [selectedEvaluators, setSelectedEvaluators] = useState<EvaluatorInfo[]>([]);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -51,11 +62,15 @@ export default function ExternalCandidatePanel({ treeId }: { treeId: string }) {
     setActionLoading(id);
     setError(null);
     try {
-      await api.post(`/external-candidates/${id}/${action}`, body || {});
+      const { data } = await api.post(`/external-candidates/${id}/${action}`, body || {});
       await fetchCandidates();
       if (selected?.id === id) {
-        const { data } = await api.get(`/external-candidates/${id}`);
-        setSelected(data);
+        const { data: detail } = await api.get(`/external-candidates/${id}`);
+        setSelected(detail);
+        // Capture evaluators from assign response
+        if (action === 'assign-evaluators' && data.evaluators) {
+          setSelectedEvaluators(data.evaluators);
+        }
       }
     } catch (e: any) {
       setError(e?.response?.data?.error || 'Error en la acción');
@@ -100,7 +115,15 @@ export default function ExternalCandidatePanel({ treeId }: { treeId: string }) {
                   border: `1px solid ${selected?.id === c.id ? 'rgba(59,130,246,0.3)' : 'rgba(255,255,255,0.06)'}`,
                   cursor: 'pointer',
                 }}
-                onClick={() => setSelected(selected?.id === c.id ? null : c)}
+                onClick={() => {
+                  if (selected?.id === c.id) {
+                    setSelected(null);
+                    setSelectedEvaluators([]);
+                  } else {
+                    setSelected(c);
+                    setSelectedEvaluators([]);
+                  }
+                }}
               >
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                   <div>
@@ -181,8 +204,42 @@ export default function ExternalCandidatePanel({ treeId }: { treeId: string }) {
                     </div>
 
                     {c.evaluatorMode && (
-                      <div style={{ marginTop: '0.4rem', fontSize: '0.62rem', color: '#666' }}>
-                        Evaluadores: {c.evaluatorMode} · Auditoría: {c.auditLevel}%
+                      <div style={{ marginTop: '0.5rem' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'wrap' }}>
+                          <span style={{ fontSize: '0.65rem', color: '#888' }}>
+                            <Trees size={12} style={{ verticalAlign: 'middle', marginRight: '0.2rem' }} />
+                            {selectedEvaluators.length > 0
+                              ? `${new Set(selectedEvaluators.map(e => e.treeId)).size} árboles`
+                              : `modo ${c.evaluatorMode}`}
+                          </span>
+                          <span style={{ fontSize: '0.62rem', color: '#666' }}>· Auditoría: {c.auditLevel}%</span>
+                        </div>
+                        {selectedEvaluators.length > 0 && (
+                          <div style={{ display: 'flex', gap: '0.3rem', marginTop: '0.35rem', flexWrap: 'wrap' }}>
+                            {selectedEvaluators.map((ev) => (
+                              <span key={ev.userId} style={{
+                                fontSize: '0.6rem',
+                                padding: '0.15rem 0.45rem',
+                                borderRadius: 6,
+                                background: ev.matchType === 'exact' ? 'rgba(34,197,94,0.12)'
+                                  : ev.matchType === 'similar' ? 'rgba(251,191,36,0.12)'
+                                  : ev.matchType === 'cross-tree' ? 'rgba(59,130,246,0.12)'
+                                  : 'rgba(255,255,255,0.06)',
+                                color: ev.matchType === 'exact' ? '#4ade80'
+                                  : ev.matchType === 'similar' ? '#fbbf24'
+                                  : ev.matchType === 'cross-tree' ? '#60a5fa'
+                                  : '#999',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '0.25rem',
+                              }}>
+                                <span style={{ fontWeight: 600 }}>{ev.username}</span>
+                                <span style={{ opacity: 0.5, fontSize: '0.55rem' }}>{ev.treeName}</span>
+                                <span style={{ opacity: 0.4, fontSize: '0.5rem' }}>Lv.{ev.level}</span>
+                              </span>
+                            ))}
+                          </div>
+                        )}
                       </div>
                     )}
                   </div>

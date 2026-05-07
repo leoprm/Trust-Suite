@@ -176,6 +176,76 @@ export const assignPointsToNeed = async (req: any, res: Response) => {
       data: { totalPointsAssigned: { increment: points } }
     });
 
+    // ── Pipeline thresholds ──────────────────────────────────────────────
+    // Detect concentration: user put >85% of their weekly points in this need → ×2
+    const allUserFundings = await prisma.needFunding.findMany({
+      where: { userId: req.user.id, treeId },
+      include: { need: { select: { id: true, status: true } } },
+    });
+
+    let totalUserPointsInTree = 0;
+    let pointsInThisNeed = 0;
+    for (const f of allUserFundings) {
+      totalUserPointsInTree += f.points;
+      if (f.needId === id && f.need.status === 'ACTIVE') {
+        pointsInThisNeed += f.points;
+      }
+    }
+    // Include the just-assigned points
+    pointsInThisNeed += points;
+    totalUserPointsInTree += points;
+
+    const concentrationRatio = totalUserPointsInTree > 0
+      ? pointsInThisNeed / totalUserPointsInTree
+      : 0;
+    const isConcentrated = concentrationRatio >= 0.85;
+
+    // People equivalent (×2 if concentrated)
+    const peopleEquivalent = isConcentrated ? 2 : 1;
+
+    const finalNeed = await (prisma as any).need.update({
+      where: { id },
+      data: {
+        totalPeopleEquivalent: { increment: peopleEquivalent },
+      },
+    });
+
+    // Check relevance threshold: 10% of tree points OR 200 people equivalent
+    if (!finalNeed.relevanceThresholdMet) {
+      // Get total weekly points across all members in this tree
+      const treeMembers = await prisma.treeMember.findMany({
+        where: { treeId, status: 'VERIFIED' },
+        select: { weeklyNeedPoints: true },
+      });
+      const totalTreeWeeklyPoints = treeMembers.reduce((sum, m) => sum + m.weeklyNeedPoints, 0);
+      const tenPercentOfTree = Math.ceil(totalTreeWeeklyPoints * 0.1);
+
+      if (finalNeed.totalPeopleEquivalent >= 200 || finalNeed.totalPointsAssigned >= tenPercentOfTree) {
+        await (prisma as any).need.update({
+          where: { id },
+          data: { 
+            relevanceThresholdMet: true,
+            relevanceMetAt: new Date(),
+          },
+        });
+
+        void logEvent({
+          ...getRequestContext(req),
+          treeId,
+          action: 'NEED_RELEVANCE_MET',
+          entityType: 'Need',
+          entityId: id,
+          metadataJson: {
+            totalPeopleEquivalent: finalNeed.totalPeopleEquivalent + peopleEquivalent,
+            totalPoints: finalNeed.totalPointsAssigned,
+            tenPercentTree: tenPercentOfTree,
+            triggeredBy: finalNeed.totalPeopleEquivalent >= 200 ? 'people' : 'points',
+          },
+          source: 'SYSTEM',
+        });
+      }
+    }
+
     void logEvent({
       ...getRequestContext(req),
       treeId,

@@ -7,25 +7,14 @@ export const getDeliverable = async (req: any, res: Response) => {
     const { branchId, phase } = req.params;
 
     const deliverable = await prisma.phaseDeliverable.findFirst({
-    // Update branch phase deliverables
-    const branch = await (prisma as any).branch.findUnique({
-      where: { id: deliverable.branchId },
-      select: { treeId: true },
+      where: { branchId, phase },
     });
+
+    if (!deliverable) return res.status(404).json({ error: 'Deliverable not found' });
 
     res.json(deliverable);
-
-    void logEvent({
-      ...getRequestContext(req),
-      treeId: branch.treeId,
-      actorId: userId,
-      action: 'DELIVERABLE_SUBMITTED',
-      entityType: 'PhaseDeliverable',
-      entityId: deliverable.id,
-      source: 'USER',
-    });
   } catch (error) {
-    res.status(500).json({ error: 'Failed to submit deliverable' });
+    res.status(500).json({ error: 'Failed to get deliverable' });
   }
 };
 

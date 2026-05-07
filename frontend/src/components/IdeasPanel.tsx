@@ -1,8 +1,20 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Heart, ChevronDown, ChevronUp, Loader2, Lightbulb, Users, DollarSign, Package, Wrench } from 'lucide-react';
 import api from '../lib/api';
 import { useTranslation } from 'react-i18next';
+
+/** Fisher-Yates shuffle with a seeded PRNG (mulberry32) */
+function seededShuffle<T>(arr: T[], seed: number): T[] {
+  const result = [...arr];
+  let s = seed | 0;
+  const rand = () => { s = (s + 0x6D2B79F5) | 0; let t = Math.imul(s ^ (s >>> 15), 1 | s); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+  for (let i = result.length - 1; i > 0; i--) {
+    const j = (rand() * (i + 1)) | 0;
+    [result[i], result[j]] = [result[j], result[i]];
+  }
+  return result;
+}
 
 interface Idea {
   id: string;
@@ -27,6 +39,17 @@ export default function IdeasPanel({ needId }: IdeasPanelProps) {
   const [loading, setLoading] = useState(true);
   const [expandedIdeaId, setExpandedIdeaId] = useState<string | null>(null);
   const [likingId, setLikingId] = useState<string | null>(null);
+  const [shuffleSeed, setShuffleSeed] = useState(() => Date.now());
+
+  /** Top 3 fixed by likesCount DESC, rest shuffled per seed */
+  const displayedIdeas = useMemo(() => {
+    if (ideas.length <= 3) return ideas;
+    const sorted = [...ideas].sort((a, b) => b.likesCount - a.likesCount);
+    const top3 = sorted.slice(0, 3);
+    const rest = sorted.slice(3);
+    const shuffledRest = seededShuffle(rest, shuffleSeed);
+    return [...top3, ...shuffledRest];
+  }, [ideas, shuffleSeed]);
 
   useEffect(() => { fetchIdeas(); }, [needId]);
 
@@ -35,6 +58,7 @@ export default function IdeasPanel({ needId }: IdeasPanelProps) {
     try {
       const { data } = await api.get(`/ideas/need/${needId}`);
       setIdeas(data);
+      setShuffleSeed(Date.now());
     } catch (e) {
       console.error(e);
     } finally {
@@ -51,7 +75,7 @@ export default function IdeasPanel({ needId }: IdeasPanelProps) {
         idea.id === ideaId
           ? { ...idea, hasLiked: !idea.hasLiked, likesCount: idea.hasLiked ? idea.likesCount - 1 : idea.likesCount + 1 }
           : idea
-      ).sort((a, b) => b.likesCount - a.likesCount)
+      )
     );
     try {
       await api.post(`/ideas/${ideaId}/like`);
@@ -90,7 +114,8 @@ export default function IdeasPanel({ needId }: IdeasPanelProps) {
           </div>
         ) : (
           <div className="flex-col" style={{ gap: '0.5rem' }}>
-            {ideas.map((idea, idx) => (
+            {displayedIdeas.map((idea, idx) => {
+              return (
               <motion.div key={idea.id}
                 initial={{ opacity: 0, y: -8 }}
                 animate={{ opacity: 1, y: 0 }}
@@ -111,8 +136,9 @@ export default function IdeasPanel({ needId }: IdeasPanelProps) {
                 <div className="flex items-center gap-3" style={{ padding: '0.75rem 1rem' }}>
                   <span style={{
                     fontSize: '0.7rem', fontWeight: 700, width: '1.2rem', textAlign: 'center', flexShrink: 0,
-                    color: idx === 0 ? 'var(--accent-warning)' : idx === 1 ? 'var(--text-secondary)' : idx === 2 ? '#cd7f32' : 'var(--text-secondary)',
-                  }}>#{idx + 1}</span>
+                    color: idx === 0 ? 'var(--accent-warning)' : idx === 1 ? 'var(--text-secondary)' : idx === 2 ? '#cd7f32' : 'transparent',
+                    visibility: idx < 3 ? 'visible' : 'hidden',
+                  }}>{idx < 3 ? `#${idx + 1}` : ''}</span>
 
                   <button onClick={e => toggleLike(e, idea.id)} disabled={likingId === idea.id}
                     style={{
@@ -230,7 +256,8 @@ export default function IdeasPanel({ needId }: IdeasPanelProps) {
                   )}
                 </AnimatePresence>
               </motion.div>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>

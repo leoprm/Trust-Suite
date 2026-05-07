@@ -10,6 +10,9 @@ import {
   beginTest,
   finishTest,
   reject,
+  getEvaluation,
+  listMyEvaluations,
+  evaluate,
 } from '../controllers/externalCandidateController';
 
 const router = Router();
@@ -25,5 +28,9 @@ router.post('/:id/promote', promote);
 router.post('/:id/start-test', beginTest);
 router.post('/:id/complete-test', finishTest);
 router.post('/:id/reject', reject);
+
+// Evaluator-facing (anonymized)
+router.get('/:id/evaluation', getEvaluation);
+router.post('/:id/evaluate', evaluate);
 
 export default router;

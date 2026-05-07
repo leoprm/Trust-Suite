@@ -15,7 +15,7 @@ export const createUser = async (req: Request, res: Response) => {
   try {
     const { username, email, password, role } = req.body;
     const hashedPassword = await bcrypt.hash(password, 10);
-    const user = await prisma.user.create({
+    const newUser = await prisma.user.create({
       data: {
         username,
         email,
@@ -36,7 +36,7 @@ export const createUser = async (req: Request, res: Response) => {
       severity: 'WARNING',
       source: 'ADMIN',
     });
-  } catch
+  } catch (error: any) { handleAdminError(res, error); }
 };
 
 export const getUsers = async (req: Request, res: Response) => {

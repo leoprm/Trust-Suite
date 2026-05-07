@@ -306,6 +306,7 @@ model Tree {
   externalOpenings       InsightExternalOpening[]  @relation("TreeExternalOpenings")
   expertEndorsements     ExpertEndorsement[]
   externalCandidates     ExternalCandidate[]
+  skillInfluences        SkillInfluence[]
 
   @@index([country, city, sector])
 }
@@ -602,6 +603,12 @@ model Need {
   taskId              String?
   proposesHashtag     Boolean    @default(false)
 
+  // Pipeline thresholds
+  relevanceThresholdMet Boolean   @default(false)
+  relevanceMetAt         DateTime?  // when threshold was first met (for timeout tracking)
+  quorumMet              Boolean   @default(false)
+  totalPeopleEquivalent  Int       @default(0)  // persons * concentration multiplier
+
   creator   User          @relation("NeedCreator", fields: [creatorId], references: [id])
   task      Task?         @relation(fields: [taskId], references: [id])
   treeLinks NeedTree[]
@@ -665,6 +672,7 @@ model IdeaLike {
   id        String   @id @default(uuid())
   ideaId    String
   userId    String
+  weight    Float    @default(1.0)  // influence × concentration multiplier
   createdAt DateTime @default(now())
 
   idea Idea @relation(fields: [ideaId], references: [id], onDelete: Cascade)
@@ -2166,6 +2174,7 @@ model ExternalCandidate {
 
   evaluatorIds   String                    @default("[]") @db.Text
   evaluatorMode  String?                   // "exact" | "similar" | "adjacent" | "fallback"
+  evaluatorVotes String                    @default("[]") @db.Text  // [{evaluatorId, passed, notes, submittedAt}]
 
   testDesign     String?                   @db.Text
   testResult     String?                   @db.Text
@@ -2191,4 +2200,24 @@ model ExternalCandidate {
 
   @@index([treeId, status])
   @@index([status])
+}
+
+// ── Skill Influence (expert weight for idea voting) ──────────────────────
+
+model SkillInfluence {
+  id                  String   @id @default(uuid())
+  treeId              String
+  skillTag            String
+  greenAvgDifficulty  Float    @default(0)
+  goldenAvgDifficulty Float    @default(0)
+  greenInfluence      Float    @default(20)   // 20–80%
+  goldenInfluence     Float    @default(20)   // 20–80%
+  finalInfluence      Float    @default(20)   // 0.6*green + 0.4*golden
+  calculatedAt        DateTime @default(now())
+
+  tree Tree @relation(fields: [treeId], references: [id], onDelete: Cascade)
+
+  @@unique([treeId, skillTag])
+  @@index([skillTag])
+  @@index([calculatedAt])
 }

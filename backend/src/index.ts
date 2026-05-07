@@ -10,6 +10,7 @@ import { PrismaClient } from '@prisma/client';
 import { corsOptions, logCorsConfiguration, isProduction, allowedOrigins, allowAllInDev } from './config/cors';
 
 import authRoutes from './routes/authRoutes';
+import { authenticateJWT } from './middleware/authMiddleware';
 import userRoutes from './routes/userRoutes';
 import treeRoutes from './routes/treeRoutes';
 import needRoutes from './routes/needRoutes';
@@ -46,12 +47,16 @@ import berryFlowRoutes from './routes/berryFlowRoutes';
 import insightRoutes from './routes/insightRoutes';
 import expertEndorsementRoutes from './routes/expertEndorsementRoutes';
 import externalCandidateRoutes from './routes/externalCandidateRoutes';
+import { listMyEvaluations } from './controllers/externalCandidateController';
 import { startCronJobs } from './cron/weeklyResolution';
 import { startMonthlyJob } from './cron/monthlyEconomy';
 import { startMaterialFallbackJob } from './cron/materialFallback';
 import { startXpDecayCron } from './cron/xpDecay';
 import { startCorruptionCheckCron } from './cron/corruptionCheck';
 import { startSkillPercentileCron } from './cron/skillPercentile';
+import { startSkillInfluenceCron } from './cron/skillInfluenceCron';
+import { startQuorumTimeoutCron } from './cron/quorumTimeoutCron';
+import { getInfluenceWeight, getTreeInfluences } from './services/skillInfluenceService';
 
 const app = express();
 const port = process.env.PORT || 3000;
@@ -207,6 +212,23 @@ app.use('/api', berryFlowRoutes);
 app.use('/api', insightRoutes);
 app.use('/api/expert-endorsements', expertEndorsementRoutes);
 app.use('/api/external-candidates', externalCandidateRoutes);
+app.get('/api/evaluations/mine', authenticateJWT, listMyEvaluations);
+app.get('/api/trees/:treeId/influence', authenticateJWT, async (req: any, res: any) => {
+  try {
+    const influences = await getTreeInfluences(req.params.treeId);
+    res.json(influences);
+  } catch (err: any) {
+    res.status(500).json({ error: 'Failed to fetch influences' });
+  }
+});
+app.get('/api/trees/:treeId/influence/:skillTag', authenticateJWT, async (req: any, res: any) => {
+  try {
+    const weight = await getInfluenceWeight(req.params.treeId, req.params.skillTag);
+    res.json({ treeId: req.params.treeId, skillTag: req.params.skillTag, finalInfluence: weight });
+  } catch (err: any) {
+    res.status(500).json({ error: 'Failed to fetch influence' });
+  }
+});
 app.use('/api', externalNeedRoutes);
 
 startCronJobs();
@@ -215,6 +237,8 @@ startMaterialFallbackJob();
 startXpDecayCron();
 startCorruptionCheckCron();
 startSkillPercentileCron();
+startSkillInfluenceCron();
+startQuorumTimeoutCron();
 
 // Bootstrap database schema, then start server
 bootstrapDatabase().then(() => {

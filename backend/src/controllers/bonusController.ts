@@ -200,18 +200,8 @@ export const createBonus = async (req: any, res: Response) => {
       entityId: bonus.id,
       metadataJson: getRequestMetadata(req, { treeId, title: req.body.title }),
       source: 'USER',
-    res.json({ vote });
-
-    void logEvent({
-      ...getRequestContext(req),
-      actorId: userId,
-      action: 'BONUS_VOTED',
-      entityType: 'BonusVote',
-      entityId: req.body.bonusId,
-      metadataJson: getRequestMetadata(req, { support: req.body.support }),
-      source: 'USER',
     });
-  } catch
+  } catch (error: any) {
     console.error('[BonusPool] createBonus error:', error);
     res.status(500).json({ error: 'Error al crear bono' });
   }

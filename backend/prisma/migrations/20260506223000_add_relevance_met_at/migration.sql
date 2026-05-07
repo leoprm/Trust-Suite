@@ -1,0 +1,1 @@
+ALTER TABLE `Need` ADD COLUMN `relevanceMetAt` DATETIME(3) NULL;
