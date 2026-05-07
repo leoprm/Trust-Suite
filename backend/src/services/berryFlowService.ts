@@ -27,8 +27,52 @@ export const DEFAULT_MONTHLY_FLOW_RATE = 0.10;
 const MIN_LOSS_TO_RECORD = 0.01;
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Helpers
+// Federation helpers
 // ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Cuenta miembros totales de la federación del árbol:
+ * el árbol mismo + todos los árboles conectados por TreeRelation (bidireccional).
+ */
+export async function getFederationMemberCount(treeId: string): Promise<{
+  totalMembers: number;
+  federatedTreeIds: string[];
+  localMembers: number;
+}> {
+  // Obtener todos los árboles relacionados (source y target)
+  const relations = await (prisma as any).treeRelation.findMany({
+    where: {
+      OR: [
+        { sourceTreeId: treeId },
+        { targetTreeId: treeId },
+      ],
+    },
+    select: { sourceTreeId: true, targetTreeId: true },
+  });
+
+  // Extraer IDs únicos de la federación (incluyendo el árbol raíz)
+  const federatedSet = new Set<string>([treeId]);
+  for (const rel of relations) {
+    federatedSet.add(rel.sourceTreeId);
+    federatedSet.add(rel.targetTreeId);
+  }
+  const federatedTreeIds = Array.from(federatedSet);
+
+  // Contar miembros ÚNICOS de la federación (un usuario en varios trees cuenta 1 vez)
+  const localMembersResult = await (prisma as any).$queryRawUnsafe(
+    `SELECT COUNT(DISTINCT userId) as cnt FROM TreeMember WHERE treeId = ?`,
+    treeId,
+  );
+  const localMembers = Number((localMembersResult as any)[0]?.cnt ?? 0);
+
+  const federationResult = await (prisma as any).$queryRawUnsafe(
+    `SELECT COUNT(DISTINCT userId) as cnt FROM TreeMember WHERE treeId IN (${federatedTreeIds.map(() => '?').join(',')})`,
+    ...federatedTreeIds,
+  );
+  const federationMembers = Number((federationResult as any)[0]?.cnt ?? 0);
+
+  return { totalMembers: federationMembers, federatedTreeIds, localMembers };
+}
 
 /** Format: YYYY-MM */
 export function getCurrentCycleKey(now: Date = new Date()): string {
@@ -389,6 +433,34 @@ export interface BerryRewardInput {
 export async function addBerryReward(input: BerryRewardInput): Promise<number> {
   const amount = round2(Math.abs(input.amount));
   if (amount <= 0) return 0;
+
+  // ── Population threshold check ──
+  // Un árbol (o federación) debe tener al menos minMembersForBerries
+  // miembros para que su economía de Berries se active.
+  // Esto previene inflación de micro-árboles y asegura densidad de mercado.
+  const config = await getOrCreateBerryConfig(input.treeId);
+  const { totalMembers, federatedTreeIds, localMembers } = await getFederationMemberCount(input.treeId);
+
+  if (totalMembers < config.minMembersForBerries) {
+    void logEvent({
+      treeId: input.treeId,
+      actorId: input.userId,
+      action: 'BERRY_REWARD_BLOCKED_POPULATION',
+      entityType: 'TreeMember',
+      entityId: null,
+      metadataJson: {
+        minRequired: config.minMembersForBerries,
+        localMembers,
+        federationMembers: totalMembers,
+        federatedTreeIds,
+        blockedAmount: amount,
+        note: 'La federación no alcanza el mínimo de miembros para activar la economía de Berries.',
+      },
+      severity: 'INFO',
+      source: 'AUTOMATION',
+    });
+    return 0;
+  }
 
   const member = await (prisma as any).treeMember.findUnique({
     where: { userId_treeId: { userId: input.userId, treeId: input.treeId } },

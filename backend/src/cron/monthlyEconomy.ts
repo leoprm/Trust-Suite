@@ -2,7 +2,7 @@ import cron from 'node-cron';
 import { prisma } from '../index';
 import { calculateTaskXpReward, redistributeTreeBudget } from '../utils/economicEngine';
 import { recalculateBonusPercentages } from '../controllers/bonusController';
-import { addBerryReward, applyMonthlyBerryFlowForTree, getCurrentCycleKey } from '../services/berryFlowService';
+import { addBerryReward, applyMonthlyBerryFlowForTree, getCurrentCycleKey, getOrCreateBerryConfig, getFederationMemberCount } from '../services/berryFlowService';
 
 export const startMonthlyJob = () => {
   // Monthly Job: On the 1st of every month at midnight UTC
@@ -25,6 +25,19 @@ export const startMonthlyJob = () => {
         }
       }
       console.log(`[BerryFlow] Reducción mensual de Berries aplicada para ${allTreeIds.length} Trees (ciclo ${cycleKey}).`);
+
+      // 0.5. Population threshold gate — la federación debe alcanzar minMembersForBerries
+      //      Staged Ignition Protocol: la economía de Berries no se activa hasta
+      //      que la federación de árboles alcanza densidad poblacional suficiente.
+      const treesBelowThreshold = new Set<string>();
+      for (const { id: treeId } of allTreeIds) {
+        const berryCfg = await getOrCreateBerryConfig(treeId);
+        const { totalMembers, federatedTreeIds, localMembers } = await getFederationMemberCount(treeId);
+        if (totalMembers < berryCfg.minMembersForBerries) {
+          treesBelowThreshold.add(treeId);
+          console.log(`[BerryFlow] Federación del Tree ${treeId}: ${totalMembers} miembros totales (${localMembers} locales, ${federatedTreeIds.length} árboles) < ${berryCfg.minMembersForBerries} mínimo. Se omite el caudal mensual de Berries.`);
+        }
+      }
 
       // 1. Distribuir XP usando la nueva fórmula del motor económico
       const branches = await prisma.branch.findMany({
@@ -119,6 +132,11 @@ export const startMonthlyJob = () => {
       const allMembers = await prisma.treeMember.findMany();
 
       for (const member of allMembers) {
+        // ── Population threshold gate per-member ──
+        if (treesBelowThreshold.has(member.treeId)) {
+          continue; // Skip berry salary for trees below minMembersForBerries
+        }
+
         const mode = treeDecayMode.get(member.treeId) ?? 'CONTINUOUS';
 
         if (mode === 'WORKDAY' && isWeekend) {
@@ -187,4 +205,3 @@ export const startMonthlyJob = () => {
     }
   });
 };
-

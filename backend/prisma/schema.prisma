@@ -1659,6 +1659,7 @@ model BerryConfig {
   treeId              String   @unique
   tree                Tree     @relation(fields: [treeId], references: [id], onDelete: Cascade)
   berriesEnabled      Boolean  @default(false)
+  minMembersForBerries Int      @default(10000)
   monthlyFlowRate     Float    @default(0.10)
   monthlyFlowDay      Int      @default(1)
   allowP2PTransfers   Boolean  @default(false)
