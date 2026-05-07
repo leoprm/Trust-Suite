@@ -455,69 +455,6 @@ export const voteBranchNeed = async (req: any, res: Response) => {
   }
 };
 
-// POST /api/branches/direct — Admin creates any branch directly (bypassing Need->Idea)
-export const createDirectBranch = async (req: any, res: Response) => {
-  try {
-    const { treeId, name, valorOficial, isHashtag, activePhases } = req.body;
-
-    const tree = await (prisma as any).tree.findUnique({ where: { id: treeId } });
-    if (!tree) return res.status(404).json({ error: 'Tree not found' });
-
-    // Check permissions
-    if (!tree.creacionRamaDirecta) {
-      return res.status(403).json({ error: 'La creación directa de ramas está deshabilitada en este árbol.' });
-    }
-
-    const membership = await prisma.treeMember.findUnique({
-      where: { userId_treeId: { userId: req.user.id, treeId } }
-    });
-
-    const isCreator = tree.creatorId === req.user.id;
-    const isAdmin = (membership as any)?.role === 'ADMIN';
-
-    if (!isCreator && !isAdmin) {
-      return res.status(403).json({ error: 'Solo los administradores pueden crear ramas directamente.' });
-    }
-
-    const branchName = isHashtag && !name.startsWith('#') ? `#${name}` : name;
-    const phasesStr = activePhases ? JSON.stringify(activePhases) : '["INVESTIGATION"]';
-
-    const branch = await (prisma as any).branch.create({
-      data: {
-        treeId,
-        name: branchName,
-        isHashtag: isHashtag || false,
-        type: isHashtag ? 'HASHTAG' : 'NORMAL',
-        valorOficial: valorOficial ? Number(valorOficial) : 0,
-        phase: activePhases && activePhases.length > 0 ? activePhases[0] : 'INVESTIGATION',
-        activePhasesJson: phasesStr
-      }
-    });
-
-    // TRIGGER: Redistribuir presupuesto al crear una rama directa
-    await redistributeTreeBudget(treeId);
-
-    void logEvent({
-      ...getRequestContext(req),
-      treeId,
-      action: 'FIAT_REPUTATION_EFFECT_BLOCKED',
-      entityType: 'Branch',
-      entityId: branch.id,
-      metadataJson: getRequestMetadata(req, {
-        reason: 'direct_branch_xp_pool_is_not_fiat_investment',
-        rule: 'fiat_does_not_generate_xp_or_authority',
-      }),
-      severity: 'INFO',
-      source: 'SYSTEM',
-    });
-
-    res.status(201).json(branch);
-  } catch (error) {
-    console.error('createDirectBranch error:', error);
-    res.status(500).json({ error: 'Failed to create branch directly' });
-  }
-};
-
 // ═══════════════════════════════════════════════════════════════════════════════
 // POST /api/branches/:id/inject-berries — Inject berries into an existing branch
 // Body: { amount }

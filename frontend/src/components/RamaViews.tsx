@@ -30,7 +30,8 @@ const BONUS_ICONS: Record<string, { icon: typeof Leaf; label: string; color: str
 const normalizeBonusTag = (tag: string) => `%${(tag || '').trim().replace(/^[#%]/, '').trim()}`;
 
 // ─────────────────────────────────────────────────────────────────────────────
-// CREAR — Sub-Switch: Hashtag | Normal
+// CREAR — Solo ramas Hashtag
+// Las ramas normales nacen del pipeline Necesidad → Idea → Votación → Podium
 // ─────────────────────────────────────────────────────────────────────────────
 export function RamaCrear({ onCreated }: { onCreated?: () => void }) {
   const { t } = useTranslation();
@@ -39,17 +40,10 @@ export function RamaCrear({ onCreated }: { onCreated?: () => void }) {
   const { trees } = useTreeStore();
   const user = useAuthStore((s) => s.user);
 
-  // Sub-switch state
-  const [modoRama, setModoRama] = useState<'hashtag' | 'normal'>('hashtag');
-
   // Shared fields
   const [selectedTreeId, setSelectedTreeId] = useState('');
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
-
-  // Normal mode: need selector
-  const [needs, setNeeds] = useState<any[]>([]);
-  const [selectedNeedId, setSelectedNeedId] = useState('');
 
   // UI state
   const [loading, setLoading] = useState(false);
@@ -70,56 +64,35 @@ export function RamaCrear({ onCreated }: { onCreated?: () => void }) {
     }
   }, [trees, selectedTreeId]);
 
-  // Load needs for the selected tree (Normal mode)
-  useEffect(() => {
-    if (modoRama !== 'normal' || !selectedTreeId) return;
-    api.get(`/needs?treeId=${selectedTreeId}`)
-      .then(({ data }) => setNeeds(data.filter((n: any) => n.status === 'ACTIVE')))
-      .catch(() => setNeeds([]));
-  }, [modoRama, selectedTreeId]);
+  const canSubmit = selectedTreeId && name.trim().length >= 2;
 
   // Determine if user is admin for the selected tree
   const selectedTree = trees.find((t: any) => t.id === selectedTreeId);
   const isAdmin = selectedTree?.creatorId === user?.id ||
     user?.memberships?.some((m: any) => m.treeId === selectedTreeId && m.role === 'ADMIN');
 
-  const canSubmitHashtag = selectedTreeId && name.trim().length >= 2;
-  const canSubmitNormal = selectedTreeId && selectedNeedId && name.trim().length >= 2;
-  const canSubmit = modoRama === 'hashtag' ? canSubmitHashtag : canSubmitNormal;
-
   const handleSubmit = async () => {
     if (!canSubmit) return;
     setLoading(true);
     setError('');
     try {
-      if (modoRama === 'hashtag') {
-        if (isAdmin) {
-          // Admin creates directly
-          await api.post('/branches/hashtag', {
-            treeId: selectedTreeId,
-            name: name.trim(),
-          });
-        } else {
-          // Member creates a proposal (Need → will be voted)
-          await api.post('/needs', {
-            title: `#${name.trim().replace(/^#/, '')}`,
-            description: description.trim() || `${t('m.rama.crear.auto_desc')} #${name.trim().replace(/^#/, '')}`,
-            treeIds: [selectedTreeId],
-            proposesHashtag: true,
-          });
-        }
-      } else {
-        // Normal branch — create via direct branch endpoint associated to a need
-        await api.post('/branches/direct', {
+      if (isAdmin) {
+        // Admin creates hashtag branch directly
+        await api.post('/branches/hashtag', {
           treeId: selectedTreeId,
           name: name.trim(),
-          isHashtag: false,
-          activePhases: ['INVESTIGATION'],
+        });
+      } else {
+        // Member creates a proposal (Need → will be voted)
+        await api.post('/needs', {
+          title: `#${name.trim().replace(/^#/, '')}`,
+          description: description.trim() || `${t('m.rama.crear.auto_desc')} #${name.trim().replace(/^#/, '')}`,
+          treeIds: [selectedTreeId],
+          proposesHashtag: true,
         });
       }
       setName('');
       setDescription('');
-      setSelectedNeedId('');
       setShowForm(false);
       onCreated?.();
     } catch (e: any) {
@@ -168,30 +141,6 @@ export function RamaCrear({ onCreated }: { onCreated?: () => void }) {
         </p>
       </div>
 
-      {/* Sub-Switch: Hashtag | Normal */}
-      <div style={{ display: 'flex', gap: '0.5rem' }}>
-        {([
-          { key: 'hashtag', label: t('m.rama.crear.hashtag_tab'), desc: t('m.rama.crear.hashtag_desc') },
-          { key: 'normal', label: t('m.rama.crear.normal_tab'), desc: t('m.rama.crear.normal_desc') },
-        ] as const).map(opt => (
-          <button
-            key={opt.key}
-            onClick={() => setModoRama(opt.key)}
-            style={{
-              flex: 1, padding: '0.6rem 0.5rem', borderRadius: 14,
-              border: `1.5px solid ${modoRama === opt.key ? B : 'rgba(255,255,255,0.1)'}`,
-              background: modoRama === opt.key ? BB : 'rgba(255,255,255,0.04)',
-              color: modoRama === opt.key ? B : 'var(--text-secondary)',
-              fontWeight: 700, fontSize: '0.82rem', cursor: 'pointer',
-              display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2,
-            }}
-          >
-            <span>{opt.label}</span>
-            <span style={{ fontSize: '0.62rem', opacity: 0.7, fontWeight: 400 }}>{opt.desc}</span>
-          </button>
-        ))}
-      </div>
-
       {/* Toggle form */}
       <button
         onClick={() => setShowForm(v => !v)}
@@ -205,9 +154,7 @@ export function RamaCrear({ onCreated }: { onCreated?: () => void }) {
         }}
       >
         <Plus size={16} />
-        {modoRama === 'hashtag'
-          ? (isAdmin ? t('m.rama.crear.create_hashtag') : t('m.rama.crear.propose_hashtag'))
-          : t('m.rama.crear.create_normal')}
+        {isAdmin ? t('m.rama.crear.create_hashtag') : t('m.rama.crear.propose_hashtag')}
       </button>
 
       <AnimatePresence>
@@ -218,7 +165,7 @@ export function RamaCrear({ onCreated }: { onCreated?: () => void }) {
             exit={{ opacity: 0, height: 0 }}
             style={{ overflow: 'hidden', display: 'flex', flexDirection: 'column', gap: '0.85rem' }}
           >
-            {/* Pretext: explain mode */}
+            {/* Pretext */}
             <div style={{
               padding: '0.6rem 0.85rem', borderRadius: 10,
               background: BL, border: `1px solid ${B}44`,
@@ -226,11 +173,9 @@ export function RamaCrear({ onCreated }: { onCreated?: () => void }) {
             }}>
               <AlertTriangle size={14} color={B} style={{ flexShrink: 0, marginTop: 2 }} />
               <OptimizedText
-                text={modoRama === 'hashtag'
-                  ? (isAdmin
-                    ? t('m.rama.crear.admin_info')
-                    : t('m.rama.crear.member_info'))
-                  : t('m.rama.crear.normal_info')}
+                text={isAdmin
+                  ? t('m.rama.crear.admin_info')
+                  : t('m.rama.crear.member_info')}
                 style={{ fontSize: '0.72rem', color: B, lineHeight: 1.4 }}
               />
             </div>
@@ -250,47 +195,21 @@ export function RamaCrear({ onCreated }: { onCreated?: () => void }) {
               </select>
             </div>
 
-            {/* Need selector (Normal mode only) */}
-            {modoRama === 'normal' && (
-              <div>
-                <label style={labelStyle}>{t('m.rama.crear.need_label')}</label>
-                <select
-                  value={selectedNeedId}
-                  onChange={e => setSelectedNeedId(e.target.value)}
-                  style={{ ...inputStyle, cursor: 'pointer' }}
-                >
-                  <option value="">{t('m.rama.crear.need_placeholder')}</option>
-                  {needs.map((n: any) => (
-                    <option key={n.id} value={n.id}>{n.title}</option>
-                  ))}
-                </select>
-                {needs.length === 0 && selectedTreeId && (
-                  <p style={{ fontSize: '0.7rem', color: '#ef4444', marginTop: '0.25rem' }}>
-                    {t('m.rama.crear.no_needs')}
-                  </p>
-                )}
-              </div>
-            )}
-
             {/* Name */}
             <div>
-              <label style={labelStyle}>
-                {modoRama === 'hashtag' ? t('m.rama.crear.hashtag_name') : t('m.rama.crear.branch_name')}
-              </label>
+              <label style={labelStyle}>{t('m.rama.crear.hashtag_name')}</label>
               <div style={{ position: 'relative' }}>
-                {modoRama === 'hashtag' && (
-                  <span style={{
-                    position: 'absolute', left: '0.75rem', top: '50%', transform: 'translateY(-50%)',
-                    color: B, fontWeight: 800, fontSize: '1rem',
-                  }}>
-                    #
-                  </span>
-                )}
+                <span style={{
+                  position: 'absolute', left: '0.75rem', top: '50%', transform: 'translateY(-50%)',
+                  color: B, fontWeight: 800, fontSize: '1rem',
+                }}>
+                  #
+                </span>
                 <input
                   value={name.startsWith('#') ? name.slice(1) : name}
                   onChange={e => setName(e.target.value)}
-                  placeholder={modoRama === 'hashtag' ? t('m.rama.crear.hashtag_placeholder') : t('m.rama.crear.branch_placeholder')}
-                  style={{ ...inputStyle, ...(modoRama === 'hashtag' ? { paddingLeft: '1.75rem' } : {}) }}
+                  placeholder={t('m.rama.crear.hashtag_placeholder')}
+                  style={{ ...inputStyle, paddingLeft: '1.75rem' }}
                 />
               </div>
             </div>
