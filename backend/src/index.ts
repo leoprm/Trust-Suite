@@ -47,6 +47,7 @@ import berryFlowRoutes from './routes/berryFlowRoutes';
 import insightRoutes from './routes/insightRoutes';
 import expertEndorsementRoutes from './routes/expertEndorsementRoutes';
 import externalCandidateRoutes from './routes/externalCandidateRoutes';
+import publicRoutes from './routes/publicRoutes';
 import { listMyEvaluations } from './controllers/externalCandidateController';
 import { startCronJobs } from './cron/weeklyResolution';
 import { startMonthlyJob } from './cron/monthlyEconomy';
@@ -132,6 +133,11 @@ if (isProduction && allowedOrigins.length === 0 && !allowAllInDev) {
   console.error('[CORS] Add CORS_ALLOWED_ORIGINS=https://your-domain.com to your .env file.');
   process.exit(1);
 }
+
+// Public routes BEFORE global CORS — permissive origins for standalone landing page
+// The public routes router has its own cors({ origin: true }) so any origin is allowed.
+// It must be mounted first so the response is sent before global corsOptions runs.
+app.use('/api/public', publicRoutes);
 
 app.use(cors(corsOptions));
 app.options(/.*/, cors(corsOptions));

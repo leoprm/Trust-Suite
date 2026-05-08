@@ -1,4 +1,5 @@
 import { prisma } from '../index';
+import PDFDocument from 'pdfkit';
 
 export type TrustExportType = 'PROFILE' | 'TREE';
 export type TrustExport = {
@@ -822,4 +823,260 @@ export async function exportTree(treeId: string, actorId: string, role?: string)
     warnings,
     omitted: ['rawEvidenceFiles', 'password', 'passwordHash', 'tokens', 'refreshTokens', 'jwt', 'storagePath', 'absolutePaths', 'privateUserEmails', 'environmentSecrets', 'rawFiatReceipts'],
   });
+}
+
+// ─── PDF Report Generator ─────────────────────────────────────
+
+const TRUST_DARK = '#0a0a0f';
+const TRUST_BLUE = '#3b82f6';
+const TRUST_LIGHT = '#e2e8f0';
+const TRUST_MUTED = '#64748b';
+
+function formatCurrency(amount: number, currency = 'CLP'): string {
+  return new Intl.NumberFormat('es-CL', { style: 'currency', currency, minimumFractionDigits: 0 }).format(amount);
+}
+
+function fmtDate(date: Date | string): string {
+  const d = typeof date === 'string' ? new Date(date) : date;
+  return d.toLocaleDateString('es-CL', { year: 'numeric', month: 'long', day: 'numeric' });
+}
+
+export async function generateTreePDF(treeId: string): Promise<Buffer> {
+  // 1. Gather data
+  const tree = await (prisma as any).tree.findUnique({ where: { id: treeId } });
+  if (!tree) throw new Error('Tree not found');
+
+  const sixMonthsAgo = new Date();
+  sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
+
+  const [members, tasks, fiatTransactions, branchVotes] = await Promise.all([
+    (prisma as any).treeMember.findMany({
+      where: { treeId, status: 'VERIFIED' },
+      select: {
+        userId: true, role: true, xp: true, level: true, skills: true, joinedAt: true,
+        user: { select: { username: true } },
+      },
+      orderBy: { xp: 'desc' },
+    }),
+    (prisma as any).task.findMany({
+      where: { branch: { treeId } },
+      select: {
+        id: true, name: true, status: true, phase: true, difficulty: true,
+        taskTags: { select: { skillName: true } },
+        completedAt: true, createdAt: true,
+      },
+    }),
+    (prisma as any).fiatTransaction.findMany({
+      where: { treeId, date: { gte: sixMonthsAgo } },
+      select: { id: true, amount: true, type: true, category: true, description: true, date: true, currency: true },
+      orderBy: { date: 'desc' },
+    }),
+    (prisma as any).branchNeedVote.findMany({
+      where: { branch: { treeId } },
+      select: { score: true },
+    }),
+  ]);
+
+  // 2. Compute metrics
+  const totalMembers = members.length;
+  const incomeTotal = fiatTransactions
+    .filter((t: any) => t.type === 'INCOME')
+    .reduce((sum: number, t: any) => sum + Number(t.amount), 0);
+  const expenseTotal = fiatTransactions
+    .filter((t: any) => t.type === 'EXPENSE')
+    .reduce((sum: number, t: any) => sum + Number(t.amount), 0);
+  const investmentTotal = fiatTransactions
+    .filter((t: any) => t.type === 'INVESTMENT')
+    .reduce((sum: number, t: any) => sum + Number(t.amount), 0);
+  const monthlyProfit = incomeTotal - expenseTotal;
+  const investmentPct = incomeTotal > 0 ? ((investmentTotal / incomeTotal) * 100).toFixed(1) : '0';
+  const satisfactionAvg = branchVotes.length > 0
+    ? (branchVotes.reduce((s: number, v: any) => s + v.score, 0) / branchVotes.length).toFixed(1)
+    : '—';
+
+  const completedTasks = tasks.filter((t: any) => t.status === 'COMPLETED').length;
+  const pendingTasks = tasks.filter((t: any) => t.status !== 'COMPLETED').length;
+
+  // Skill distribution
+  const skillCount: Record<string, number> = {};
+  for (const t of tasks) {
+    if (t.taskTags) {
+      for (const tag of t.taskTags as any[]) {
+        skillCount[tag.skillName] = (skillCount[tag.skillName] || 0) + 1;
+      }
+    }
+  }
+
+  // 3. Generate PDF
+  const doc = new PDFDocument({
+    size: 'A4',
+    margins: { top: 50, bottom: 60, left: 50, right: 50 },
+    bufferPages: true,
+  });
+  const buffers: Buffer[] = [];
+  doc.on('data', (chunk: Buffer) => buffers.push(chunk));
+
+  // ── Footer on every page ──
+  const pageCount = { current: 0, total: 0 };
+  doc.on('pageAdded', () => {
+    const bottom = doc.page.height - 50;
+    doc.fontSize(8).fillColor(TRUST_MUTED);
+    doc.text('Generado por Trust Suite — trust-lite.com', 50, bottom, {
+      width: doc.page.width - 100,
+      align: 'center',
+    });
+  });
+
+  // ── Portada ──
+  const coverCenter = doc.page.height / 2 - 60;
+  doc.fontSize(36).fillColor(TRUST_BLUE).text('TRUST', { align: 'center' });
+  doc.moveDown(0.3);
+  doc.fontSize(20).fillColor(TRUST_LIGHT).text('Suite', { align: 'center' });
+  doc.moveDown(2);
+  doc.fontSize(24).fillColor(TRUST_LIGHT).text(tree.name, { align: 'center', width: doc.page.width - 100 });
+  doc.moveDown(1);
+  doc.fontSize(14).fillColor(TRUST_MUTED).text(`Reporte generado el ${fmtDate(new Date())}`, { align: 'center' });
+  doc.moveDown(3);
+  // Decorative line
+  doc.moveTo(150, doc.y).lineTo(doc.page.width - 150, doc.y).strokeColor(TRUST_BLUE).lineWidth(2).stroke();
+  doc.addPage();
+
+  // ── Resumen Ejecutivo ──
+  doc.fontSize(20).fillColor(TRUST_BLUE).text('Resumen Ejecutivo', { underline: true });
+  doc.moveDown(1.5);
+
+  const summaryData = [
+    ['Total Miembros', String(totalMembers)],
+    ['Profit Mensual (últimos 6m)', formatCurrency(monthlyProfit)],
+    ['Inversión (% de ingresos)', `${investmentPct}%`],
+    ['Satisfacción (prom. votos rama)', `${satisfactionAvg}/10`],
+    ['Presupuesto Total', formatCurrency(tree.presupuestoTotal || 0)],
+    ['Modo Economía', tree.economyMode || 'NO_ECONOMY'],
+  ];
+  drawTable(doc, summaryData, [200, 300]);
+  doc.moveDown(2);
+
+  // ── Transacciones FIAT (últimos 6 meses) ──
+  doc.fontSize(16).fillColor(TRUST_BLUE).text('Transacciones FIAT — Últimos 6 Meses');
+  doc.moveDown(1);
+
+  if (fiatTransactions.length === 0) {
+    doc.fontSize(11).fillColor(TRUST_MUTED).text('Sin datos disponibles');
+  } else {
+    const txHeaders = ['Fecha', 'Tipo', 'Categoría', 'Monto', 'Descripción'];
+    const txColWidths = [90, 70, 90, 70, 180];
+    drawTableHeader(doc, txHeaders, txColWidths);
+    for (const tx of fiatTransactions.slice(0, 30)) {
+      drawTableRow(doc, [
+        fmtDate(tx.date),
+        tx.type,
+        tx.category || '—',
+        formatCurrency(tx.amount, tx.currency),
+        (tx.description || '—').slice(0, 40),
+      ], txColWidths);
+    }
+    if (fiatTransactions.length > 30) {
+      doc.fontSize(9).fillColor(TRUST_MUTED).text(`... y ${fiatTransactions.length - 30} transacciones más (limitado a 30 en PDF)`);
+    }
+  }
+  doc.addPage();
+
+  // ── Métricas de Tasks ──
+  doc.fontSize(16).fillColor(TRUST_BLUE).text('Métricas de Tareas');
+  doc.moveDown(1);
+
+  const taskSummary = [
+    ['Completadas', String(completedTasks)],
+    ['Pendientes', String(pendingTasks)],
+    ['Total', String(tasks.length)],
+  ];
+  drawTable(doc, taskSummary, [200, 300]);
+  doc.moveDown(1.5);
+
+  doc.fontSize(14).fillColor(TRUST_BLUE).text('Distribución por Skill');
+  doc.moveDown(0.5);
+
+  if (Object.keys(skillCount).length === 0) {
+    doc.fontSize(11).fillColor(TRUST_MUTED).text('Sin datos disponibles');
+  } else {
+    const sortedSkills = Object.entries(skillCount).sort((a, b) => b[1] - a[1]);
+    const skillHeaders = ['Skill', 'Tareas'];
+    const skillColWidths = [350, 150];
+    drawTableHeader(doc, skillHeaders, skillColWidths);
+    for (const [skill, count] of sortedSkills) {
+      drawTableRow(doc, [skill, String(count)], skillColWidths);
+    }
+  }
+  doc.addPage();
+
+  // ── Sección de Miembros ──
+  doc.fontSize(16).fillColor(TRUST_BLUE).text('Miembros del Árbol');
+  doc.moveDown(1);
+
+  if (members.length === 0) {
+    doc.fontSize(11).fillColor(TRUST_MUTED).text('Sin datos disponibles');
+  } else {
+    const memberHeaders = ['Nombre', 'Rol', 'XP', 'Nivel', 'Skills'];
+    const memberColWidths = [130, 80, 60, 50, 180];
+    drawTableHeader(doc, memberHeaders, memberColWidths);
+    for (const m of members) {
+      const skills = parseJsonField(m.skills, []) as string[];
+      drawTableRow(doc, [
+        m.user?.username || '—',
+        m.role,
+        String(Math.round(m.xp)),
+        String(m.level),
+        (Array.isArray(skills) ? skills.join(', ') : '—').slice(0, 45),
+      ], memberColWidths);
+    }
+  }
+
+  doc.end();
+
+  return new Promise((resolve, reject) => {
+    doc.on('end', () => resolve(Buffer.concat(buffers)));
+    doc.on('error', reject);
+  });
+}
+
+// ── PDF Table Helpers ──
+
+function drawTableHeader(doc: PDFKit.PDFDocument, headers: string[], colWidths: number[]) {
+  const startX = doc.x;
+  const startY = doc.y;
+  const rowHeight = 20;
+
+  doc.fontSize(9).fillColor('#ffffff');
+  let xPos = startX;
+  for (let i = 0; i < headers.length; i++) {
+    doc.rect(xPos, startY, colWidths[i], rowHeight).fill(TRUST_DARK);
+    doc.fillColor('#ffffff').text(headers[i], xPos + 4, startY + 4, { width: colWidths[i] - 8 });
+    xPos += colWidths[i];
+  }
+  doc.y = startY + rowHeight;
+}
+
+function drawTableRow(doc: PDFKit.PDFDocument, cells: string[], colWidths: number[]) {
+  const startX = doc.x;
+  const startY = doc.y;
+  const rowHeight = 18;
+  const isEven = (doc as any)._rowIndex ? ((doc as any)._rowIndex % 2 === 0) : true;
+  (doc as any)._rowIndex = ((doc as any)._rowIndex || 0) + 1;
+
+  doc.fontSize(9);
+  let xPos = startX;
+  for (let i = 0; i < cells.length; i++) {
+    doc.rect(xPos, startY, colWidths[i], rowHeight).fill(isEven ? '#1a1a2e' : '#0d0d1a');
+    doc.fillColor(TRUST_LIGHT).text(cells[i] || '—', xPos + 4, startY + 4, { width: colWidths[i] - 8 });
+    xPos += colWidths[i];
+  }
+  doc.y = startY + rowHeight;
+  doc.fillColor(TRUST_LIGHT);
+}
+
+function drawTable(doc: PDFKit.PDFDocument, rows: string[][], colWidths: number[]) {
+  const headers = rows[0];
+  const data = rows.slice(1);
+  if (headers) drawTableHeader(doc, headers, colWidths);
+  for (const row of data) drawTableRow(doc, row, colWidths);
 }
