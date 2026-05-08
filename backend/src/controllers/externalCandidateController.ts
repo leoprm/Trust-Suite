@@ -8,11 +8,13 @@ import {
   assignEvaluators,
   promoteToProvisional,
   startPracticalTest,
+  submitPracticalTest,
   completePracticalTest,
   rejectCandidate,
   getMyEvaluations,
   submitEvaluation,
   getEvaluationStats,
+  resolveConsensusIfAllVoted,
 } from '../services/externalCandidateService';
 import { getRequestContext, logEvent } from '../services/eventLogService';
 
@@ -64,7 +66,7 @@ export const apply = async (req: Request, res: Response) => {
 // ── GET /api/external-candidates/:id ─────────────────────────────────────
 export const get = async (req: Request, res: Response) => {
   try {
-    const candidate = await getCandidate(req.params.id);
+    const candidate = await getCandidate(req.params.id as string);
     if (!candidate) return res.status(404).json({ error: 'Candidate not found' });
     res.json(candidate);
   } catch (error: any) {
@@ -91,7 +93,7 @@ export const list = async (req: Request, res: Response) => {
 export const review = async (req: Request, res: Response) => {
   const ctx = getRequestContext(req);
   try {
-    const candidate = await startReview(req.params.id);
+    const candidate = await startReview(req.params.id as string);
 
     void logEvent({
       ...ctx,
@@ -113,7 +115,7 @@ export const review = async (req: Request, res: Response) => {
 export const assignEvals = async (req: Request, res: Response) => {
   const ctx = getRequestContext(req);
   try {
-    const candidate = await getCandidate(req.params.id);
+    const candidate = await getCandidate(req.params.id as string);
     if (!candidate) return res.status(404).json({ error: 'Candidate not found' });
 
     const skills = JSON.parse(candidate.skills || '[]');
@@ -152,7 +154,7 @@ export const promote = async (req: Request, res: Response) => {
   const ctx = getRequestContext(req);
   try {
     const { notes } = req.body;
-    const candidate = await promoteToProvisional(req.params.id, notes);
+    const candidate = await promoteToProvisional(req.params.id as string, notes);
 
     void logEvent({
       ...ctx,
@@ -178,7 +180,7 @@ export const beginTest = async (req: Request, res: Response) => {
     const { testDesign } = req.body;
     if (!testDesign) return res.status(400).json({ error: 'testDesign is required' });
 
-    const candidate = await startPracticalTest(req.params.id, testDesign);
+    const candidate = await startPracticalTest(req.params.id as string, testDesign);
 
     void logEvent({
       ...ctx,
@@ -196,6 +198,35 @@ export const beginTest = async (req: Request, res: Response) => {
   }
 };
 
+// ── POST /api/external-candidates/:id/submit-test ────────────────────────
+export const submitTest = async (req: Request, res: Response) => {
+  const ctx = getRequestContext(req);
+  try {
+    const { submission } = req.body;
+    if (!submission || typeof submission !== 'string' || submission.trim().length === 0) {
+      return res.status(400).json({ error: 'submission (non-empty string) is required' });
+    }
+
+    const candidate = await submitPracticalTest(req.params.id as string, submission.trim());
+
+    void logEvent({
+      ...ctx,
+      treeId: candidate.treeId,
+      action: 'EXTERNAL_CANDIDATE_TEST_SUBMITTED',
+      entityType: 'ExternalCandidate',
+      entityId: candidate.id,
+      source: 'USER',
+    });
+
+    res.json(candidate);
+  } catch (error: any) {
+    console.error('[externalCandidate.submitTest]', error);
+    const status = error.message?.includes('already submitted') ? 409
+      : error.message?.includes('not in practical test') ? 400 : 500;
+    res.status(status).json({ error: error.message || 'Failed to submit test' });
+  }
+};
+
 // ── POST /api/external-candidates/:id/complete-test ──────────────────────
 export const finishTest = async (req: Request, res: Response) => {
   const ctx = getRequestContext(req);
@@ -203,7 +234,7 @@ export const finishTest = async (req: Request, res: Response) => {
     const { passed, testResult } = req.body;
     if (typeof passed !== 'boolean') return res.status(400).json({ error: 'passed (boolean) is required' });
 
-    const candidate = await completePracticalTest(req.params.id, passed, testResult);
+    const candidate = await completePracticalTest(req.params.id as string, passed, testResult);
 
     void logEvent({
       ...ctx,
@@ -228,7 +259,7 @@ export const reject = async (req: Request, res: Response) => {
   const ctx = getRequestContext(req);
   try {
     const { reason } = req.body;
-    const candidate = await rejectCandidate(req.params.id, reason || 'No reason provided');
+    const candidate = await rejectCandidate(req.params.id as string, reason || 'No reason provided');
 
     void logEvent({
       ...ctx,
@@ -253,7 +284,7 @@ export const reject = async (req: Request, res: Response) => {
 // GET /api/external-candidates/:id/evaluation — anonymized view for evaluators
 export const getEvaluation = async (req: Request, res: Response) => {
   try {
-    const candidate = await getCandidate(req.params.id);
+    const candidate = await getCandidate(req.params.id as string);
     if (!candidate) return res.status(404).json({ error: 'Candidate not found' });
 
     // Verify user is an assigned evaluator
@@ -292,7 +323,7 @@ export const evaluate = async (req: Request, res: Response) => {
     const { passed, notes } = req.body;
     if (typeof passed !== 'boolean') return res.status(400).json({ error: 'passed (boolean) is required' });
 
-    const candidate = await submitEvaluation(req.params.id, req.user!.id, passed, notes);
+    const candidate = await submitEvaluation(req.params.id as string, req.user!.id, passed, notes);
 
     void logEvent({
       ...ctx,
@@ -304,8 +335,29 @@ export const evaluate = async (req: Request, res: Response) => {
       source: 'USER',
     });
 
-    const stats = getEvaluationStats(candidate);
-    res.json({ ...candidate, ...stats });
+    // Auto-resolve consensus if all evaluators have now voted
+    const resolved = await resolveConsensusIfAllVoted(req.params.id as string);
+    const stats = resolved ? getEvaluationStats(resolved) : getEvaluationStats(candidate);
+
+    if (resolved) {
+      void logEvent({
+        ...ctx,
+        treeId: (resolved as any).treeId,
+        action: 'EXTERNAL_CANDIDATE_CONSENSUS_RESOLVED',
+        entityType: 'ExternalCandidate',
+        entityId: resolved.id,
+        metadataJson: {
+          consensus: resolved.testConsensus,
+          passedVotes: stats.passed,
+          totalVotes: stats.total,
+          threshold: '60%',
+        },
+        severity: resolved.testConsensus === 'passed' ? 'INFO' : 'WARNING',
+        source: 'AUTOMATION',
+      });
+    }
+
+    res.json({ ...(resolved || candidate), ...stats });
   } catch (error: any) {
     console.error('[externalCandidate.evaluate]', error);
     const status = error.message?.includes('already submitted') ? 409

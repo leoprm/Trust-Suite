@@ -487,7 +487,7 @@ export const getMyTrees = async (req: any, res: Response) => {
       // --- GROUP HEALTH DATA (Current Month Summary — automatic transactions only) ---
       const groupStats = await (prisma as any).fiatTransaction.groupBy({
         by: ['type'],
-        where: { treeId: tree.id, date: { gte: lastMonth }, isAutomatic: true },
+        where: { treeId: tree.id, date: { gte: lastMonth } },
         _sum: { amount: true }
       });
 
@@ -524,6 +524,14 @@ export const getMyTrees = async (req: any, res: Response) => {
         : null;
 
       // --- PERSONAL HEALTH DATA ---
+      const personalFiatStats = await (prisma as any).fiatTransaction.groupBy({
+        by: ['type'],
+        where: { treeId: tree.id, createdById: userId, date: { gte: lastMonth } },
+        _sum: { amount: true }
+      });
+      const personalIncome = personalFiatStats.find((s: any) => s.type === 'INCOME')?._sum?.amount || 0;
+      const personalExpense = personalFiatStats.find((s: any) => s.type === 'EXPENSE')?._sum?.amount || 0;
+
       const personalSatisfactions = await prisma.satisfactionRating.findMany({
         where: { userId, deliverable: { branch: { treeId: tree.id } } },
         select: { rating: true }
@@ -540,18 +548,42 @@ export const getMyTrees = async (req: any, res: Response) => {
         '1A': await calculateTreeHistory(tree.id, userId, '1A'),
       };
 
+      // --- TREE RELATIONS (Federations) ---
+      const treeRelations = await prisma.treeRelation.findMany({
+        where: {
+          OR: [
+            { sourceTreeId: tree.id },
+            { targetTreeId: tree.id }
+          ]
+        },
+        include: {
+          sourceTree: { select: { id: true, name: true } },
+          targetTree: { select: { id: true, name: true } }
+        }
+      });
+
       return {
         ...tree,
+        role: m.role,
         healthData: {
           fiatMonthlyProfit: groupIncome - groupExpense,
           inversionPct: Number(inversionPct.toFixed(1)),
           satisfaction: groupSatisfactionAvg !== null ? Number(groupSatisfactionAvg.toFixed(1)) : null
         },
         personalHealthData: {
-          fiatMonthlyProfit: 0,
+          fiatMonthlyProfit: personalIncome - personalExpense,
           inversionPct: Number(inversionPct.toFixed(1)), // same tree-level metric for personal view
           satisfaction: personalSatisfactionAvg !== null ? Number(personalSatisfactionAvg.toFixed(1)) : null
         },
+        treeRelations: treeRelations.map(tr => ({
+          id: tr.id,
+          sourceTreeId: tr.sourceTreeId,
+          targetTreeId: tr.targetTreeId,
+          sourceTreeName: tr.sourceTree.name,
+          targetTreeName: tr.targetTree.name,
+          relationType: tr.relationType,
+          socialDistanceCategory: tr.socialDistanceCategory,
+        })),
         history
       };
     }));

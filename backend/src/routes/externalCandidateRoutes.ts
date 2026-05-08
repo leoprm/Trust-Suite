@@ -8,6 +8,7 @@ import {
   assignEvals,
   promote,
   beginTest,
+  submitTest,
   finishTest,
   reject,
   getEvaluation,
@@ -26,6 +27,7 @@ router.post('/:id/review', review);
 router.post('/:id/assign-evaluators', assignEvals);
 router.post('/:id/promote', promote);
 router.post('/:id/start-test', beginTest);
+router.post('/:id/submit-test', submitTest);
 router.post('/:id/complete-test', finishTest);
 router.post('/:id/reject', reject);
 
