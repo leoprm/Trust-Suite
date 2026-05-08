@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { Users, Wallet, Activity, GitBranch, LogOut, ArrowLeft, X, UserPlus, PlusCircle, Link, Copy, Check, AlertTriangle, Download, BriefcaseBusiness, UserCheck } from 'lucide-react';
+import { Users, Wallet, Activity, GitBranch, LogOut, ArrowLeft, X, UserPlus, PlusCircle, Link, Copy, Check, AlertTriangle, Download, BriefcaseBusiness, UserCheck, FileDown, Loader2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useTranslation } from 'react-i18next';
 import { useAuthStore } from '../store/authStore';
@@ -16,7 +16,7 @@ import PendingEvidenceList from '../components/PendingEvidenceList';
 import ExpressTaskModal from '../components/ExpressTaskModal';
 import HashtagGovernanceModal from '../components/HashtagGovernanceModal';
 import { Zap, Hash, Droplets, Telescope } from 'lucide-react';
-import { downloadJsonExport } from '../lib/downloadExport';
+import { downloadJsonExport, downloadPdfExport } from '../lib/downloadExport';
 import BerryWalletPanel from '../components/BerryWalletPanel';
 import InsightPanel from '../components/InsightPanel';
 import ExternalCandidatePanel from '../components/ExternalCandidatePanel';
@@ -46,6 +46,7 @@ export default function TreeDetail() {
   const [linkCopied, setLinkCopied] = useState(false);
   const [refreshBranches, setRefreshBranches] = useState(0);
   const [exportingTree, setExportingTree] = useState(false);
+  const [exportingPdf, setExportingPdf] = useState(false);
 
   useEffect(() => {
     fetchTree();
@@ -210,6 +211,20 @@ export default function TreeDetail() {
     }
   };
 
+  const handleExportPdf = async () => {
+    if (!id) return;
+    setExportingPdf(true);
+    try {
+      await downloadPdfExport(`/exports/tree/${id}/pdf`);
+      // Brief toast-like feedback (set a brief state)
+      setExportingPdf(false);
+    } catch (e: any) {
+      const msg = e?.response?.data?.error || 'No se pudo generar el PDF.';
+      alert(msg);
+      setExportingPdf(false);
+    }
+  };
+
   const isAlreadyContact = (userId: string) => contacts.some(c => c.id === userId);
 
   if (loading) return <div className="container mt-8">Cargando...</div>;
@@ -354,6 +369,30 @@ export default function TreeDetail() {
                   <Download size={18} /> {exportingTree ? 'Exportando...' : 'Exportar Tree'}
                 </button>
                 <button
+                  onClick={handleExportPdf}
+                  disabled={exportingPdf}
+                  className="btn btn-outline"
+                  style={{
+                    color: '#fef3c7',
+                    borderColor: 'rgba(245,158,11,0.28)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '0.5rem',
+                    opacity: exportingPdf ? 0.65 : 1,
+                    cursor: exportingPdf ? 'not-allowed' : 'pointer',
+                    minWidth: isMobile ? '44px' : undefined,
+                    minHeight: isMobile ? '44px' : undefined,
+                  }}
+                  title="Descargar reporte financiero en PDF"
+                >
+                  {exportingPdf ? (
+                    <Loader2 size={18} className="animate-spin" />
+                  ) : (
+                    <FileDown size={18} />
+                  )}{' '}
+                  {exportingPdf ? 'Generando...' : 'Exportar PDF'}
+                </button>
+                <button
                   onClick={handleToggleCrisis}
                   className="btn btn-outline"
                   style={{
@@ -416,7 +455,7 @@ export default function TreeDetail() {
       </header>
 
       {/* Tabs */}
-      <div className="flex gap-4 mb-8" style={{ borderBottom: '1px solid var(--border-color)', paddingBottom: '1px' }}>
+      <div className="flex gap-4 mb-8" style={{ borderBottom: '1px solid var(--border-color)', paddingBottom: '1px', overflowX: 'auto', WebkitOverflowScrolling: 'touch', scrollbarWidth: 'none' }}>
         <button 
           onClick={() => setActiveTab('DASHBOARD')}
           className="btn"

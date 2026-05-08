@@ -5,6 +5,7 @@ import { useTreeStore } from '../store/treeStore';
 import { motion, AnimatePresence } from 'framer-motion';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { OptimizedText } from '../components/OptimizedText';
+import { formatCompactCurrency } from '../lib/format';
 
 export default function MyTreesList() {
   const { trees, globalTrees, loadingTrees: loading, fetchTrees } = useTreeStore();
@@ -135,7 +136,7 @@ export default function MyTreesList() {
             <span style={{ fontSize: '0.65rem', textTransform: 'uppercase', color: 'var(--text-secondary)', fontWeight: 600 }}>Rentabilidad</span>
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', color: hasProfit ? 'var(--accent-success)' : '#ef4444', fontWeight: 700, fontSize: '0.9rem' }}>
               {hasProfit ? <TrendingUp size={14} /> : <TrendingDown size={14} />}
-              ${Math.abs(data?.fiatMonthlyProfit || 0).toFixed(1)}
+              {formatCompactCurrency(data?.fiatMonthlyProfit || 0)}
             </div>
           </div>
 
