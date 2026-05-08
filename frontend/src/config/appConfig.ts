@@ -162,3 +162,25 @@ export function getTrustLiteUrl(): string {
   }
   return `${protocol}//${host}:5173`; // dev genérico
 }
+
+/** URL de otra PWA del ecosistema Trust Suite según entorno */
+export function getAppUrl(flavor: string): string {
+  const envMap: Record<string, string> = {
+    'trust-lite': import.meta.env.VITE_TRUST_LITE_URL,
+    'branch-os': import.meta.env.VITE_BRANCH_OS_URL,
+    'trace-lite': import.meta.env.VITE_TRACE_LITE_URL,
+    'trust-insight': import.meta.env.VITE_TRUST_INSIGHT_URL,
+  };
+  const envUrl = envMap[flavor];
+  if (envUrl) return envUrl;
+  // Fallback localhost
+  const portMap: Record<string, number> = {
+    'trust-lite': 5173,
+    'branch-os': 5174,
+    'trace-lite': 5175,
+    'trust-insight': 5176,
+  };
+  const host = window.location.hostname;
+  const protocol = window.location.protocol;
+  return `${protocol}//${host}:${portMap[flavor] || 5173}`;
+}

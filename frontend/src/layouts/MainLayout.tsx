@@ -1,12 +1,13 @@
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
-import { LogOut, Globe, Shield, Eye, CheckSquare, Users, TrendingUp, HelpCircle } from 'lucide-react';
+import { HelpCircle, LogOut, Globe, Shield, Eye, CheckSquare, Users, TrendingUp } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import TreeSidebar from '../components/TreeSidebar';
 import PWAInstallPrompt from '../components/PWAInstallPrompt';
 import RegistroInvitadoModal from '../components/RegistroInvitadoModal';
+import AppSwitcher from '../components/AppSwitcher';
 import { useAuthStore } from '../store/authStore';
 import { useTranslation } from 'react-i18next';
-import { appConfig } from '../config/appConfig';
+import { appConfig, isTrustLanding } from '../config/appConfig';
 import { resetOnboarding } from '../components/OnboardingTour';
 
 export default function MainLayout() {
@@ -139,6 +140,8 @@ export default function MainLayout() {
                 <button onClick={() => navigate('/privacy')} className="btn btn-outline" style={{ padding: '0.4rem', width: '36px', height: '36px' }} title="Privacidad">
                   <Eye size={18} />
                 </button>
+                
+                {!isTrustLanding && <AppSwitcher isMobile={isMobile} />}
                 
                 <button onClick={handleReplayTour} className="btn btn-outline" style={{ padding: '0.4rem', width: '36px', height: '36px' }} title="Tour guiado">
                   <HelpCircle size={18} />

@@ -25,6 +25,23 @@ import { appConfig, isBranchOS, isTraceLite, isTrustLite, isTrustInsight, isTrus
 
 function App() {
   const isAuthenticated = useAuthStore((state: any) => state.isAuthenticated);
+  const crossLogin = useAuthStore((state: any) => state.crossLogin);
+
+  // SSO cross-app login: interceptar ?token en URL
+  useEffect(() => {
+    if (isTrustLanding) return; // landing es pública, sin auth
+    const params = new URLSearchParams(window.location.search);
+    const crossToken = params.get('token');
+    if (crossToken) {
+      crossLogin(crossToken).then((ok: boolean) => {
+        // Limpiar token de la URL (ocultar de historial/compartir)
+        window.history.replaceState({}, document.title, window.location.pathname);
+        if (!ok) {
+          console.warn('[SSO] cross-login falló — token expirado o inválido');
+        }
+      });
+    }
+  }, []); // solo al montar
 
   useEffect(() => {
     const lockOrientation = async () => {
