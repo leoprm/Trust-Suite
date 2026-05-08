@@ -203,3 +203,70 @@ export const guestJoin = async (req: Request, res: Response) => {
     res.status(500).json({ error: 'No se pudo procesar tu invitación. Intenta de nuevo más tarde.' });
   }
 };
+
+export const getSessionToken = async (req: any, res: Response) => {
+  try {
+    const userId = req.user.id;
+    const user = await getUserWithPoints(userId);
+    if (!user) return res.status(404).json({ error: 'User not found' });
+
+    const crossToken = jwt.sign(
+      { id: user.id, role: user.role, type: 'cross-app' },
+      JWT_SECRET,
+      { expiresIn: '15m' }
+    );
+
+    void logEvent({
+      ...getRequestContext(req),
+      actorId: userId,
+      action: 'SESSION_TOKEN_GENERATED',
+      entityType: 'User',
+      entityId: userId,
+      metadataJson: getRequestMetadata(req),
+      source: 'USER',
+    });
+
+    res.json({ crossToken, expiresIn: 900 });
+  } catch (error: any) {
+    console.error('getSessionToken error:', error);
+    res.status(500).json({ error: 'Failed to generate session token' });
+  }
+};
+
+export const crossLogin = async (req: Request, res: Response) => {
+  try {
+    const { crossToken } = req.body;
+    if (!crossToken) return res.status(400).json({ error: 'crossToken is required' });
+
+    let payload: any;
+    try {
+      payload = jwt.verify(crossToken, JWT_SECRET);
+    } catch {
+      return res.status(401).json({ error: 'Invalid or expired cross-token' });
+    }
+
+    if (payload.type !== 'cross-app') {
+      return res.status(401).json({ error: 'Invalid token type' });
+    }
+
+    const user = await getUserWithPoints(payload.id);
+    if (!user) return res.status(404).json({ error: 'User not found' });
+
+    const token = jwt.sign({ id: user.id, role: user.role }, JWT_SECRET, { expiresIn: '7d' });
+
+    void logEvent({
+      ...getRequestContext(req),
+      actorId: user.id,
+      action: 'CROSS_LOGIN_SUCCESS',
+      entityType: 'User',
+      entityId: user.id,
+      metadataJson: getRequestMetadata(req),
+      source: 'USER',
+    });
+
+    res.json({ token, user });
+  } catch (error: any) {
+    console.error('crossLogin error:', error);
+    res.status(500).json({ error: 'Cross-login failed' });
+  }
+};
