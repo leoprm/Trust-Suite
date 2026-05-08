@@ -13,6 +13,7 @@ import { useMatrixStore } from '../store/matrixStore';
 import { ArbolCrear, ArbolHacer, ArbolMedir } from '../components/ArbolViews';
 import { NecesidadCrear, NecesidadHacer, NecesidadMedir } from '../components/NecesidadViews';
 import { RamaCrear, RamaHacer, RamaMedir } from '../components/RamaViews';
+import OnboardingTour, { isOnboardingCompleted } from '../components/OnboardingTour';
 
 export default function Dashboard() {
   const { user, isInitialLoading } = useAuthStore();
@@ -21,6 +22,7 @@ export default function Dashboard() {
   const [isMobile, setIsMobile] = useState(window.innerWidth <= 768);
   const [, setRefreshKey] = useState(0);
   const { accionActiva, entidadActiva } = useMatrixStore();
+  const [showTour, setShowTour] = useState(false);
 
   useEffect(() => {
     const handleResize = () => setIsMobile(window.innerWidth <= 768);
@@ -31,6 +33,15 @@ export default function Dashboard() {
   useEffect(() => {
     if (!isInitialLoading && !user) navigate('/login');
   }, [user, isInitialLoading, navigate]);
+
+  // Auto-show onboarding tour after login if not completed
+  useEffect(() => {
+    if (!isInitialLoading && user && !isOnboardingCompleted()) {
+      // Small delay to let the DOM settle
+      const timer = setTimeout(() => setShowTour(true), 600);
+      return () => clearTimeout(timer);
+    }
+  }, [isInitialLoading, user]);
 
   if (isInitialLoading) return <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-secondary)' }}>{t('dashboard.loading')}</div>;
   if (!user) return null;
@@ -65,62 +76,76 @@ export default function Dashboard() {
     };
 
     return (
-      <MobileShell onSettingsPress={() => navigate('/trees/list')}>
-        <AnimatePresence mode="wait">
-          <motion.div
-            key={`${entidadActiva}-${accionActiva}`}
-            initial={{ opacity: 0, y: 8 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -8 }}
-            transition={{ duration: 0.18 }}
-          >
-            {renderBody()}
-          </motion.div>
-        </AnimatePresence>
-      </MobileShell>
+      <>
+        <MobileShell onSettingsPress={() => navigate('/trees/list')}>
+          <AnimatePresence mode="wait">
+            <motion.div
+              key={`${entidadActiva}-${accionActiva}`}
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -8 }}
+              transition={{ duration: 0.18 }}
+            >
+              {renderBody()}
+            </motion.div>
+          </AnimatePresence>
+        </MobileShell>
+        <OnboardingTour
+          isOpen={showTour}
+          onClose={() => setShowTour(false)}
+          isMobile={isMobile}
+        />
+      </>
     );
   }
 
   return (
-    <main className="container" style={{ paddingTop: '2rem', paddingBottom: '4rem', display: 'flex', flexDirection: 'column', gap: '2rem' }}>
-      <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <div>
-          <h1 style={{ margin: 0 }}>{t('dashboard.title')}</h1>
-          <p style={{ color: 'var(--text-secondary)', margin: '0.2rem 0 0 0' }}>{t('dashboard.welcome')}</p>
-        </div>
-        <div style={{ display: 'flex', gap: '1rem' }}>
-          <button className="btn btn-outline" onClick={() => navigate('/trees')}>
-            <TreePine size={18} /> {t('dashboard.my_trees')}
-          </button>
-          <button className="btn btn-primary" onClick={() => navigate('/needs/new')}>
-            <Plus size={18} /> {t('dashboard.new_need')}
-          </button>
-        </div>
-      </header>
+    <>
+      <main className="container" style={{ paddingTop: '2rem', paddingBottom: '4rem', display: 'flex', flexDirection: 'column', gap: '2rem' }}>
+        <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div>
+            <h1 style={{ margin: 0 }}>{t('dashboard.title')}</h1>
+            <p style={{ color: 'var(--text-secondary)', margin: '0.2rem 0 0 0' }}>{t('dashboard.welcome')}</p>
+          </div>
+          <div style={{ display: 'flex', gap: '1rem' }}>
+            <button className="btn btn-outline" onClick={() => navigate('/trees')}>
+              <TreePine size={18} /> {t('dashboard.my_trees')}
+            </button>
+            <button className="btn btn-primary" onClick={() => navigate('/needs/new')}>
+              <Plus size={18} /> {t('dashboard.new_need')}
+            </button>
+          </div>
+        </header>
 
-      <section>
-        <FinancialDashboard isGlobal={true} />
-      </section>
+        <section>
+          <FinancialDashboard isGlobal={true} />
+        </section>
 
-      <section className="glass-panel" style={{ padding: '1.5rem' }}>
-        <EvaluatorDashboard />
-      </section>
+        <section className="glass-panel" style={{ padding: '1.5rem' }}>
+          <EvaluatorDashboard />
+        </section>
 
-      <section className="glass-panel" style={{ padding: '1.5rem' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1rem' }}>
-          <Activity stroke="var(--accent-success)" />
-          <h3 style={{ margin: 0 }}>{t('dashboard.active_needs')}</h3>
-        </div>
-        <Feed />
-      </section>
+        <section className="glass-panel" style={{ padding: '1.5rem' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1rem' }}>
+            <Activity stroke="var(--accent-success)" />
+            <h3 style={{ margin: 0 }}>{t('dashboard.active_needs')}</h3>
+          </div>
+          <Feed />
+        </section>
 
-      <section className="glass-panel" style={{ padding: '1.5rem' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1rem' }}>
-          <GitBranch stroke="var(--accent-primary)" />
-          <h3 style={{ margin: 0 }}>{t('branches.title')}</h3>
-        </div>
-        <BranchFeed />
-      </section>
-    </main>
+        <section className="glass-panel" style={{ padding: '1.5rem' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1rem' }}>
+            <GitBranch stroke="var(--accent-primary)" />
+            <h3 style={{ margin: 0 }}>{t('branches.title')}</h3>
+          </div>
+          <BranchFeed />
+        </section>
+      </main>
+      <OnboardingTour
+        isOpen={showTour}
+        onClose={() => setShowTour(false)}
+        isMobile={isMobile}
+      />
+    </>
   );
 }

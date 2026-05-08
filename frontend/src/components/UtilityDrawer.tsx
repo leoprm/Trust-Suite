@@ -1,6 +1,6 @@
 import { useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Bell, User, Users, ChevronLeft, Crosshair, Globe, LogOut, Eye, ShieldCheck } from 'lucide-react';
+import { X, Bell, User, Users, ChevronLeft, Crosshair, Globe, LogOut, Eye, ShieldCheck, HelpCircle } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useMatrixStore } from '../store/matrixStore';
 import type { UtilityPanel } from '../store/matrixStore';
@@ -11,7 +11,7 @@ import ProfilePage from './ProfilePage';
 import MisPersonas from './MisPersonas';
 import PrivacySettingsPanel from './PrivacySettingsPanel';
 import { appConfig, type DrawerPanelKey } from '../config/appConfig';
-
+import { resetOnboarding } from './OnboardingTour';
 const OptimizedText = ({ text, style }: { text: string; style?: React.CSSProperties }) => (
   <span style={style}>{text}</span>
 );
@@ -62,6 +62,12 @@ export default function UtilityDrawer({ open, onClose }: UtilityDrawerProps) {
     logoutStore();
     onClose();
     navigate('/login');
+  };
+
+  const handleReplayTour = () => {
+    resetOnboarding();
+    onClose();
+    navigate('/');
   };
 
   const toggleLanguage = () => {
@@ -290,6 +296,28 @@ export default function UtilityDrawer({ open, onClose }: UtilityDrawerProps) {
                   {colorMode === 'modern' ? t('m.drawer.new_colors') : t('m.drawer.old_colors')}
                 </span>
                 <span>{colorMode === 'modern' ? 'ON' : 'OFF'}</span>
+              </button>
+
+              {/* Tour guiado */}
+              <button
+                onClick={handleReplayTour}
+                style={{
+                  display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                  width: '100%',
+                  padding: '0.7rem 0.8rem',
+                  borderRadius: 12,
+                  background: 'rgba(59,130,246,0.08)',
+                  border: '1px solid rgba(59,130,246,0.25)',
+                  color: '#93c5fd',
+                  cursor: 'pointer',
+                  fontSize: '0.75rem',
+                  fontWeight: 700,
+                  fontFamily: 'inherit',
+                }}
+              >
+                <span style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
+                  <HelpCircle size={16} /> Tour guiado
+                </span>
               </button>
 
               <button

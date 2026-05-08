@@ -1,4 +1,4 @@
-export type AppFlavor = 'trust-lite' | 'branch-os' | 'trace-lite' | 'trust-insight';
+export type AppFlavor = 'trust-lite' | 'branch-os' | 'trace-lite' | 'trust-insight' | 'trust-landing';
 export type MatrixEntity = 'arbol' | 'necesidad' | 'rama' | 'tarea';
 export type DrawerPanelKey = 'notifications' | 'profile' | 'privacy' | 'directory';
 
@@ -111,10 +111,31 @@ const APP_CONFIGS: Record<AppFlavor, AppConfig> = {
     },
     serviceWorker: '/sw-trust-insight.js',
   },
+  'trust-landing': {
+    id: 'trust-landing',
+    name: 'Trust',
+    shortName: 'Trust',
+    description: 'Plataforma de confianza organizacional descentralizada.',
+    defaultPath: '/',
+    defaultEntity: 'arbol',
+    matrixEntities: ['arbol'],
+    drawerPanels: [],
+    features: {
+      admin: false,
+      citizenProfile: false,
+      directory: false,
+      needs: false,
+      people: false,
+      talentSearch: false,
+      treeList: false,
+      treeNetwork: false,
+    },
+    serviceWorker: '/sw.js',
+  },
 };
 
 function normalizeFlavor(value: string | undefined): AppFlavor {
-  if (value === 'branch-os' || value === 'trace-lite' || value === 'trust-lite' || value === 'trust-insight') {
+  if (value === 'branch-os' || value === 'trace-lite' || value === 'trust-lite' || value === 'trust-insight' || value === 'trust-landing') {
     return value;
   }
 
@@ -127,3 +148,4 @@ export const isTrustLite = activeAppFlavor === 'trust-lite';
 export const isBranchOS = activeAppFlavor === 'branch-os';
 export const isTraceLite = activeAppFlavor === 'trace-lite';
 export const isTrustInsight = activeAppFlavor === 'trust-insight';
+export const isTrustLanding = activeAppFlavor === 'trust-landing';

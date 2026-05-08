@@ -1,5 +1,5 @@
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
-import { LogOut, Globe, Shield, Eye, CheckSquare, Users, TrendingUp } from 'lucide-react';
+import { LogOut, Globe, Shield, Eye, CheckSquare, Users, TrendingUp, HelpCircle } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import TreeSidebar from '../components/TreeSidebar';
 import PWAInstallPrompt from '../components/PWAInstallPrompt';
@@ -7,6 +7,7 @@ import RegistroInvitadoModal from '../components/RegistroInvitadoModal';
 import { useAuthStore } from '../store/authStore';
 import { useTranslation } from 'react-i18next';
 import { appConfig } from '../config/appConfig';
+import { resetOnboarding } from '../components/OnboardingTour';
 
 export default function MainLayout() {
   const user = useAuthStore((state: any) => state.user);
@@ -18,6 +19,11 @@ export default function MainLayout() {
   const handleLogout = () => {
     logoutStore();
     navigate('/login');
+  };
+
+  const handleReplayTour = () => {
+    resetOnboarding();
+    navigate('/');
   };
   const location = useLocation();
   const { t, i18n } = useTranslation();
@@ -132,6 +138,10 @@ export default function MainLayout() {
                 
                 <button onClick={() => navigate('/privacy')} className="btn btn-outline" style={{ padding: '0.4rem', width: '36px', height: '36px' }} title="Privacidad">
                   <Eye size={18} />
+                </button>
+                
+                <button onClick={handleReplayTour} className="btn btn-outline" style={{ padding: '0.4rem', width: '36px', height: '36px' }} title="Tour guiado">
+                  <HelpCircle size={18} />
                 </button>
                 
                 <button onClick={handleLogout} className="btn btn-outline" style={{ padding: '0.4rem', width: '36px', height: '36px' }} title={t('nav.logout')}>

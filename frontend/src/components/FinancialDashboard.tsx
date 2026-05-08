@@ -3,6 +3,7 @@ import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContai
 import { ArrowDownLeft, ArrowUpRight, Lock, Plus, ShieldCheck, TrendingUp, Wallet } from 'lucide-react';
 import api from '../lib/api';
 import TransactionModal from './TransactionModal';
+import { formatCompactCurrency } from '../lib/format';
 
 interface FinancialDashboardProps {
   treeId?: string;
@@ -65,7 +66,7 @@ export default function FinancialDashboard({ treeId, isGlobal, isTreeAdmin }: Fi
   const processChartData = (items: any[]) => {
     const grouped: Record<string, any> = {};
     items.forEach((transaction) => {
-      const dateStr = transaction.date ? transaction.date.split('T')[0] : 'N/A';
+      const dateStr = transaction.createdAt ? transaction.createdAt.split('T')[0] : (transaction.date ? transaction.date.split('T')[0] : 'N/A');
       if (!grouped[dateStr]) grouped[dateStr] = { name: dateStr, income: 0, expense: 0, investment: 0 };
       if (transaction.type === 'INCOME') grouped[dateStr].income += Number(transaction.amount || 0);
       else if (transaction.type === 'EXPENSE') grouped[dateStr].expense += Number(transaction.amount || 0);
@@ -101,7 +102,7 @@ export default function FinancialDashboard({ treeId, isGlobal, isTreeAdmin }: Fi
   };
 
   return (
-    <div className="flex-col gap-8">
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
       <div style={{
         display: 'flex',
         alignItems: 'center',
@@ -144,16 +145,16 @@ export default function FinancialDashboard({ treeId, isGlobal, isTreeAdmin }: Fi
         </div>
       )}
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1.5rem' }}>
-        <Metric title="Saldo neto externo" value={formatCLP(summary.balance)} tone={Number(summary.balance) >= 0 ? 'success' : 'danger'} icon={<Wallet size={18} />} />
-        <Metric title="Ingresos externos" value={formatCLP(summary.income)} tone="success" />
-        <Metric title="Gastos externos" value={formatCLP(summary.expense)} tone="danger" />
-        <Metric title="Inversiones externas" value={formatCLP(summary.investment)} tone="primary" />
+      <div data-tour="tour-metrics" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1.5rem' }}>
+        <Metric title="Saldo neto externo" value={formatCompactCurrency(summary.balance)} tone={Number(summary.balance) >= 0 ? 'success' : 'danger'} icon={<Wallet size={18} />} />
+        <Metric title="Ingresos externos" value={formatCompactCurrency(summary.income)} tone="success" />
+        <Metric title="Gastos externos" value={formatCompactCurrency(summary.expense)} tone="danger" />
+        <Metric title="Inversiones externas" value={formatCompactCurrency(summary.investment)} tone="primary" />
         {ebitda && (
-          <>
+          <div data-tour="tour-ebitda">
             <Metric title="EBITDA externo" value={formatCLP(ebitda.ebitda)} tone={ebitda.ebitda >= 0 ? 'success' : 'danger'} icon={<TrendingUp size={18} />} caption="Ingresos - gastos operativos" />
             <Metric title="Inversion externa %" value={`${ebitda.inversionPct.toFixed(1)}%`} tone="info" caption="Ramas activas / flujo total" />
-          </>
+          </div>
         )}
       </div>
 
@@ -184,7 +185,7 @@ export default function FinancialDashboard({ treeId, isGlobal, isTreeAdmin }: Fi
         </div>
 
         <div style={{ width: '100%', height: 350 }}>
-          <ResponsiveContainer width="100%" height="100%">
+          <ResponsiveContainer width="99%" height={350}>
             <AreaChart data={chartData}>
               <defs>
                 <linearGradient id="colorIncome" x1="0" y1="0" x2="0" y2="1">
@@ -245,7 +246,7 @@ export default function FinancialDashboard({ treeId, isGlobal, isTreeAdmin }: Fi
                 ) : (
                   transactions.slice().reverse().map((transaction) => (
                     <tr key={transaction.id} style={{ borderBottom: '1px solid rgba(255,255,255,0.03)' }}>
-                      <td style={td}>{transaction.date ? transaction.date.split('T')[0].split('-').reverse().join('/') : '-'}</td>
+                      <td style={td}>{transaction.createdAt ? transaction.createdAt.split('T')[0].split('-').reverse().join('/') : (transaction.date ? transaction.date.split('T')[0].split('-').reverse().join('/') : '-')}</td>
                       <td style={td}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.85rem' }}>
                           {transaction.type === 'INCOME' ? <ArrowUpRight size={14} color="var(--accent-success)" /> :

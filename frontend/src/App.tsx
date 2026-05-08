@@ -17,10 +17,11 @@ import BranchOSDashboard from './pages/BranchOSDashboard';
 import TraceProfile from './pages/TraceProfile';
 import PrivacyPage from './pages/PrivacyPage';
 import TrustInsightDashboard from './pages/TrustInsightDashboard';
+import LandingPage from './pages/LandingPage';
 
 import MainLayout from './layouts/MainLayout';
 import { useEffect } from 'react';
-import { appConfig, isBranchOS, isTraceLite, isTrustLite, isTrustInsight } from './config/appConfig';
+import { appConfig, isBranchOS, isTraceLite, isTrustLite, isTrustInsight, isTrustLanding } from './config/appConfig';
 
 function App() {
   const isAuthenticated = useAuthStore((state: any) => state.isAuthenticated);
@@ -41,19 +42,18 @@ function App() {
       if (e.touches.length > 1) return;
       const target = e.target as HTMLElement;
       let el: HTMLElement | null = target;
-      let insideScroller = false;
       while (el && el !== document.body) {
         const style = window.getComputedStyle(el);
         const overflowY = style.overflowY;
-        if ((overflowY === 'auto' || overflowY === 'scroll') && el.scrollHeight > el.clientHeight) {
-          insideScroller = true;
-          break;
+        // Allow touch scrolling inside any scrollable container, even if content hasn't overflowed yet
+        // (content may grow after data loads, and we don't want to miss the scroll window)
+        if (overflowY === 'auto' || overflowY === 'scroll') {
+          return; // let native scroll handle it
         }
         el = el.parentElement;
       }
-      if (!insideScroller) {
-        e.preventDefault();
-      }
+      // Only prevent if we're not inside any scrollable container
+      e.preventDefault();
     };
 
     document.body.addEventListener('touchmove', preventPullToRefresh, { passive: false });
@@ -120,6 +120,15 @@ function App() {
               <Route path="/" element={<TrustInsightDashboard />} />
               <Route path="/privacy" element={<PrivacyPage />} />
             </Route>
+          )}
+
+          {isTrustLanding && (
+            <>
+              <Route path="/" element={<LandingPage />} />
+              <Route path="/login" element={!isAuthenticated ? <Login /> : <Navigate to="/dashboard" />} />
+              <Route path="/register" element={!isAuthenticated ? <Login /> : <Navigate to="/dashboard" />} />
+              <Route path="*" element={<Navigate to="/" />} />
+            </>
           )}
 
           <Route path="/join/:token" element={<GuestJoin />} />

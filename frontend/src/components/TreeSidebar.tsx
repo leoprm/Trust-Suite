@@ -42,18 +42,19 @@ const TreeSidebar = ({ isMobile }: { isMobile?: boolean }) => {
   const navItems = [
     appConfig.id === 'trust-lite' ? { icon: LayoutDashboard, label: 'Resumen Global', path: '/' } : null,
     appConfig.id === 'branch-os' ? { icon: ListTodo, label: 'Tareas', path: '/' } : null,
-    appConfig.features.people ? { icon: Users, label: 'Personas', path: '/people' } : null,
+    appConfig.features.people ? { icon: Users, label: 'Personas', path: '/people', dataTour: 'tour-people' } : null,
     appConfig.features.citizenProfile ? { icon: UserRound, label: 'Perfil ciudadano', path: '/profile' } : null,
     appConfig.drawerPanels.includes('privacy') ? { icon: LockKeyhole, label: 'Privacidad', path: '/privacy' } : null,
     appConfig.features.admin && user?.role === 'ADMINISTRATOR' ? { icon: ShieldCheck, label: 'Admin', path: '/admin' } : null,
     appConfig.features.talentSearch ? { icon: Crosshair, label: 'Buscar Talento', path: '/talent' } : null,
   ].filter((item): item is { icon: typeof LayoutDashboard; label: string; path: string } => Boolean(item));
 
-  const NavItem = ({ icon: Icon, label, path, active }: any) => {
+  const NavItem = ({ icon: Icon, label, path, active, dataTour }: any) => {
     const isExternal = path.startsWith('http');
 
     const content = (
       <div
+        data-tour={dataTour}
         style={{
           display: 'flex',
           alignItems: 'center',
@@ -127,6 +128,7 @@ const TreeSidebar = ({ isMobile }: { isMobile?: boolean }) => {
             label={item.label}
             path={item.path}
             active={location.pathname === item.path}
+            dataTour={(item as any).dataTour}
           />
         ))}
       </div>
@@ -170,6 +172,7 @@ const TreeSidebar = ({ isMobile }: { isMobile?: boolean }) => {
                   </Link>
                   <button
                     onClick={() => navigate('/trees/new')}
+                    data-tour="tour-new-tree"
                     style={{
                       background: 'none',
                       border: 'none',
