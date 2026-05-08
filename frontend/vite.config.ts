@@ -6,6 +6,7 @@ const PORTS: Record<string, number> = {
   'branch-os': 5174,
   'trace-lite': 5175,
   'trust-insight': 5176,
+  'trust-landing': 5177,
 };
 
 export default defineConfig(({ mode }) => {
@@ -20,7 +21,7 @@ export default defineConfig(({ mode }) => {
       allowedHosts: ['.trycloudflare.com', 'localhost', '.local'],
       proxy: {
         '/api': {
-          target: 'http://localhost:3000',
+          target: 'http://localhost:3100',
           changeOrigin: true,
           configure: (proxy) => {
             proxy.on('proxyReq', (proxyReq) => {
