@@ -26,19 +26,24 @@ import { appConfig, isBranchOS, isTraceLite, isTrustLite, isTrustInsight, isTrus
 function App() {
   const isAuthenticated = useAuthStore((state: any) => state.isAuthenticated);
   const crossLogin = useAuthStore((state: any) => state.crossLogin);
-  const [ssoChecking, setSsoChecking] = useState(false);
+  const [ssoChecking, setSsoChecking] = useState(() => {
+    if (isTrustLanding) return false;
+    const params = new URLSearchParams(window.location.search);
+    return !!params.get('token') && !isAuthenticated;
+  });
 
   // SSO cross-app login: interceptar ?token en URL ANTES del redirect
   useEffect(() => {
-    if (isTrustLanding) return;
+    if (isTrustLanding || !ssoChecking) return;
     const params = new URLSearchParams(window.location.search);
     const crossToken = params.get('token');
-    if (crossToken && !isAuthenticated) {
-      setSsoChecking(true);
+    if (crossToken) {
       crossLogin(crossToken).then((ok: boolean) => {
         window.history.replaceState({}, document.title, window.location.pathname);
         setSsoChecking(false);
       });
+    } else {
+      setSsoChecking(false);
     }
   }, []); // solo al montar
 
