@@ -125,8 +125,7 @@ function App() {
           {isTrustLanding && (
             <>
               <Route path="/" element={<LandingPage />} />
-              <Route path="/login" element={!isAuthenticated ? <Login /> : <Navigate to="/dashboard" />} />
-              <Route path="/register" element={!isAuthenticated ? <Login /> : <Navigate to="/dashboard" />} />
+              {/* landing no maneja auth — redirige a Trust Lite */}
               <Route path="*" element={<Navigate to="/" />} />
             </>
           )}

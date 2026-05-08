@@ -149,3 +149,16 @@ export const isBranchOS = activeAppFlavor === 'branch-os';
 export const isTraceLite = activeAppFlavor === 'trace-lite';
 export const isTrustInsight = activeAppFlavor === 'trust-insight';
 export const isTrustLanding = activeAppFlavor === 'trust-landing';
+
+/** URL del PWA Trust Lite según entorno: localhost → :5173, túnel → variable VITE_TRUST_LITE_URL */
+export function getTrustLiteUrl(): string {
+  const env = import.meta.env.VITE_TRUST_LITE_URL;
+  if (env) return env;
+  // Fallback: construir desde el origen actual (mismo hostname, puerto 5173)
+  const host = window.location.hostname;
+  const protocol = window.location.protocol;
+  if (host === 'localhost' || host === '127.0.0.1') {
+    return `${protocol}//${host}:5173`;
+  }
+  return `${protocol}//${host}:5173`; // dev genérico
+}

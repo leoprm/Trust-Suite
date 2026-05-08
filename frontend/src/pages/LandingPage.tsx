@@ -1,11 +1,11 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
 import {
   Shield, TrendingUp, Users, Star, Smile,
   TreePine, BarChart3, HandCoins,
   ArrowRight, Loader2,
 } from 'lucide-react';
 import { useAuthStore } from '../store/authStore';
+import { getTrustLiteUrl } from '../config/appConfig';
 import api from '../lib/api';
 
 /* ------------------------------------------------------------------ */
@@ -137,7 +137,6 @@ function HowStep({ icon: Icon, step, title, desc }: { icon: React.ElementType; s
 /* ------------------------------------------------------------------ */
 export default function LandingPage() {
   const isAuthenticated = useAuthStore((s: any) => s.isAuthenticated);
-  const navigate = useNavigate();
   const [metrics, setMetrics] = useState<PublicMetrics | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
@@ -224,23 +223,23 @@ export default function LandingPage() {
             </div>
             <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center' }}>
               {isAuthenticated ? (
-                <button
-                  onClick={() => navigate('/dashboard')}
+                <a
+                  href={getTrustLiteUrl()}
                   className="btn btn-primary"
-                  style={{ padding: '0.5rem 1.25rem', fontSize: '0.85rem' }}
+                  style={{ padding: '0.5rem 1.25rem', fontSize: '0.85rem', textDecoration: 'none' }}
                 >
                   Ir al Dashboard
                   <ArrowRight size={16} />
-                </button>
+                </a>
               ) : (
                 <>
-                  <Link to="/register" className="btn btn-outline" style={{ padding: '0.5rem 1.25rem', fontSize: '0.85rem' }}>
-                    Registrarse
-                  </Link>
-                  <Link to="/login" className="btn btn-primary" style={{ padding: '0.5rem 1.25rem', fontSize: '0.85rem' }}>
+                  <a href={`${getTrustLiteUrl()}/login`} className="btn btn-outline" style={{ padding: '0.5rem 1.25rem', fontSize: '0.85rem', textDecoration: 'none' }}>
+                    Iniciar sesión
+                  </a>
+                  <a href={`${getTrustLiteUrl()}/login`} className="btn btn-primary" style={{ padding: '0.5rem 1.25rem', fontSize: '0.85rem', textDecoration: 'none' }}>
                     Comenzar
                     <ArrowRight size={16} />
-                  </Link>
+                  </a>
                 </>
               )}
             </div>
@@ -269,19 +268,19 @@ export default function LandingPage() {
               </p>
               <div style={{ display: 'flex', gap: '1rem', justifyContent: 'center', flexWrap: 'wrap' }}>
                 {isAuthenticated ? (
-                  <button onClick={() => navigate('/dashboard')} className="btn btn-primary" style={{ padding: '0.85rem 2rem', fontSize: '1rem' }}>
+                  <a href={getTrustLiteUrl()} className="btn btn-primary" style={{ padding: '0.85rem 2rem', fontSize: '1rem', textDecoration: 'none' }}>
                     Ir al Dashboard
                     <ArrowRight size={18} />
-                  </button>
+                  </a>
                 ) : (
                   <>
-                    <Link to="/login" className="btn btn-primary" style={{ padding: '0.85rem 2rem', fontSize: '1rem' }}>
+                    <a href={`${getTrustLiteUrl()}/login`} className="btn btn-primary" style={{ padding: '0.85rem 2rem', fontSize: '1rem', textDecoration: 'none' }}>
                       Comenzar
                       <ArrowRight size={18} />
-                    </Link>
-                    <Link to="/register" className="btn btn-outline" style={{ padding: '0.85rem 2rem', fontSize: '1rem' }}>
+                    </a>
+                    <a href={`${getTrustLiteUrl()}/login`} className="btn btn-outline" style={{ padding: '0.85rem 2rem', fontSize: '1rem', textDecoration: 'none' }}>
                       Crear cuenta gratis
-                    </Link>
+                    </a>
                   </>
                 )}
               </div>
@@ -424,10 +423,10 @@ export default function LandingPage() {
                 <p style={{ color: 'var(--text-secondary)', fontSize: '1rem', maxWidth: 500, margin: '0 auto 2rem', lineHeight: 1.7 }}>
                   Únete al ecosistema de confianza descentralizada. Comienza gratis, sin compromiso.
                 </p>
-                <Link to="/login" className="btn btn-primary" style={{ padding: '0.9rem 2.25rem', fontSize: '1.05rem' }}>
+                <a href={`${getTrustLiteUrl()}/login`} className="btn btn-primary" style={{ padding: '0.9rem 2.25rem', fontSize: '1.05rem', textDecoration: 'none' }}>
                   Comenzar ahora
                   <ArrowRight size={18} />
-                </Link>
+                </a>
               </div>
             </section>
           )}
@@ -444,8 +443,8 @@ export default function LandingPage() {
             </div>
             <p>Trust © 2026 — Tecnología para la economía del cuidado</p>
             <div style={{ display: 'flex', gap: '1.5rem', justifyContent: 'center', marginTop: '0.75rem' }}>
-              <Link to="/login" style={{ color: 'var(--text-secondary)', textDecoration: 'none' }}>Iniciar sesión</Link>
-              <Link to="/register" style={{ color: 'var(--text-secondary)', textDecoration: 'none' }}>Registrarse</Link>
+              <a href={`${getTrustLiteUrl()}/login`} style={{ color: 'var(--text-secondary)', textDecoration: 'none' }}>Iniciar sesión</a>
+              <a href={`${getTrustLiteUrl()}/login`} style={{ color: 'var(--text-secondary)', textDecoration: 'none' }}>Registrarse</a>
             </div>
           </footer>
         </div>
