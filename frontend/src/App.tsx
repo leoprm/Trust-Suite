@@ -20,25 +20,24 @@ import TrustInsightDashboard from './pages/TrustInsightDashboard';
 import LandingPage from './pages/LandingPage';
 
 import MainLayout from './layouts/MainLayout';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { appConfig, isBranchOS, isTraceLite, isTrustLite, isTrustInsight, isTrustLanding } from './config/appConfig';
 
 function App() {
   const isAuthenticated = useAuthStore((state: any) => state.isAuthenticated);
   const crossLogin = useAuthStore((state: any) => state.crossLogin);
+  const [ssoChecking, setSsoChecking] = useState(false);
 
-  // SSO cross-app login: interceptar ?token en URL
+  // SSO cross-app login: interceptar ?token en URL ANTES del redirect
   useEffect(() => {
-    if (isTrustLanding) return; // landing es pública, sin auth
+    if (isTrustLanding) return;
     const params = new URLSearchParams(window.location.search);
     const crossToken = params.get('token');
-    if (crossToken) {
+    if (crossToken && !isAuthenticated) {
+      setSsoChecking(true);
       crossLogin(crossToken).then((ok: boolean) => {
-        // Limpiar token de la URL (ocultar de historial/compartir)
         window.history.replaceState({}, document.title, window.location.pathname);
-        if (!ok) {
-          console.warn('[SSO] cross-login falló — token expirado o inválido');
-        }
+        setSsoChecking(false);
       });
     }
   }, []); // solo al montar
@@ -79,6 +78,19 @@ function App() {
 
   return (
     <>
+      {/* SSO loading — no redirigir a /login mientras se verifica el crossToken */}
+      {ssoChecking && (
+        <div style={{
+          display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+          height: '100vh', background: 'var(--bg-primary)', gap: '1rem'
+        }}>
+          <div className="spinner" style={{ width: 32, height: 32, border: '3px solid var(--border-color)', borderTopColor: 'var(--accent-primary)', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
+          <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem' }}>Verificando sesión...</p>
+        </div>
+      )}
+
+      {!ssoChecking && (
+      <>
       <div id="orientation-guard">
         <svg className="rotate-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
           <rect x="5" y="2" width="14" height="20" rx="2" ry="2"/>
@@ -153,6 +165,8 @@ function App() {
           <Route path="*" element={<Navigate to={appConfig.defaultPath} />} />
         </Routes>
       </BrowserRouter>
+    </>
+      )}
     </>
   );
 }
