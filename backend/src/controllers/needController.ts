@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import { prisma } from '../index';
 import { getRequestContext, getRequestMetadata, logEvent } from '../services/eventLogService';
+import { searchNeeds as searchNeedsService } from '../services/needSearchService';
 
 export const createNeed = async (req: any, res: Response) => {
   try {
@@ -386,5 +387,20 @@ export const getHashtagProposals = async (req: any, res: Response) => {
     res.json(proposals);
   } catch (error) {
     res.status(500).json({ error: 'Failed to fetch hashtag proposals' });
+  }
+};
+
+export const searchNeeds = async (req: any, res: Response) => {
+  try {
+    const { q } = req.query;
+    if (!q || typeof q !== 'string' || !q.trim()) {
+      return res.status(400).json({ error: 'Query parameter "q" is required' });
+    }
+
+    const results = await searchNeedsService(q.trim());
+    res.json(results);
+  } catch (error) {
+    console.error('searchNeeds error:', error);
+    res.status(500).json({ error: 'Failed to search Needs' });
   }
 };

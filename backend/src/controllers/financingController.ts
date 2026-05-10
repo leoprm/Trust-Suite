@@ -55,39 +55,7 @@ export const updateFinancingConfig = async (req: any, res: Response) => {
     if (error) return res.status(status!).json({ error });
     const tree = t!;
 
-    // Validaciones
-    if (financingMode) {
-      // Validar gates de madurez antes de permitir cambio de modo
-      const { canActivateFinancingMode, canActivateProportionalBilling } = await import('../services/maturityGates');
-
-      if (financingMode === 'SUBSCRIPCION' && tree.financingMode !== 'SUBSCRIPCION') {
-        const canSwitch = await canActivateFinancingMode(treeId, 'SUBSCRIPCION');
-        if (!canSwitch) {
-          const { getMaturityGateStatus } = await import('../services/maturityGates');
-          const status = await getMaturityGateStatus(treeId);
-          const subBlocked = status.blockedModes.find(b => b.mode === 'SUBSCRIPCION');
-          return res.status(422).json({
-            error: 'El Tree no cumple los gates de madurez para SUBSCRIPCION',
-            missingGates: subBlocked?.missingGates || [],
-          });
-        }
-      }
-
-      if (financingMode === 'SUBSCRIPCION' && subscriptionBillingMode === 'PROPORTIONAL') {
-        const canUseProportional = await canActivateProportionalBilling(treeId);
-        if (!canUseProportional) {
-          const { getProportionalGateDetails } = await import('../services/maturityGates');
-          const details = await getProportionalGateDetails(treeId);
-          const missing = details.gates.filter(g => !g.passed).map(g => `${g.name}: ${g.detail}`);
-          return res.status(422).json({
-            error: 'El Tree no cumple los gates para billing PROPORTIONAL',
-            missingGates: missing,
-          });
-        }
-      }
-    }
-
-    // Validaciones de negocio
+    // Validaciones de negocio (maturity gates eliminados — todos los modos son libremente seleccionables)
     if (financingMode === 'SUBSCRIPCION') {
       if (!subscriptionBillingMode || subscriptionBillingMode === 'FIXED') {
         if (subscriptionAmount === undefined || subscriptionAmount === null || subscriptionAmount <= 0) {

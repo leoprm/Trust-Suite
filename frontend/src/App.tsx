@@ -20,6 +20,8 @@ import TrustInsightDashboard from './pages/TrustInsightDashboard';
 import LandingPage from './pages/LandingPage';
 
 import MainLayout from './layouts/MainLayout';
+import ConciergeChat from './components/ConciergeChat';
+import type { AutoOpenContext } from './components/ConciergeChat';
 import { useEffect, useState } from 'react';
 import { appConfig, isBranchOS, isTraceLite, isTrustLite, isTrustInsight, isTrustLanding } from './config/appConfig';
 
@@ -30,6 +32,18 @@ function App() {
     if (isTrustLanding) return false;
     const params = new URLSearchParams(window.location.search);
     return !!params.get('token') && !isAuthenticated;
+  });
+
+  // Detect invite params for temporary participant mode
+  const [autoOpenContext, setAutoOpenContext] = useState<AutoOpenContext | undefined>(() => {
+    const params = new URLSearchParams(window.location.search);
+    const branch = params.get('branch');
+    const invite = params.get('invite');
+    const task = params.get('task');
+    if (branch) return { type: 'branch', id: branch };
+    if (invite) return { type: 'invite', id: invite };
+    if (task) return { type: 'task', id: task };
+    return undefined;
   });
 
   // SSO cross-app login: interceptar ?token en URL ANTES del redirect
@@ -169,6 +183,8 @@ function App() {
 
           <Route path="*" element={<Navigate to={appConfig.defaultPath} />} />
         </Routes>
+        {isAuthenticated && <ConciergeChat autoOpenContext={autoOpenContext} />}
+        {!isAuthenticated && autoOpenContext && <ConciergeChat autoOpenContext={autoOpenContext} />}
       </BrowserRouter>
     </>
       )}

@@ -83,8 +83,9 @@ export const createTree = async (req: any, res: Response) => {
     });
 
     res.status(201).json(tree);
-  } catch (error) {
-    res.status(500).json({ error: 'Failed to create tree' });
+  } catch (error: any) {
+    console.error('[createTree] ERROR:', error?.message || error);
+    res.status(500).json({ error: 'Failed to create tree', detail: error?.message || String(error) });
   }
 };
 

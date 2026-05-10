@@ -73,6 +73,7 @@ import aiTaskRoutes from './routes/aiTaskRoutes';
 import aiExecutorRoutes from './routes/aiExecutorRoutes';
 import aiReputationRoutes from './routes/aiReputationRoutes';
 import { aiLeaderboard } from './controllers/aiReputationController';
+import conciergeRoutes from './routes/conciergeRoutes';
 
 const app = express();
 const port = process.env.PORT || 3000;
@@ -267,6 +268,9 @@ app.use('/api/ai', aiExecutorRoutes);
 // AI Reputation — read-only endpoints
 app.use('/api/ai', authenticateJWT, aiReputationRoutes);
 app.get('/api/trees/:id/ai/leaderboard', authenticateJWT, aiLeaderboard);
+
+// Concierge — tree setup wizard
+app.use('/api/concierge', conciergeRoutes);
 
 startCronJobs();
 startMonthlyJob();

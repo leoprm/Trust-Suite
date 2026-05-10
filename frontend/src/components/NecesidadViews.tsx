@@ -75,21 +75,23 @@ export function NecesidadCrear({ onCreated }: { onCreated?: () => void }) {
         </p>
       </div>
 
-      {/* Toggle form button */}
-      <button
-        onClick={() => setShowForm(v => !v)}
-        style={{
-          display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem',
-          padding: '0.75rem', borderRadius: 14,
-          background: showForm ? YB : 'rgba(255,255,255,0.04)',
-          border: `1.5px solid ${showForm ? Y : 'rgba(255,255,255,0.1)'}`,
-          color: showForm ? Y : 'var(--text-secondary)',
-          fontWeight: 700, fontSize: '0.88rem', cursor: 'pointer',
-        }}
-      >
-        <Plus size={16} />
-        {t('m.necesidad.crear.new_need')}
-      </button>
+      {/* Toggle form button — hidden when form is open */}
+      {!showForm && (
+        <button
+          onClick={() => setShowForm(true)}
+          style={{
+            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem',
+            padding: '0.75rem', borderRadius: 14,
+            background: 'rgba(255,255,255,0.04)',
+            border: '1.5px solid rgba(255,255,255,0.1)',
+            color: 'var(--text-secondary)',
+            fontWeight: 700, fontSize: '0.88rem', cursor: 'pointer',
+          }}
+        >
+          <Plus size={16} />
+          {t('m.necesidad.crear.new_need')}
+        </button>
+      )}
 
       <AnimatePresence>
         {showForm && (
@@ -161,33 +163,55 @@ export function NecesidadCrear({ onCreated }: { onCreated?: () => void }) {
             </div>
 
             {error && <p style={{ color: '#ef4444', fontSize: '0.8rem', margin: 0 }}>{error}</p>}
+
+            {/* Submit button — inline, always reachable */}
+            <button
+              onClick={handleSubmit}
+              disabled={!canSubmit || loading}
+              style={{
+                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem',
+                padding: '0.85rem', borderRadius: 14,
+                background: canSubmit && !loading ? Y : 'rgba(255,255,255,0.06)',
+                border: `1.5px solid ${canSubmit && !loading ? Y : 'rgba(255,255,255,0.1)'}`,
+                color: canSubmit && !loading ? '#1a1a1a' : 'var(--text-secondary)',
+                fontWeight: 700, fontSize: '0.92rem', cursor: canSubmit && !loading ? 'pointer' : 'not-allowed',
+                opacity: canSubmit ? 1 : 0.5,
+                marginTop: '0.25rem',
+              }}
+            >
+              {loading ? (
+                <span style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                  <span className="spinner" style={{ width: 16, height: 16, border: '2px solid rgba(0,0,0,0.2)', borderTopColor: '#1a1a1a', borderRadius: '50%', animation: 'spin 0.6s linear infinite' }} />
+                  {t('m.necesidad.crear.creating')}
+                </span>
+              ) : (
+                <>
+                  <Plus size={18} />
+                  {t('m.necesidad.crear.submit')}
+                </>
+              )}
+            </button>
+
+            {/* Cancel / close form */}
+            <button
+              onClick={() => { setShowForm(false); setError(''); }}
+              style={{
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                padding: '0.5rem', borderRadius: 10,
+                background: 'transparent',
+                border: '1px solid rgba(255,255,255,0.08)',
+                color: 'var(--text-secondary)',
+                fontSize: '0.78rem', cursor: 'pointer',
+              }}
+            >
+              {t('m.necesidad.crear.cancel')}
+            </button>
           </motion.div>
         )}
       </AnimatePresence>
 
       {/* Recent needs preview when form is closed */}
       {!showForm && <NecesidadMiniList />}
-
-      {/* FAB */}
-      <AnimatePresence>
-        {showForm && canSubmit && (
-          <motion.button
-            initial={{ scale: 0, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0, opacity: 0 }}
-            onClick={handleSubmit} disabled={loading}
-            style={{
-              position: 'fixed', bottom: '5rem', right: '1.5rem',
-              width: 56, height: 56, borderRadius: '50%',
-              background: Y, color: '#1a1a1a', border: 'none',
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              cursor: loading ? 'not-allowed' : 'pointer',
-              boxShadow: '0 4px 20px rgba(245,158,11,0.5)', zIndex: 200,
-              opacity: loading ? 0.7 : 1, fontWeight: 800,
-            }}
-          >
-            {loading ? '…' : <Plus size={26} />}
-          </motion.button>
-        )}
-      </AnimatePresence>
     </div>
   );
 }

@@ -8,7 +8,6 @@ import AppSwitcher from '../components/AppSwitcher';
 import { useAuthStore } from '../store/authStore';
 import { useTranslation } from 'react-i18next';
 import { appConfig, isTrustLanding } from '../config/appConfig';
-import { resetOnboarding } from '../components/OnboardingTour';
 
 export default function MainLayout() {
   const user = useAuthStore((state: any) => state.user);
@@ -22,10 +21,6 @@ export default function MainLayout() {
     navigate('/login');
   };
 
-  const handleReplayTour = () => {
-    resetOnboarding();
-    navigate('/');
-  };
   const location = useLocation();
   const { t, i18n } = useTranslation();
   const [isMobile, setIsMobile] = useState(window.innerWidth <= 768);
@@ -142,10 +137,6 @@ export default function MainLayout() {
                 </button>
                 
                 {!isTrustLanding && <AppSwitcher isMobile={isMobile} />}
-                
-                <button onClick={handleReplayTour} className="btn btn-outline" style={{ padding: '0.4rem', width: '36px', height: '36px' }} title="Tour guiado">
-                  <HelpCircle size={18} />
-                </button>
                 
                 <button onClick={handleLogout} className="btn btn-outline" style={{ padding: '0.4rem', width: '36px', height: '36px' }} title={t('nav.logout')}>
                   <LogOut size={18} />

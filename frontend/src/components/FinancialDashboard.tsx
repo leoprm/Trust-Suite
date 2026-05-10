@@ -145,13 +145,13 @@ export default function FinancialDashboard({ treeId, isGlobal, isTreeAdmin }: Fi
         </div>
       )}
 
-      <div data-tour="tour-metrics" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1.5rem' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1.5rem' }}>
         <Metric title="Saldo neto externo" value={formatCompactCurrency(summary.balance)} tone={Number(summary.balance) >= 0 ? 'success' : 'danger'} icon={<Wallet size={18} />} />
         <Metric title="Ingresos externos" value={formatCompactCurrency(summary.income)} tone="success" />
         <Metric title="Gastos externos" value={formatCompactCurrency(summary.expense)} tone="danger" />
         <Metric title="Inversiones externas" value={formatCompactCurrency(summary.investment)} tone="primary" />
         {ebitda && (
-          <div data-tour="tour-ebitda">
+          <div>
             <Metric title="EBITDA externo" value={formatCLP(ebitda.ebitda)} tone={ebitda.ebitda >= 0 ? 'success' : 'danger'} icon={<TrendingUp size={18} />} caption="Ingresos - gastos operativos" />
             <Metric title="Inversion externa %" value={`${ebitda.inversionPct.toFixed(1)}%`} tone="info" caption="Ramas activas / flujo total" />
           </div>

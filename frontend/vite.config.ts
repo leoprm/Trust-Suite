@@ -33,6 +33,22 @@ export default defineConfig(({ mode }) => {
         },
       },
     },
+    preview: {
+      host: '0.0.0.0',
+      allowedHosts: ['.trycloudflare.com', 'localhost', '.local'],
+      proxy: {
+        '/api': {
+          target: 'http://localhost:3100',
+          changeOrigin: true,
+          configure: (proxy) => {
+            proxy.on('proxyReq', (proxyReq) => {
+              proxyReq.removeHeader('origin');
+              proxyReq.removeHeader('referer');
+            });
+          },
+        },
+      },
+    },
     build: {
       outDir: `dist/${flavor}`,
       emptyOutDir: true,

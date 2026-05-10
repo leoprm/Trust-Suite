@@ -16,6 +16,8 @@ type FinancingConfig = {
   subscriptionBillingMode: string | null;
 };
 
+type SelectedMode = 'GRATUITO' | 'FIJA' | 'VARIABLE';
+
 const inputStyle: React.CSSProperties = {
   width: '100%',
   padding: '0.7rem 0.85rem',
@@ -40,15 +42,44 @@ const labelStyle: React.CSSProperties = {
   textTransform: 'uppercase',
 };
 
+function configToSelectedMode(c: FinancingConfig | null): SelectedMode {
+  if (!c || c.financingMode === 'GRATUITO') return 'GRATUITO';
+  if (c.subscriptionBillingMode === 'PROPORTIONAL') return 'VARIABLE';
+  return 'FIJA';
+}
+
+const MODE_CARDS: { id: SelectedMode; title: string; desc: string; color: string; icon: string }[] = [
+  {
+    id: 'GRATUITO',
+    title: 'Gratuito',
+    desc: 'Acceso sin costo para miembros. Sin facturación.',
+    color: 'var(--accent-success)',
+    icon: '🆓',
+  },
+  {
+    id: 'FIJA',
+    title: 'Subscripción Fija',
+    desc: 'Monto fijo mensual por miembro. Predecible y simple.',
+    color: 'var(--accent-primary)',
+    icon: '💰',
+  },
+  {
+    id: 'VARIABLE',
+    title: 'Subscripción Variable',
+    desc: 'Gastos divididos entre miembros. Se ajusta cada mes.',
+    color: 'var(--accent-warning)',
+    icon: '📊',
+  },
+];
+
 export default function FinancingSettingsPanel({ treeId }: Props) {
   const [config, setConfig] = useState<FinancingConfig | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+  const [selectedMode, setSelectedMode] = useState<SelectedMode>('GRATUITO');
 
   // Form state
-  const [mode, setMode] = useState<'GRATUITO' | 'SUBSCRIPCION'>('GRATUITO');
-  const [billingMode, setBillingMode] = useState<'FIXED' | 'PROPORTIONAL'>('FIXED');
   const [amount, setAmount] = useState('');
   const [currency, setCurrency] = useState('CLP');
   const [dayOfMonth, setDayOfMonth] = useState('1');
@@ -63,8 +94,7 @@ export default function FinancingSettingsPanel({ treeId }: Props) {
     try {
       const { data } = await api.get(`/trees/${treeId}/financing`);
       setConfig(data);
-      setMode(data.financingMode || 'GRATUITO');
-      setBillingMode(data.subscriptionBillingMode === 'PROPORTIONAL' ? 'PROPORTIONAL' : 'FIXED');
+      setSelectedMode(configToSelectedMode(data));
       setAmount(data.subscriptionAmount?.toString() || '');
       setCurrency(data.subscriptionCurrency || 'CLP');
       setDayOfMonth((data.subscriptionDayOfMonth || 1).toString());
@@ -79,28 +109,32 @@ export default function FinancingSettingsPanel({ treeId }: Props) {
     setSaving(true);
     setError('');
     try {
-      const payload: any = { financingMode: mode };
+      const payload: any = {};
 
-      if (mode === 'SUBSCRIPCION') {
-        payload.subscriptionBillingMode = billingMode;
+      if (selectedMode === 'GRATUITO') {
+        payload.financingMode = 'GRATUITO';
+      } else if (selectedMode === 'FIJA') {
+        payload.financingMode = 'SUBSCRIPCION';
+        payload.subscriptionBillingMode = 'FIXED';
+        const amt = parseFloat(amount);
+        if (isNaN(amt) || amt <= 0) {
+          setError('El monto debe ser mayor a 0');
+          setSaving(false);
+          return;
+        }
+        payload.subscriptionAmount = amt;
         payload.subscriptionCurrency = currency;
         payload.subscriptionDayOfMonth = parseInt(dayOfMonth);
-
-        if (billingMode === 'FIXED') {
-          const amt = parseFloat(amount);
-          if (isNaN(amt) || amt <= 0) {
-            setError('El monto debe ser mayor a 0 en modo FIXED');
-            setSaving(false);
-            return;
-          }
-          payload.subscriptionAmount = amt;
-        }
+      } else {
+        payload.financingMode = 'SUBSCRIPCION';
+        payload.subscriptionBillingMode = 'PROPORTIONAL';
+        payload.subscriptionCurrency = currency;
+        payload.subscriptionDayOfMonth = parseInt(dayOfMonth);
       }
 
       const { data } = await api.put(`/trees/${treeId}/financing`, payload);
       setConfig(data);
-      setMode(data.financingMode);
-      setBillingMode(data.subscriptionBillingMode === 'PROPORTIONAL' ? 'PROPORTIONAL' : 'FIXED');
+      setSelectedMode(configToSelectedMode(data));
       setAmount(data.subscriptionAmount?.toString() || '');
       setCurrency(data.subscriptionCurrency || 'CLP');
       setDayOfMonth((data.subscriptionDayOfMonth || 1).toString());
@@ -121,148 +155,115 @@ export default function FinancingSettingsPanel({ treeId }: Props) {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
-      {/* Financing Mode */}
       <section className="glass-panel" style={{ padding: '1.5rem' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1.5rem' }}>
           <DollarSign size={20} color="var(--accent-primary)" />
           <h3 style={{ margin: 0, fontSize: '1.1rem', fontWeight: 700 }}>Modo de Financiamiento</h3>
         </div>
 
-        <div style={{ display: 'flex', gap: '1rem', marginBottom: '1.5rem' }}>
-          <button
-            onClick={() => setMode('GRATUITO')}
-            style={{
-              flex: 1,
-              padding: '1rem',
-              borderRadius: 12,
-              border: mode === 'GRATUITO' ? '2px solid var(--accent-success)' : '1px solid var(--border-color)',
-              background: mode === 'GRATUITO' ? 'rgba(110, 231, 183, 0.08)' : 'rgba(255,255,255,0.02)',
-              color: mode === 'GRATUITO' ? 'var(--accent-success)' : 'var(--text-secondary)',
-              cursor: 'pointer',
-              textAlign: 'left',
-            }}
-          >
-            <div style={{ fontWeight: 700, fontSize: '1rem', marginBottom: '0.25rem' }}>Gratuito</div>
-            <div style={{ fontSize: '0.75rem', opacity: 0.7 }}>Acceso sin costo para miembros</div>
-          </button>
-
-          <button
-            onClick={() => setMode('SUBSCRIPCION')}
-            style={{
-              flex: 1,
-              padding: '1rem',
-              borderRadius: 12,
-              border: mode === 'SUBSCRIPCION' ? '2px solid var(--accent-primary)' : '1px solid var(--border-color)',
-              background: mode === 'SUBSCRIPCION' ? 'rgba(59, 130, 246, 0.08)' : 'rgba(255,255,255,0.02)',
-              color: mode === 'SUBSCRIPCION' ? 'var(--accent-primary)' : 'var(--text-secondary)',
-              cursor: 'pointer',
-              textAlign: 'left',
-            }}
-          >
-            <div style={{ fontWeight: 700, fontSize: '1rem', marginBottom: '0.25rem' }}>Subscripción</div>
-            <div style={{ fontSize: '0.75rem', opacity: 0.7 }}>Cobro recurrente a miembros</div>
-          </button>
+        {/* Three equal mode cards */}
+        <div style={{ display: 'flex', gap: '0.75rem', marginBottom: '1.5rem', flexWrap: 'wrap' }}>
+          {MODE_CARDS.map((card) => {
+            const isSelected = selectedMode === card.id;
+            return (
+              <button
+                key={card.id}
+                onClick={() => setSelectedMode(card.id)}
+                style={{
+                  flex: '1 1 180px',
+                  minWidth: 160,
+                  padding: '1rem',
+                  borderRadius: 12,
+                  border: isSelected ? `2px solid ${card.color}` : '1px solid var(--border-color)',
+                  background: isSelected ? `${card.color}11` : 'rgba(255,255,255,0.02)',
+                  color: isSelected ? card.color : 'var(--text-secondary)',
+                  cursor: 'pointer',
+                  textAlign: 'left',
+                  transition: 'all 0.15s ease',
+                }}
+              >
+                <div style={{ fontSize: '1.5rem', marginBottom: '0.4rem' }}>{card.icon}</div>
+                <div style={{ fontWeight: 700, fontSize: '0.9rem', marginBottom: '0.25rem' }}>{card.title}</div>
+                <div style={{ fontSize: '0.7rem', opacity: 0.7, lineHeight: 1.4 }}>{card.desc}</div>
+              </button>
+            );
+          })}
         </div>
 
-        {mode === 'SUBSCRIPCION' && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
-            {/* Billing Mode */}
+        {/* FIJA: amount + currency + day */}
+        {selectedMode === 'FIJA' && (
+          <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: '1rem' }}>
             <div>
-              <label style={labelStyle}>Tipo de Cobro</label>
-              <div style={{ display: 'flex', gap: '0.5rem' }}>
-                <button
-                  onClick={() => setBillingMode('FIXED')}
-                  style={{
-                    flex: 1,
-                    padding: '0.6rem',
-                    borderRadius: 8,
-                    border: billingMode === 'FIXED' ? '2px solid var(--accent-primary)' : '1px solid var(--border-color)',
-                    background: billingMode === 'FIXED' ? 'rgba(59, 130, 246, 0.08)' : 'rgba(255,255,255,0.02)',
-                    color: billingMode === 'FIXED' ? 'var(--accent-primary)' : 'var(--text-secondary)',
-                    cursor: 'pointer',
-                    fontSize: '0.8rem',
-                    fontWeight: 600,
-                  }}
-                >
-                  Monto Fijo
-                </button>
-                <button
-                  onClick={() => setBillingMode('PROPORTIONAL')}
-                  style={{
-                    flex: 1,
-                    padding: '0.6rem',
-                    borderRadius: 8,
-                    border: billingMode === 'PROPORTIONAL' ? '2px solid var(--accent-warning)' : '1px solid var(--border-color)',
-                    background: billingMode === 'PROPORTIONAL' ? 'rgba(245, 158, 11, 0.08)' : 'rgba(255,255,255,0.02)',
-                    color: billingMode === 'PROPORTIONAL' ? 'var(--accent-warning)' : 'var(--text-secondary)',
-                    cursor: 'pointer',
-                    fontSize: '0.8rem',
-                    fontWeight: 600,
-                  }}
-                >
-                  Proporcional
-                </button>
+              <label style={labelStyle}>Monto mensual por miembro</label>
+              <input
+                type="number"
+                min="1"
+                step="1"
+                value={amount}
+                onChange={(e) => setAmount(e.target.value)}
+                placeholder="Ej: 5000"
+                style={inputStyle}
+              />
+            </div>
+            <div>
+              <label style={labelStyle}>Moneda</label>
+              <select value={currency} onChange={(e) => setCurrency(e.target.value)} style={selectStyle}>
+                <option value="CLP">CLP</option>
+                <option value="USD">USD</option>
+                <option value="EUR">EUR</option>
+                <option value="ARS">ARS</option>
+                <option value="MXN">MXN</option>
+              </select>
+            </div>
+            <div>
+              <label style={labelStyle}>Día de cobro</label>
+              <select value={dayOfMonth} onChange={(e) => setDayOfMonth(e.target.value)} style={selectStyle}>
+                {Array.from({ length: 28 }, (_, i) => (
+                  <option key={i + 1} value={i + 1}>{i + 1}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+        )}
+
+        {/* VARIABLE: info + currency + day */}
+        {selectedMode === 'VARIABLE' && (
+          <div>
+            <div style={{
+              padding: '1rem',
+              borderRadius: 8,
+              background: 'rgba(245, 158, 11, 0.06)',
+              border: '1px solid rgba(245, 158, 11, 0.2)',
+              fontSize: '0.85rem',
+              color: 'var(--accent-warning)',
+              marginBottom: '1rem',
+            }}>
+              Los gastos se dividen automáticamente entre todos los miembros cada mes. El monto varía según los gastos declarados.
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+              <div>
+                <label style={labelStyle}>Moneda</label>
+                <select value={currency} onChange={(e) => setCurrency(e.target.value)} style={selectStyle}>
+                  <option value="CLP">CLP</option>
+                  <option value="USD">USD</option>
+                  <option value="EUR">EUR</option>
+                  <option value="ARS">ARS</option>
+                  <option value="MXN">MXN</option>
+                </select>
+              </div>
+              <div>
+                <label style={labelStyle}>Día de cobro</label>
+                <select value={dayOfMonth} onChange={(e) => setDayOfMonth(e.target.value)} style={selectStyle}>
+                  {Array.from({ length: 28 }, (_, i) => (
+                    <option key={i + 1} value={i + 1}>{i + 1}</option>
+                  ))}
+                </select>
               </div>
             </div>
-
-            {billingMode === 'FIXED' ? (
-              <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: '1rem' }}>
-                <div>
-                  <label style={labelStyle}>Monto de subscripción</label>
-                  <input
-                    type="number"
-                    min="1"
-                    step="1"
-                    value={amount}
-                    onChange={(e) => setAmount(e.target.value)}
-                    placeholder="Ej: 5000"
-                    style={inputStyle}
-                  />
-                </div>
-                <div>
-                  <label style={labelStyle}>Moneda</label>
-                  <select
-                    value={currency}
-                    onChange={(e) => setCurrency(e.target.value)}
-                    style={selectStyle}
-                  >
-                    <option value="CLP">CLP</option>
-                    <option value="USD">USD</option>
-                    <option value="EUR">EUR</option>
-                    <option value="ARS">ARS</option>
-                    <option value="MXN">MXN</option>
-                  </select>
-                </div>
-                <div>
-                  <label style={labelStyle}>Día de cobro</label>
-                  <select
-                    value={dayOfMonth}
-                    onChange={(e) => setDayOfMonth(e.target.value)}
-                    style={selectStyle}
-                  >
-                    {Array.from({ length: 28 }, (_, i) => (
-                      <option key={i + 1} value={i + 1}>{i + 1}</option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-            ) : (
-              <div style={{
-                padding: '1rem',
-                borderRadius: 8,
-                background: 'rgba(245, 158, 11, 0.06)',
-                border: '1px solid rgba(245, 158, 11, 0.2)',
-                fontSize: '0.85rem',
-                color: 'var(--accent-warning)',
-              }}>
-                Los gastos se dividen automáticamente entre todos los miembros del Árbol. Cada mes se calcula el total de gastos y se distribuye proporcionalmente.
-              </div>
-            )}
           </div>
         )}
       </section>
 
-      {/* Error */}
       {error && (
         <div style={{
           padding: '0.75rem 1rem',
@@ -276,7 +277,6 @@ export default function FinancingSettingsPanel({ treeId }: Props) {
         </div>
       )}
 
-      {/* Save Button */}
       <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
         <button
           onClick={handleSave}

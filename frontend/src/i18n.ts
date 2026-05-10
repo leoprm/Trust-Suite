@@ -397,7 +397,10 @@ const resources = {
             "desc_placeholder": "Why is this urgent? Who does it affect?",
             "error": "Error proposing the need",
             "recent": "Recent Needs",
-            "votes": "votes"
+            "votes": "votes",
+            "submit": "Create Need",
+            "creating": "Creating...",
+            "cancel": "Cancel"
           },
           "hacer": {
             "sort_recent": "🕐 Recent",
@@ -1189,7 +1192,10 @@ const resources = {
             "desc_placeholder": "¿Por qué esto es urgente? ¿A quién afecta?",
             "error": "Error al proponer la necesidad",
             "recent": "Necesidades Recientes",
-            "votes": "votos"
+            "votes": "votos",
+            "submit": "Crear Necesidad",
+            "creating": "Creando...",
+            "cancel": "Cancelar"
           },
           "hacer": {
             "sort_recent": "🕐 Recientes",

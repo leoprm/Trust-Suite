@@ -11,7 +11,7 @@ import ProfilePage from './ProfilePage';
 import MisPersonas from './MisPersonas';
 import PrivacySettingsPanel from './PrivacySettingsPanel';
 import { appConfig, type DrawerPanelKey } from '../config/appConfig';
-import { resetOnboarding } from './OnboardingTour';
+import AppSwitcher from './AppSwitcher';
 const OptimizedText = ({ text, style }: { text: string; style?: React.CSSProperties }) => (
   <span style={style}>{text}</span>
 );
@@ -64,11 +64,7 @@ export default function UtilityDrawer({ open, onClose }: UtilityDrawerProps) {
     navigate('/login');
   };
 
-  const handleReplayTour = () => {
-    resetOnboarding();
-    onClose();
-    navigate('/');
-  };
+
 
   const toggleLanguage = () => {
     const newLang = i18n.language === 'en' ? 'es' : 'en';
@@ -298,27 +294,11 @@ export default function UtilityDrawer({ open, onClose }: UtilityDrawerProps) {
                 <span>{colorMode === 'modern' ? 'ON' : 'OFF'}</span>
               </button>
 
-              {/* Tour guiado */}
-              <button
-                onClick={handleReplayTour}
-                style={{
-                  display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                  width: '100%',
-                  padding: '0.7rem 0.8rem',
-                  borderRadius: 12,
-                  background: 'rgba(59,130,246,0.08)',
-                  border: '1px solid rgba(59,130,246,0.25)',
-                  color: '#93c5fd',
-                  cursor: 'pointer',
-                  fontSize: '0.75rem',
-                  fontWeight: 700,
-                  fontFamily: 'inherit',
-                }}
-              >
-                <span style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
-                  <HelpCircle size={16} /> Tour guiado
-                </span>
-              </button>
+
+              {/* App Switcher — acceso rápido a otras apps con SSO */}
+              <div style={{ padding: '0.5rem 0' }}>
+                <AppSwitcher isMobile={true} />
+              </div>
 
               <button
                 onClick={toggleLanguage}

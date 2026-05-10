@@ -6,6 +6,7 @@ import { useAuthStore } from '../store/authStore';
 import GenericVoteModal from './GenericVoteModal';
 import TaskCompletionModal from './TaskCompletionModal';
 import EstrellaDificultad from './EstrellaDificultad';
+import useOnboardingTooltips from '../hooks/useOnboardingTooltips';
 
 async function compressImage(file: File, maxPx = 1200, quality = 0.82): Promise<Blob> {
   const isHeic = file.type === 'image/heic' || file.type === 'image/heif'
@@ -51,6 +52,7 @@ export default function GlobalTaskFeed() {
   const [userTrees, setUserTrees] = useState<any[]>([]);
   const [selectedTreeId, setSelectedTreeId] = useState<string>('all');
   const [showHistory, setShowHistory] = useState(false);
+  const { highlightTakeTask, dismiss } = useOnboardingTooltips();
 
   // Start-photo modal state
   const [assignModal, setAssignModal] = useState<{ taskId: string; taskName: string } | null>(null);
@@ -414,7 +416,12 @@ export default function GlobalTaskFeed() {
                                 
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
                                   {!isCompleted && isFree && (
-                                    <button onClick={() => handleAssignTask(task.id, task.name)} style={{ background: 'none', border: 'none', display: 'flex', alignItems: 'center', color: 'var(--accent-primary)', cursor: 'pointer', padding: '4px' }} title="Tomar tarea">
+                                    <button
+                                      onClick={() => { dismiss('take_task'); handleAssignTask(task.id, task.name); }}
+                                      className={highlightTakeTask ? 'onboarding-highlight' : ''}
+                                      style={{ background: 'none', border: 'none', display: 'flex', alignItems: 'center', color: 'var(--accent-primary)', cursor: 'pointer', padding: '4px', borderRadius: '6px' }}
+                                      title="Tomar tarea"
+                                    >
                                       <Hand size={18} />
                                     </button>
                                   )}

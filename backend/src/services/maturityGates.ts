@@ -241,26 +241,19 @@ async function checkProportionalGates(treeId: string): Promise<GateCheck[]> {
  * @param treeId  ID del árbol
  * @param targetMode  'GRATUITO' | 'SUBSCRIPCION'
  * @returns true si todos los gates pasan
- */
+/** Retorna true si el tree puede activar SUBSCRIPCION — SIEMPRE true (gates eliminados) */
 export async function canActivateFinancingMode(
   treeId: string,
   targetMode: 'GRATUITO' | 'SUBSCRIPCION',
 ): Promise<boolean> {
-  if (targetMode === 'GRATUITO') return true;
-
-  const gates = await checkSubscriptionGates(treeId);
-  return gates.every((g) => g.passed);
+  return true; // Todos los modos son libremente seleccionables
 }
 
 /**
- * Verifica si un Tree puede activar billing PROPORTIONAL.
- *
- * @param treeId  ID del árbol
- * @returns true si todos los gates pasan
+ * Verifica si un Tree puede activar billing PROPORTIONAL — SIEMPRE true (gates eliminados)
  */
 export async function canActivateProportionalBilling(treeId: string): Promise<boolean> {
-  const gates = await checkProportionalGates(treeId);
-  return gates.every((g) => g.passed);
+  return true; // Todos los billing modes son libremente seleccionables
 }
 
 /**
@@ -288,21 +281,8 @@ export async function getMaturityGateStatus(treeId: string): Promise<GateStatus>
     };
   }
 
-  const availableModes: string[] = [];
+  const availableModes: string[] = ['GRATUITO', 'SUBSCRIPCION'];
   const blockedModes: BlockedMode[] = [];
-
-  // GRATUITO siempre disponible
-  availableModes.push('GRATUITO');
-
-  // SUBSCRIPCION gates
-  const subGates = await checkSubscriptionGates(treeId);
-  const subPassed = subGates.every((g) => g.passed);
-  if (subPassed) {
-    availableModes.push('SUBSCRIPCION');
-  } else {
-    const missing = subGates.filter((g) => !g.passed).map((g) => `${g.name}: ${g.detail}`);
-    blockedModes.push({ mode: 'SUBSCRIPCION', missingGates: missing });
-  }
 
   return {
     currentMode: tree.financingMode,

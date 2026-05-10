@@ -9,6 +9,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useMatrixStore } from '../store/matrixStore';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { useTranslation } from 'react-i18next';
+import useOnboardingTooltips from '../hooks/useOnboardingTooltips';
 
 
 const AVAILABLE_PHASE_IDS = ['INVESTIGATION', 'DEVELOPMENT', 'PRODUCTION', 'DISTRIBUTION', 'MAINTENANCE', 'RECYCLING'];
@@ -393,6 +394,7 @@ export function ArbolHacer() {
   const [expandedId, setExpandedId]       = useState<string | null>(null);
   const [crisisLoading, setCrisisLoading] = useState(false);
   const user = useAuthStore((s: any) => s.user);
+  const { highlightJoinTree, dismiss } = useOnboardingTooltips();
 
   const fetchGlobal = useCallback(async () => {
     setLoading(true);
@@ -533,7 +535,11 @@ export function ArbolHacer() {
                   >
                     <div style={{ padding: '0 1rem 1rem', display: 'flex', flexDirection: 'column', gap: '0.75rem', borderTop: '1px solid rgba(255,255,255,0.06)' }}>
                       {!isMember && (
-                        <button onClick={() => handleJoin(tree.id)} style={actionBtnStyle('#22c55e')}>
+                        <button
+                          onClick={() => { dismiss('join_tree'); handleJoin(tree.id); }}
+                          className={highlightJoinTree ? 'onboarding-highlight' : ''}
+                          style={actionBtnStyle('#22c55e')}
+                        >
                           <Users size={14} /> {t('m.arbol.hacer.join')}
                         </button>
                       )}

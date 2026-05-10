@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useAuthStore } from '../store/authStore';
 import { useNavigate } from 'react-router-dom';
+import { useSearchParams } from 'react-router-dom';
 import { Plus, TreePine, Activity, GitBranch } from 'lucide-react';
 import Feed from '../components/Feed';
 import BranchFeed from '../components/BranchFeed';
@@ -14,7 +15,7 @@ import { useMatrixStore } from '../store/matrixStore';
 import { ArbolCrear, ArbolHacer, ArbolMedir } from '../components/ArbolViews';
 import { NecesidadCrear, NecesidadHacer, NecesidadMedir } from '../components/NecesidadViews';
 import { RamaCrear, RamaHacer, RamaMedir } from '../components/RamaViews';
-import OnboardingTour, { isOnboardingCompleted } from '../components/OnboardingTour';
+import useOnboardingTooltips from '../hooks/useOnboardingTooltips';
 
 export default function Dashboard() {
   const { user, isInitialLoading } = useAuthStore();
@@ -23,7 +24,21 @@ export default function Dashboard() {
   const [isMobile, setIsMobile] = useState(window.innerWidth <= 768);
   const [, setRefreshKey] = useState(0);
   const { accionActiva, entidadActiva } = useMatrixStore();
-  const [showTour, setShowTour] = useState(false);
+  const { highlightCreateNeed, dismiss } = useOnboardingTooltips();
+  const [searchParams] = useSearchParams();
+
+  // Detect temporary participant via invite URL params
+  const autoOpenContext = (() => {
+    const branchId = searchParams.get('branch');
+    const inviteToken = searchParams.get('invite');
+    if (branchId) {
+      return { mode: 'temporary' as const, id: branchId, type: 'branch' as const };
+    }
+    if (inviteToken) {
+      return { mode: 'temporary' as const, id: inviteToken, type: 'invite' as const };
+    }
+    return undefined;
+  })();
 
   useEffect(() => {
     const handleResize = () => setIsMobile(window.innerWidth <= 768);
@@ -34,15 +49,6 @@ export default function Dashboard() {
   useEffect(() => {
     if (!isInitialLoading && !user) navigate('/login');
   }, [user, isInitialLoading, navigate]);
-
-  // Auto-show onboarding tour after login if not completed
-  useEffect(() => {
-    if (!isInitialLoading && user && !isOnboardingCompleted()) {
-      // Small delay to let the DOM settle
-      const timer = setTimeout(() => setShowTour(true), 600);
-      return () => clearTimeout(timer);
-    }
-  }, [isInitialLoading, user]);
 
   if (isInitialLoading) return <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-secondary)' }}>{t('dashboard.loading')}</div>;
   if (!user) return null;
@@ -91,11 +97,6 @@ export default function Dashboard() {
             </motion.div>
           </AnimatePresence>
         </MobileShell>
-        <OnboardingTour
-          isOpen={showTour}
-          onClose={() => setShowTour(false)}
-          isMobile={isMobile}
-        />
       </>
     );
   }
@@ -112,7 +113,10 @@ export default function Dashboard() {
             <button className="btn btn-outline" onClick={() => navigate('/trees')}>
               <TreePine size={18} /> {t('dashboard.my_trees')}
             </button>
-            <button className="btn btn-primary" onClick={() => navigate('/needs/new')}>
+            <button
+              className={`btn btn-primary ${highlightCreateNeed ? 'onboarding-highlight' : ''}`}
+              onClick={() => { dismiss('create_need'); navigate('/needs/new'); }}
+            >
               <Plus size={18} /> {t('dashboard.new_need')}
             </button>
           </div>
@@ -144,11 +148,6 @@ export default function Dashboard() {
           <BranchFeed />
         </section>
       </main>
-      <OnboardingTour
-        isOpen={showTour}
-        onClose={() => setShowTour(false)}
-        isMobile={isMobile}
-      />
     </>
   );
 }
