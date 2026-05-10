@@ -1,0 +1,27 @@
+import { Router } from 'express';
+import {
+  getFinancingConfig,
+  updateFinancingConfig,
+  getExpenses,
+  addExpense,
+  updateExpense,
+  deleteExpense,
+  getMaturityGates,
+} from '../controllers/financingController';
+
+const router = Router({ mergeParams: true });
+
+// Financing config
+router.get('/', getFinancingConfig);
+router.put('/', updateFinancingConfig);
+
+// Maturity gates
+router.get('/gates', getMaturityGates);
+
+// Expenses
+router.get('/expenses', getExpenses);
+router.post('/expenses', addExpense);
+router.put('/expenses/:expenseId', updateExpense);
+router.delete('/expenses/:expenseId', deleteExpense);
+
+export default router;

@@ -8,7 +8,7 @@ interface User {
   totalWeeklyPoints?: number;
   sharingCode?: string;
   is_guest?: boolean;
-  memberships?: Array<{ treeId: string; weeklyNeedPoints: number; status: string; xp: number; level: number }>;
+  memberships?: Array<{ id: string; treeId: string; weeklyNeedPoints: number; status: string; xp: number; level: number; role?: string }>;
 }
 
 interface AuthState {

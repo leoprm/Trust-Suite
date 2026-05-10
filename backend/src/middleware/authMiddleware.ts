@@ -77,3 +77,48 @@ export const requireAdmin = (req: Request, res: Response, next: NextFunction) =>
     res.status(403).json({ error: 'admin privileges required' });
   }
 };
+
+/**
+ * Middleware that blocks non-paying members from premium features.
+ * Premium features: paid tasks, berry rewards, tree fund participation.
+ * 
+ * RED LINE (Trust DNA): Non-payers KEEP FULL governance power.
+ * They can still vote, be elected, and participate in the pipeline.
+ * 
+ * Requires authenticateJWT to run first (sets req.user).
+ * Requires req.params to contain a tree identifier (:id, :treeId, or :tree_id).
+ */
+export const isPayingMemberRequired = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({ error: 'Authentication required' });
+    }
+
+    const treeId = req.params.id || req.params.treeId || req.params.tree_id;
+    if (!treeId) {
+      return res.status(400).json({ error: 'Tree context required for membership check' });
+    }
+
+    const member = await prisma.treeMember.findUnique({
+      where: { userId_treeId: { userId, treeId } },
+      select: { isPayingMember: true, subscriptionStatus: true },
+    });
+
+    if (!member) {
+      return res.status(403).json({ error: 'No eres miembro de este Tree' });
+    }
+
+    if (!member.isPayingMember) {
+      return res.status(403).json({
+        error: 'Acceso exclusivo para miembros activos. Tu suscripción está en estado ' + member.subscriptionStatus + '.',
+        subscriptionStatus: member.subscriptionStatus,
+      });
+    }
+
+    next();
+  } catch (err) {
+    console.error('[isPayingMemberRequired] Error:', err);
+    res.status(500).json({ error: 'Failed to verify membership status' });
+  }
+};

@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { Users, Wallet, Activity, GitBranch, LogOut, ArrowLeft, X, UserPlus, PlusCircle, Link, Copy, Check, AlertTriangle, Download, BriefcaseBusiness, UserCheck, FileDown, Loader2 } from 'lucide-react';
+import { Users, Wallet, Activity, GitBranch, LogOut, ArrowLeft, X, UserPlus, PlusCircle, Link, Copy, Check, AlertTriangle, Download, BriefcaseBusiness, UserCheck, FileDown, Loader2, DollarSign } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useTranslation } from 'react-i18next';
 import { useAuthStore } from '../store/authStore';
@@ -15,11 +15,16 @@ import InvitationModal from '../components/InvitationModal';
 import PendingEvidenceList from '../components/PendingEvidenceList';
 import ExpressTaskModal from '../components/ExpressTaskModal';
 import HashtagGovernanceModal from '../components/HashtagGovernanceModal';
-import { Zap, Hash, Droplets, Telescope } from 'lucide-react';
+import { Zap, Hash, Droplets, Telescope, Shield } from 'lucide-react';
 import { downloadJsonExport, downloadPdfExport } from '../lib/downloadExport';
 import BerryWalletPanel from '../components/BerryWalletPanel';
 import InsightPanel from '../components/InsightPanel';
 import ExternalCandidatePanel from '../components/ExternalCandidatePanel';
+import FinancingSettingsPanel from '../components/FinancingSettingsPanel';
+import TreeExpenseList from '../components/TreeExpenseList';
+import MaturityGatesCard from '../components/MaturityGatesCard';
+import MemberPaymentDashboard from '../components/MemberPaymentDashboard';
+import SignerManagementPanel from '../components/SignerManagementPanel';
 
 export default function TreeDetail() {
   const { id } = useParams();
@@ -33,7 +38,7 @@ export default function TreeDetail() {
   const isMember = !!membership;
   const isVerified = membership?.status === 'VERIFIED';
   const isTreeAdmin = isMember && ((membership as any)?.role === 'ADMIN' || tree?.creatorId === currentUser?.id);
-  const [activeTab, setActiveTab] = useState<'DASHBOARD' | 'FINANCES' | 'AUTOSUSTENTO' | 'EXTERNAL_NEEDS' | 'MEMBERS' | 'BERRIES' | 'INSIGHT' | 'CANDIDATES'>('DASHBOARD');
+  const [activeTab, setActiveTab] = useState<'DASHBOARD' | 'FINANCES' | 'AUTOSUSTENTO' | 'EXTERNAL_NEEDS' | 'MEMBERS' | 'BERRIES' | 'INSIGHT' | 'CANDIDATES' | 'FINANCING' | 'SIGNERS'>('DASHBOARD');
   const [loading, setLoading] = useState(true);
   const [members, setMembers] = useState<any[]>([]);
   const [loadingMembers, setLoadingMembers] = useState(false);
@@ -524,6 +529,34 @@ export default function TreeDetail() {
             <UserCheck size={18} /> Candidatos
           </button>
         )}
+        {isTreeAdmin && (
+          <button
+            onClick={() => setActiveTab('FINANCING')}
+            className="btn"
+            style={{
+              background: 'none', border: 'none',
+              borderBottom: activeTab === 'FINANCING' ? '2px solid var(--accent-primary)' : '2px solid transparent',
+              color: activeTab === 'FINANCING' ? 'var(--text-primary)' : 'var(--text-secondary)',
+              borderRadius: 0, padding: '1rem 0.5rem'
+            }}
+          >
+            <DollarSign size={18} /> Financiamiento
+          </button>
+        )}
+        {isTreeAdmin && tree?.financingMode !== 'GRATUITO' && (
+          <button
+            onClick={() => setActiveTab('SIGNERS')}
+            className="btn"
+            style={{
+              background: 'none', border: 'none',
+              borderBottom: activeTab === 'SIGNERS' ? '2px solid var(--accent-primary)' : '2px solid transparent',
+              color: activeTab === 'SIGNERS' ? 'var(--text-primary)' : 'var(--text-secondary)',
+              borderRadius: 0, padding: '1rem 0.5rem'
+            }}
+          >
+            <Shield size={18} /> Firmantes
+          </button>
+        )}
         <button 
           onClick={() => setActiveTab('MEMBERS')}
           className="btn"
@@ -570,6 +603,9 @@ export default function TreeDetail() {
         <div className="flex flex-col gap-8">
           {isMember && isVerified && (
             <PendingEvidenceList treeId={id!} onUpdate={fetchMembers} />
+          )}
+          {isMember && membership?.id && (
+            <MemberPaymentDashboard treeId={id!} memberId={membership.id} />
           )}
           <section className="glass-panel" style={{ padding: '1.5rem' }}>
             <div className="flex items-center justify-between mb-4">
@@ -671,6 +707,28 @@ export default function TreeDetail() {
 
       {activeTab === 'EXTERNAL_NEEDS' && (
         <ExternalNeedsPanel treeId={id!} isTreeAdmin={isTreeAdmin} />
+      )}
+
+      {activeTab === 'FINANCING' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
+          <section className="glass-panel" style={{ padding: '1.5rem' }}>
+            <MaturityGatesCard tree={tree} />
+          </section>
+          <FinancingSettingsPanel treeId={id!} />
+          <section className="glass-panel" style={{ padding: '1.5rem' }}>
+            <TreeExpenseList treeId={id!} />
+          </section>
+        </div>
+      )}
+
+      {activeTab === 'SIGNERS' && (
+        <SignerManagementPanel
+          treeId={id!}
+          isAdmin={isTreeAdmin}
+          financingMode={tree.financingMode}
+          multiSigThreshold={tree.multiSigThreshold}
+          minSigners={tree.minSigners}
+        />
       )}
 
       {activeTab === 'MEMBERS' && (

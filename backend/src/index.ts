@@ -47,7 +47,13 @@ import berryFlowRoutes from './routes/berryFlowRoutes';
 import insightRoutes from './routes/insightRoutes';
 import expertEndorsementRoutes from './routes/expertEndorsementRoutes';
 import externalCandidateRoutes from './routes/externalCandidateRoutes';
+import financingRoutes from './routes/financingRoutes';
+import subscriptionRoutes from './routes/subscriptionRoutes';
+import receiptRoutes from './routes/receiptRoutes';
+import signerRoutes from './routes/signerRoutes';
+import disputeRoutes from './routes/disputeRoutes';
 import publicRoutes from './routes/publicRoutes';
+import pingRoutes from './routes/pingRoutes';
 import { listMyEvaluations } from './controllers/externalCandidateController';
 import { startCronJobs } from './cron/weeklyResolution';
 import { startMonthlyJob } from './cron/monthlyEconomy';
@@ -57,6 +63,9 @@ import { startCorruptionCheckCron } from './cron/corruptionCheck';
 import { startSkillPercentileCron } from './cron/skillPercentile';
 import { startSkillInfluenceCron } from './cron/skillInfluenceCron';
 import { startQuorumTimeoutCron } from './cron/quorumTimeoutCron';
+import { startSubscriptionCron } from './cron/subscriptionCron';
+import { startBillingCron } from './cron/billingCron';
+import { startReleaseCron } from './cron/releaseCron';
 import { getInfluenceWeight, getTreeInfluences } from './services/skillInfluenceService';
 
 const app = express();
@@ -218,6 +227,12 @@ app.use('/api', berryFlowRoutes);
 app.use('/api', insightRoutes);
 app.use('/api/expert-endorsements', expertEndorsementRoutes);
 app.use('/api/external-candidates', externalCandidateRoutes);
+app.use('/api/trees/:id/financing', authenticateJWT, financingRoutes);
+app.use('/api/trees/:id/members/:memberId', authenticateJWT, subscriptionRoutes);
+app.use('/api/payments', authenticateJWT, receiptRoutes);
+app.use('/api/trees/:id/signers', authenticateJWT, signerRoutes);
+app.use('/api', authenticateJWT, disputeRoutes);
+app.use('/api/ping', pingRoutes);
 app.get('/api/evaluations/mine', authenticateJWT, listMyEvaluations);
 app.get('/api/trees/:treeId/influence', authenticateJWT, async (req: any, res: any) => {
   try {
@@ -245,6 +260,9 @@ startCorruptionCheckCron();
 startSkillPercentileCron();
 startSkillInfluenceCron();
 startQuorumTimeoutCron();
+startSubscriptionCron();
+startBillingCron();
+startReleaseCron();
 
 // Bootstrap database schema, then start server
 bootstrapDatabase().then(() => {

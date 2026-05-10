@@ -77,6 +77,8 @@ model User {
   insightOpeningsCreated      InsightExternalOpening[]    @relation("OpeningCreator")
   resolvedEndorsements         ExpertEndorsement[]          @relation("EndorsementResolver")
   assignedCandidates           ExternalCandidate[]          @relation("CandidateAssigner")
+  treeExpensesAdded            TreeExpense[]                @relation("UserExpenses")
+  signers                      TreeSigner[]
 }
 
 model UserContact {
@@ -277,6 +279,18 @@ model Tree {
   creacionRamaDirecta      Boolean               @default(false)
   creacionRamaComunitaria  Boolean               @default(true)
 
+  // Financing fields
+  financingMode            TreeFinancingMode      @default(GRATUITO)
+  subscriptionAmount       Float?
+  subscriptionCurrency     String?                @default("CLP")
+  subscriptionDayOfMonth   Int?                   @default(1)
+  subscriptionBillingMode  String?                @default("FIXED") // FIXED | PROPORTIONAL
+
+  // Escrow & Multi-sig
+  satisfactionTiers Json?
+  multiSigThreshold Int     @default(2)
+  minSigners        Int     @default(3)
+
   // Relations
   members          TreeMember[]
   needLinks        NeedTree[]
@@ -305,8 +319,12 @@ model Tree {
   insightSignals         InsightSignal[]
   externalOpenings       InsightExternalOpening[]  @relation("TreeExternalOpenings")
   expertEndorsements     ExpertEndorsement[]
+  expenses               TreeExpense[]
+  memberPayments         MemberPayment[]
   externalCandidates     ExternalCandidate[]
   skillInfluences        SkillInfluence[]
+  signers                TreeSigner[]
+  treasury               TreeTreasury?
 
   @@index([country, city, sector])
 }
@@ -504,6 +522,18 @@ enum BudgetLineType {
   OTHER
 }
 
+enum TreeFinancingMode {
+  GRATUITO
+  SUBSCRIPCION
+}
+
+enum SubscriptionStatus {
+  ACTIVE
+  GRACE
+  SUSPENDED
+  CANCELLED
+}
+
 model EventLog {
   id           String        @id @default(uuid())
   treeId       String?
@@ -583,6 +613,13 @@ model TreeMember {
   avalBanHasta       DateTime?    // null = not banned from endorsing
   endorsementsGiven   ExpertEndorsement[] @relation("EndorsementsGiven")
   endorsementsReceived ExpertEndorsement[] @relation("EndorsementsReceived")
+  payments             MemberPayment[]
+
+  // Subscription fields
+  isPayingMember     Boolean            @default(true)
+  lastPaymentDate    DateTime?
+  paymentDueDate     DateTime?
+  subscriptionStatus SubscriptionStatus @default(ACTIVE)
 
   user      User  @relation(fields: [userId], references: [id], onDelete: Cascade)
   tree      Tree  @relation(fields: [treeId], references: [id], onDelete: Cascade)
@@ -825,6 +862,7 @@ model Task {
   promises         PromiseP2P[]
   evidenceFiles    EvidenceFile[]
   fiatTransactions FiatTransaction[]
+  payments         MemberPayment[]
 }
 
 enum TaskStatus {
@@ -1077,6 +1115,8 @@ model FiatTransaction {
   createdBy       User?          @relation("FiatTransactionCreator", fields: [createdById], references: [id], onDelete: SetNull)
   certifiedBy     User?          @relation("FiatTransactionCertifier", fields: [certifiedById], references: [id], onDelete: SetNull)
   receiptEvidence EvidenceFile?  @relation(fields: [receiptEvidenceId], references: [id], onDelete: SetNull)
+  relatedExpenses  TreeExpense[]   @relation("ExpenseFiatTx")
+  relatedPayments  MemberPayment[] @relation("PaymentFiatTx")
 
   @@index([treeId])
   @@index([branchId])
@@ -1088,6 +1128,73 @@ model FiatTransaction {
   @@index([counterpartyType])
   @@index([verificationStatus])
   @@index([date])
+}
+
+// ── Tree Expenses ─────────────────────────────────────────────────────
+
+model TreeExpense {
+  id            String              @id @default(uuid())
+  treeId        String
+  tree          Tree                @relation(fields: [treeId], references: [id], onDelete: Cascade)
+  description   String              @db.Text
+  amount        Float
+  currency      String              @default("CLP")
+  category      TransactionCategory
+  isRecurring   Boolean             @default(false)
+  dueDayOfMonth Int?
+  addedById     String
+  addedBy       User                @relation("UserExpenses", fields: [addedById], references: [id], onDelete: Cascade)
+  month         String              // "2026-05"
+  fiatTxId      String?
+  fiatTx        FiatTransaction?    @relation("ExpenseFiatTx", fields: [fiatTxId], references: [id], onDelete: SetNull)
+  createdAt     DateTime            @default(now())
+
+  @@index([treeId, month])
+}
+
+// ── Payment Status ──────────────────────────────────────────────────
+
+enum PaymentStatus {
+  PLEDGED
+  PAID
+  RELEASED
+  REFUNDED
+  DISPUTED
+}
+
+enum SignerStatus {
+  ACTIVE
+  REMOVED
+}
+
+// ── Member Payments ──────────────────────────────────────────────────
+
+model MemberPayment {
+  id       String           @id @default(uuid())
+  treeId   String
+  tree     Tree             @relation(fields: [treeId], references: [id], onDelete: Cascade)
+  memberId String
+  member   TreeMember       @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  amount   Float
+  currency String           @default("CLP")
+  status   PaymentStatus    @default(PLEDGED)
+  releasedAmount Float      @default(0)
+  refundedAmount Float      @default(0)
+  period   String           // "2026-05"
+  fiatTxId String?
+  fiatTx   FiatTransaction? @relation("PaymentFiatTx", fields: [fiatTxId], references: [id], onDelete: SetNull)
+  taskId   String?
+  task     Task?            @relation(fields: [taskId], references: [id], onDelete: SetNull)
+  paidAt           DateTime         @default(now())
+  receiptPath      String?
+  receiptFileName  String?
+  receiptAttempts  Int              @default(0)
+  receiptJSON      Json?
+
+  @@index([treeId, period])
+  @@index([memberId])
+  @@index([status])
+  @@index([taskId])
 }
 
 model DifficultyVote {
@@ -2221,4 +2328,34 @@ model SkillInfluence {
   @@unique([treeId, skillTag])
   @@index([skillTag])
   @@index([calculatedAt])
+}
+
+// ── Tree Multi-Sig Signers ────────────────────────────────────────────
+
+model TreeSigner {
+  id        String       @id @default(uuid())
+  treeId    String
+  tree      Tree         @relation(fields: [treeId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  status    SignerStatus @default(ACTIVE)
+  addedAt   DateTime     @default(now())
+  removedAt DateTime?
+
+  @@unique([treeId, userId])
+  @@index([treeId])
+  @@index([userId])
+}
+
+// ── Tree Treasury (escrow balance) ────────────────────────────────────
+
+model TreeTreasury {
+  id              String   @id @default(uuid())
+  treeId          String   @unique
+  tree            Tree     @relation(fields: [treeId], references: [id], onDelete: Cascade)
+  balance         Float    @default(0)
+  committedBalance Float   @default(0)
+  updatedAt       DateTime @updatedAt
+
+  @@index([treeId])
 }

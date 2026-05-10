@@ -18,7 +18,7 @@ async function getUserWithPoints(userId: string) {
         sharingCode: true,
         is_guest: true,
         memberships: {
-          select: { treeId: true, weeklyNeedPoints: true, status: true, xp: true, level: true, role: true }
+          select: { id: true, treeId: true, weeklyNeedPoints: true, status: true, xp: true, level: true, role: true }
         }
       }
     });

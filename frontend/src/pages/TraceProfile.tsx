@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Briefcase, UserRound } from 'lucide-react';
 import ProfilePage from '../components/ProfilePage';
+import TreePaymentSummary from '../components/TreePaymentSummary';
 import { useAuthStore } from '../store/authStore';
 
 export default function TraceProfile() {
@@ -39,6 +40,8 @@ export default function TraceProfile() {
       <section className="glass-panel" style={{ padding: '1rem' }}>
         <ProfilePage onClose={() => {}} />
       </section>
+
+      <TreePaymentSummary />
     </main>
   );
 }

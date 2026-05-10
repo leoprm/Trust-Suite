@@ -26,6 +26,8 @@ async function main() {
     console.log(`🧹 Cleaning ${existingTrees} existing trees and related data...`);
     // Delete in order: tasks → branch members → branches → tree members → needs → ideas → trees
     await prisma.task.deleteMany();
+    await (prisma as any).memberPayment.deleteMany();
+    await (prisma as any).treeExpense.deleteMany();
     await prisma.branchMember.deleteMany();
     await prisma.branch.deleteMany();
     await (prisma as any).expertEndorsement.deleteMany();
@@ -655,6 +657,103 @@ async function main() {
     await (prisma as any).expertEndorsement.create({ data: { id: uuid(), ...ed } });
   }
   console.log(`   ✅ ${endorsementData.length} expert endorsements`);
+
+  // ══════════════════════════════════════════
+  // 11. SUBSCRIPTION TREE — PROPORTIONAL BILLING
+  // ══════════════════════════════════════════
+  console.log('💳 Creating subscription tree with proportional billing...');
+
+  const subTreeId = uuid();
+
+  await prisma.tree.create({
+    data: {
+      id: subTreeId,
+      name: 'Cooperativa Digital Pro',
+      icono: '🏢',
+      country: 'Chile',
+      city: 'Santiago',
+      sector: 'Providencia',
+      visibility: 'PRIVATE',
+      admissionPolicy: 'INVITE_ONLY',
+      allowHashtags: true,
+      allowTraditionalBranches: true,
+      hashtagCreationPolicy: 'ADMIN_AND_USERS',
+      economyMode: 'LEGACY_FIAT',
+      presupuestoTotal: 1000,
+      modoGobierno: 'DEMOCRATICO',
+      creatorId: LEO_ID,
+      capacidades: 'Desarrollo software, Diseño, Marketing, Finanzas, Legal',
+      description: 'Cooperativa digital con modelo de suscripción mensual proporcional a gastos',
+      inviteCode: 'SUB-' + crypto.randomBytes(4).toString('hex').toUpperCase(),
+      crisisSubjects: '',
+      financingMode: 'SUBSCRIPCION',
+      subscriptionAmount: 50000,
+      subscriptionCurrency: 'CLP',
+      subscriptionDayOfMonth: 5,
+      subscriptionBillingMode: 'PROPORTIONAL',
+    },
+  });
+
+  // Add members (Leo + 5 demo users)
+  const subMembers = [
+    'Leo', 'María García', 'Pedro Rodríguez', 'Ana Martínez', 'Carlos López', 'Diego Morales',
+  ];
+
+  const currentMonth = `${new Date().getUTCFullYear()}-${String(new Date().getUTCMonth() + 1).padStart(2, '0')}`;
+
+  for (const name of subMembers) {
+    const memberId = uuid();
+    await prisma.treeMember.create({
+      data: {
+        id: memberId,
+        userId: uid(name),
+        treeId: subTreeId,
+        status: 'VERIFIED',
+        role: name === 'Leo' ? 'ADMIN' : 'MEMBER',
+        xp: Math.floor(Math.random() * 500),
+        level: Math.floor(Math.random() * 5) + 1,
+        weeklyNeedPoints: 100,
+        skills: skillsMap[name] || '[]',
+        strikesEconomicos: '[]',
+        goldenTickets: '[]',
+        bayasBalance: Math.random() * 200,
+        isPayingMember: true,
+        subscriptionStatus: 'ACTIVE',
+        paymentDueDate: new Date(Date.UTC(new Date().getUTCFullYear(), new Date().getUTCMonth() + 1, 5)),
+      },
+    });
+  }
+
+  // Add TreeExpenses for current month
+  const expenseDefs = [
+    { description: 'Servidor VPS — Hetzner CX41', amount: 32000, category: 'EQUIPMENT' as const, isRecurring: true, dueDayOfMonth: 1 },
+    { description: 'Dominio y DNS — Cloudflare Pro', amount: 18000, category: 'OTHER' as const, isRecurring: true, dueDayOfMonth: 15 },
+    { description: 'Licencia Figma Team (5 seats)', amount: 45000, category: 'EQUIPMENT' as const, isRecurring: true, dueDayOfMonth: 1 },
+    { description: 'Licencia GitHub Team', amount: 28000, category: 'EQUIPMENT' as const, isRecurring: true, dueDayOfMonth: 1 },
+    { description: 'Asesoría legal mensual', amount: 80000, category: 'OTHER' as const, isRecurring: true, dueDayOfMonth: 20 },
+    { description: 'Café y snacks oficina', amount: 15000, category: 'SHOPPING' as const, isRecurring: false },
+  ];
+
+  for (const exp of expenseDefs) {
+    await prisma.treeExpense.create({
+      data: {
+        id: uuid(),
+        treeId: subTreeId,
+        description: exp.description,
+        amount: exp.amount,
+        currency: 'CLP',
+        category: exp.category,
+        isRecurring: exp.isRecurring,
+        dueDayOfMonth: exp.dueDayOfMonth || null,
+        addedById: LEO_ID,
+        month: currentMonth,
+      },
+    });
+  }
+
+  const subMemberCount = await prisma.treeMember.count({ where: { treeId: subTreeId } });
+  const subExpenseSum = expenseDefs.reduce((sum, e) => sum + e.amount, 0);
+  console.log(`   ✅ Subscription tree "${'Cooperativa Digital Pro'}" — ${subMemberCount} members, ${subExpenseSum} CLP expenses, ${(subExpenseSum / subMemberCount).toFixed(0)} CLP/member`);
 
   // ══════════════════════════════════════════
   // SUMMARY

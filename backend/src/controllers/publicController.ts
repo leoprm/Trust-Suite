@@ -153,7 +153,7 @@ export const getPublicMetrics = async (req: Request, res: Response) => {
       .map(t => ({
         name: t.name,
         memberCount: memberCountMap.get(t.id) || 0,
-        fiatMonthlyProfit: profitMap.get(t.id) || 0,
+        monthlyProfit: profitMap.get(t.id) || 0,
         sector: t.sector || null,
         capacidades: t.capacidades || '[]',
       }))
