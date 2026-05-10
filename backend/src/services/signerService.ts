@@ -37,13 +37,16 @@ export async function addSigner(
     throw new Error('Only admins or the tree creator can manage signers');
   }
 
-  // Verify target user is a member of the tree
+  // Protocolo Asimov: AI no puede ser firmante
   const targetMember = await prisma.treeMember.findUnique({
     where: { userId_treeId: { userId: targetUserId, treeId } },
-    select: { id: true },
+    select: { id: true, isAI: true },
   });
   if (!targetMember) {
     throw new Error('User must be a member of the tree to become a signer');
+  }
+  if (targetMember.isAI) {
+    throw new Error('Protocolo Asimov: Un AI no puede ser firmante multi-sig. Solo humanos pueden ser TreeSigners.');
   }
 
   // Check max 5 signers

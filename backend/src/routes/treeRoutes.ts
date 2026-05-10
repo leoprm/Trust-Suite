@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { createTree, joinTree, getMyTrees, getGlobalTrees, getTreeMembers, getTree, leaveTree, inviteMember, removeMember, updateMemberPower, getNetworkGraph, getPendingEvidence, generateGuestToken, consumeGuestToken, toggleCrisisMode, broadcastCrisisSignal } from '../controllers/treeController';
 import { addTransaction, getFiatLedgerSummaryController, getTransactions, updateEconomyMode } from '../controllers/fiatController';
 import { authenticateJWT, requireAdmin, optionalAuth } from '../middleware/authMiddleware';
+import { aiGate } from '../middleware/aiEthicsMiddleware';
 
 const router = Router();
 

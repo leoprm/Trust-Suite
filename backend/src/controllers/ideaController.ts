@@ -426,6 +426,10 @@ export const toggleLikeIdea = async (req: any, res: Response) => {
       if (memberships.length === 0 || memberships.some((m: any) => m.status !== 'VERIFIED')) {
         return res.status(403).json({ error: 'Debes ser un miembro Verificado para poder votar' });
       }
+      // Protocolo Asimov: AI no vota en gobernanza
+      if (memberships.some((m: any) => m.isAI)) {
+        return res.status(403).json({ error: 'Protocolo Asimov: Un AI no puede votar en gobernanza. Solo humanos pueden emitir votos.' });
+      }
     }
 
     const existing = await prisma.ideaLike.findUnique({

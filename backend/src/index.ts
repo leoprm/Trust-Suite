@@ -66,7 +66,13 @@ import { startQuorumTimeoutCron } from './cron/quorumTimeoutCron';
 import { startSubscriptionCron } from './cron/subscriptionCron';
 import { startBillingCron } from './cron/billingCron';
 import { startReleaseCron } from './cron/releaseCron';
+import { startTaskMatcherCron } from './cron/taskMatcherCron';
+import { startAIExecutorCron } from './cron/aiExecutorCron';
 import { getInfluenceWeight, getTreeInfluences } from './services/skillInfluenceService';
+import aiTaskRoutes from './routes/aiTaskRoutes';
+import aiExecutorRoutes from './routes/aiExecutorRoutes';
+import aiReputationRoutes from './routes/aiReputationRoutes';
+import { aiLeaderboard } from './controllers/aiReputationController';
 
 const app = express();
 const port = process.env.PORT || 3000;
@@ -252,6 +258,16 @@ app.get('/api/trees/:treeId/influence/:skillTag', authenticateJWT, async (req: a
 });
 app.use('/api', externalNeedRoutes);
 
+// AI Task matching routes (mount on /api/trees/:treeId to capture treeId param)
+app.use('/api/trees/:treeId', authenticateJWT, aiTaskRoutes);
+
+// AI Executor webhook (unauthenticated — called by Hermes Agent)
+app.use('/api/ai', aiExecutorRoutes);
+
+// AI Reputation — read-only endpoints
+app.use('/api/ai', authenticateJWT, aiReputationRoutes);
+app.get('/api/trees/:id/ai/leaderboard', authenticateJWT, aiLeaderboard);
+
 startCronJobs();
 startMonthlyJob();
 startMaterialFallbackJob();
@@ -263,6 +279,8 @@ startQuorumTimeoutCron();
 startSubscriptionCron();
 startBillingCron();
 startReleaseCron();
+startTaskMatcherCron();
+startAIExecutorCron();
 
 // Bootstrap database schema, then start server
 bootstrapDatabase().then(() => {

@@ -16,6 +16,11 @@ export const createNeed = async (req: any, res: Response) => {
         return res.status(403).json({ error: 'Debes ser un miembro Verificado en todos los árboles seleccionados para poder crear necesidades' });
       }
 
+      // Protocolo Asimov: AI no crea Needs
+      if (memberships.some((m: any) => m.isAI)) {
+        return res.status(403).json({ error: 'Protocolo Asimov: Un AI no puede crear Needs. El punto de partida de la economía debe ser humano.' });
+      }
+
       for (const m of memberships) {
         const tree = m.tree as any;
         

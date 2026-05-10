@@ -198,8 +198,35 @@ CREATE TABLE IF NOT EXISTS `TreeMember` (
     `bonoMentoriaActivo` BOOLEAN NOT NULL DEFAULT false,
     `bonoMentoriaExpira` DATETIME(3) NULL,
     `avalBanHasta`       DATETIME(3) NULL,
+    `isAI`              BOOLEAN NOT NULL DEFAULT false,
+    `aiProfile`         VARCHAR(100) NULL,
+    `aiProvider`        VARCHAR(50) NULL,
+    `aiModel`           VARCHAR(100) NULL,
+    `aiOwnerId`         VARCHAR(191) NULL,
+    `aiStatus`          VARCHAR(20) NOT NULL DEFAULT 'IDLE',
+    `isPayingMember`     BOOLEAN NOT NULL DEFAULT true,
+    `lastPaymentDate`    DATETIME(3) NULL,
+    `paymentDueDate`     DATETIME(3) NULL,
+    `subscriptionStatus` ENUM('ACTIVE','GRACE','SUSPENDED','CANCELLED') NOT NULL DEFAULT 'ACTIVE',
 
     UNIQUE INDEX `TreeMember_userId_treeId_key`(`userId`, `treeId`),
+    PRIMARY KEY (`id`)
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `AIMemberConfig` (
+    `id`                  VARCHAR(191) NOT NULL,
+    `treeMemberId`        VARCHAR(191) NOT NULL,
+    `maxConcurrentTasks`  INT NOT NULL DEFAULT 1,
+    `autoClaimEnabled`    BOOLEAN NOT NULL DEFAULT true,
+    `allowedPhases`       JSON NULL,
+    `skillOverrides`      JSON NULL,
+    `autonomyLevel`       ENUM('L1','L2','L3') NOT NULL DEFAULT 'L1',
+    `aiFailCount`         INT NOT NULL DEFAULT 0,
+    `aiLastFailedAt`      DATETIME(3) NULL,
+    `aiRateLimitedUntil`  DATETIME(3) NULL,
+    `createdAt`           DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+
+    UNIQUE INDEX `AIMemberConfig_treeMemberId_key`(`treeMemberId`),
     PRIMARY KEY (`id`)
 ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
@@ -670,6 +697,24 @@ CREATE TABLE IF NOT EXISTS `SatisfactionRating` (
     PRIMARY KEY (`id`)
 ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
+CREATE TABLE IF NOT EXISTS `AiExecution` (
+    `id`              VARCHAR(191) NOT NULL,
+    `taskId`          VARCHAR(191) NOT NULL,
+    `aiMemberId`      VARCHAR(191) NOT NULL,
+    `kanbanTaskId`    VARCHAR(191) NULL,
+    `status`          ENUM('PENDING','RUNNING','COMPLETED','FAILED','TIMED_OUT') NOT NULL DEFAULT 'PENDING',
+    `promptText`      TEXT NOT NULL,
+    `output`          TEXT NULL,
+    `attemptNumber`   INT NOT NULL DEFAULT 1,
+    `createdAt`       DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    `completedAt`     DATETIME(3) NULL,
+
+    INDEX `AiExecution_taskId_idx`(`taskId`),
+    INDEX `AiExecution_aiMemberId_idx`(`aiMemberId`),
+    INDEX `AiExecution_status_idx`(`status`),
+    PRIMARY KEY (`id`)
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
 -- ─────────────────────────────────────────────────────────────────────────────
 -- 8. ECONOMIC ENGINE (FIAT, Assets, Promises)
 -- ─────────────────────────────────────────────────────────────────────────────
@@ -958,6 +1003,7 @@ ALTER TABLE `EvidenceFile` ADD CONSTRAINT `EvidenceFile_taskId_fkey` FOREIGN KEY
 ALTER TABLE `TreeMember` ADD CONSTRAINT `TreeMember_userId_fkey` FOREIGN KEY (`userId`) REFERENCES `User`(`id`) ON DELETE CASCADE ON UPDATE CASCADE;
 ALTER TABLE `TreeMember` ADD CONSTRAINT `TreeMember_treeId_fkey` FOREIGN KEY (`treeId`) REFERENCES `Tree`(`id`) ON DELETE CASCADE ON UPDATE CASCADE;
 ALTER TABLE `TreeMember` ADD CONSTRAINT `TreeMember_invitedById_fkey` FOREIGN KEY (`invitedById`) REFERENCES `User`(`id`) ON DELETE SET NULL ON UPDATE CASCADE;
+ALTER TABLE `TreeMember` ADD CONSTRAINT `TreeMember_aiOwnerId_fkey` FOREIGN KEY (`aiOwnerId`) REFERENCES `User`(`id`) ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- PlantillaArbol
 ALTER TABLE `PlantillaArbol` ADD CONSTRAINT `PlantillaArbol_creadorId_fkey` FOREIGN KEY (`creadorId`) REFERENCES `User`(`id`) ON DELETE CASCADE ON UPDATE CASCADE;
@@ -1119,6 +1165,13 @@ ALTER TABLE `SearchPass` ADD CONSTRAINT `SearchPass_userId_fkey` FOREIGN KEY (`u
 -- InterviewInvitation
 ALTER TABLE `InterviewInvitation` ADD CONSTRAINT `InterviewInvitation_senderId_fkey` FOREIGN KEY (`senderId`) REFERENCES `User`(`id`) ON DELETE CASCADE ON UPDATE CASCADE;
 ALTER TABLE `InterviewInvitation` ADD CONSTRAINT `InterviewInvitation_recipientId_fkey` FOREIGN KEY (`recipientId`) REFERENCES `User`(`id`) ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AIMemberConfig
+ALTER TABLE `AIMemberConfig` ADD CONSTRAINT `AIMemberConfig_treeMemberId_fkey` FOREIGN KEY (`treeMemberId`) REFERENCES `TreeMember`(`id`) ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AiExecution
+ALTER TABLE `AiExecution` ADD CONSTRAINT `AiExecution_taskId_fkey` FOREIGN KEY (`taskId`) REFERENCES `Task`(`id`) ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE `AiExecution` ADD CONSTRAINT `AiExecution_aiMemberId_fkey` FOREIGN KEY (`aiMemberId`) REFERENCES `TreeMember`(`id`) ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- Prisma migration tracking table (keeps Prisma happy)

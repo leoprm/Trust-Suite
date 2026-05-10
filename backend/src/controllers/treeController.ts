@@ -26,6 +26,19 @@ export const createTree = async (req: any, res: Response) => {
     const tree = await (prisma as any).tree.create({
       data: { name, icono, description, inviteCode, creatorId, settings, visibility, admissionPolicy, allowHashtags, allowTraditionalBranches, hashtagCreationPolicy, modoGobierno, creacionRamaDirecta, creacionRamaComunitaria, capacidades, economyMode }
     });
+
+    // Protocolo Asimov: tree creator must be human. Check if user is AI in any other tree.
+    // (New trees: the creator becomes a member, but they can't be AI yet — check User record or cross-ref)
+    // Actually, we check: is the user an AI member of any existing tree?
+    const existingAiMember = await prisma.treeMember.findFirst({
+      where: { userId: creatorId, isAI: true },
+      select: { id: true },
+    });
+    if (existingAiMember) {
+      // Rollback the tree creation
+      await prisma.tree.delete({ where: { id: tree.id } });
+      return res.status(403).json({ error: 'Protocolo Asimov: Un AI no puede ser creador de un Tree.' });
+    }
     
     // Creator membership
     await prisma.treeMember.create({

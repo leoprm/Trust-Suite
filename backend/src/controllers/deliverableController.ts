@@ -142,8 +142,12 @@ export const rateDeliverable = async (req: any, res: Response) => {
       return res.status(400).json({ error: 'This phase is already completed. Ratings are closed.' });
     }
 
-    // For simplicity, anyone not in the specific phase team can rate, or specifically tree members.
-    // For now we allow tree members to rate. The frontend can just ensure only non-team members can rate it.
+    // Protocolo Asimov: AI no evalúa
+    const { requireHumanToRate } = await import('../services/aiEthics');
+    const ethicCheck = await requireHumanToRate(userId, id);
+    if (!ethicCheck.allowed) {
+      return res.status(403).json({ error: ethicCheck.error });
+    }
 
     // Upsert rating
     const existingRating = await prisma.satisfactionRating.findUnique({

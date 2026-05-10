@@ -79,6 +79,7 @@ model User {
   assignedCandidates           ExternalCandidate[]          @relation("CandidateAssigner")
   treeExpensesAdded            TreeExpense[]                @relation("UserExpenses")
   signers                      TreeSigner[]
+  ownedAIs                     TreeMember[]                 @relation("AIOwner")
 }
 
 model UserContact {
@@ -593,6 +594,11 @@ model EvidenceFile {
 
 model TreeMember {
   id               String         @id @default(uuid())
+  isAI             Boolean        @default(false)
+  aiProfile        String?        // nombre del perfil Hermes (ej: "backend-eng", "codex-worker")
+  aiProvider       String?        // "hermes-agent" | "codex" | "claude-code"
+  aiModel          String?        // modelo que usa (ej: "deepseek-v4-pro", "gpt-5.5")
+  aiOwnerId        String?        // User dueño del AI (recibe pagos, NO XP)
   userId           String
   treeId           String
   invitedById      String?
@@ -602,6 +608,7 @@ model TreeMember {
   lastCycleKey      String?
   strikesEconomicos String        @default("[]") @db.Text
   status           MemberStatus   @default(UNVERIFIED)
+  aiStatus         AIMemberStatus @default(IDLE)
   xp               Float          @default(0)
   level            Int            @default(1)
   skills           String         @default("[]") @db.Text
@@ -614,6 +621,9 @@ model TreeMember {
   endorsementsGiven   ExpertEndorsement[] @relation("EndorsementsGiven")
   endorsementsReceived ExpertEndorsement[] @relation("EndorsementsReceived")
   payments             MemberPayment[]
+  aiConfig             AIMemberConfig?
+  claimedTasks         Task[]            @relation("AIClaimedTasks")
+  executions           AiExecution[]
 
   // Subscription fields
   isPayingMember     Boolean            @default(true)
@@ -622,10 +632,60 @@ model TreeMember {
   subscriptionStatus SubscriptionStatus @default(ACTIVE)
 
   user      User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  aiOwner   User? @relation("AIOwner", fields: [aiOwnerId], references: [id], onDelete: SetNull)
   tree      Tree  @relation(fields: [treeId], references: [id], onDelete: Cascade)
   invitedBy User? @relation("Inviter", fields: [invitedById], references: [id], onDelete: SetNull)
 
   @@unique([userId, treeId])
+}
+
+enum AIMemberStatus {
+  IDLE
+  WORKING
+  RATE_LIMITED
+  SUSPENDED
+}
+
+enum AutonomyLevel {
+  L1   // requiere aprobación humana para reclamar Tasks
+  L2   // auto-claim habilitado, deliverables requieren review
+  L3   // completamente autónomo: claim + deliver + release automático
+}
+
+model AIMemberConfig {
+  id                  String         @id @default(uuid())
+  treeMemberId        String         @unique
+  maxConcurrentTasks  Int            @default(1)
+  autoClaimEnabled    Boolean        @default(true)
+  allowedPhases       Json?          // fases en las que puede trabajar ["DEVELOPMENT", "TESTING"]
+  skillOverrides      Json?          // skills adicionales que el AI reporta
+  autonomyLevel       AutonomyLevel  @default(L1)
+  aiFailCount         Int            @default(0)
+  aiLastFailedAt      DateTime?
+  aiRateLimitedUntil  DateTime?
+  createdAt           DateTime       @default(now())
+
+  treeMember          TreeMember     @relation(fields: [treeMemberId], references: [id], onDelete: Cascade)
+}
+
+model AiExecution {
+  id              String   @id @default(uuid())
+  taskId          String
+  aiMemberId      String
+  kanbanTaskId    String?
+  status          String   @default("PENDING") // PENDING, RUNNING, COMPLETED, FAILED, TIMED_OUT
+  promptText      String   @db.Text
+  output          String?  @db.Text
+  attemptNumber   Int      @default(1)
+  createdAt       DateTime @default(now())
+  completedAt     DateTime?
+
+  task     Task       @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  aiMember TreeMember @relation(fields: [aiMemberId], references: [id], onDelete: Cascade)
+
+  @@index([taskId])
+  @@index([aiMemberId])
+  @@index([status])
 }
 
 model Need {
@@ -828,6 +888,8 @@ model Task {
   description String      @db.Text
   status      TaskStatus  @default(OPEN)
   assignedTo  String?
+  claimedByAI String?   // FK → TreeMember, cuando un AI reclama la tarea
+  aiClaimedAt DateTime?
   creatorId   String?
   phase       BranchPhase @default(INVESTIGATION)
 
@@ -863,6 +925,8 @@ model Task {
   evidenceFiles    EvidenceFile[]
   fiatTransactions FiatTransaction[]
   payments         MemberPayment[]
+  claimedByAIMember TreeMember? @relation("AIClaimedTasks", fields: [claimedByAI], references: [id], onDelete: SetNull)
+  executions       AiExecution[]
 }
 
 enum TaskStatus {
