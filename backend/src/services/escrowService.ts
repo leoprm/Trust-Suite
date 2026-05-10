@@ -14,6 +14,14 @@ export interface ReleaseResult {
   refundedAmount: number;
 }
 
+export interface QuorumStatus {
+  quorumMet: boolean;
+  evaluatorCount: number;
+  ratedCount: number;
+  quorumPct: number;
+  threshold: number; // 60
+}
+
 // ── Default satisfaction tiers ─────────────────────────────────────────
 
 const DEFAULT_SATISFACTION_TIERS: SatisfactionTier[] = [
@@ -23,6 +31,8 @@ const DEFAULT_SATISFACTION_TIERS: SatisfactionTier[] = [
   { min: 60, max: 80, releasePct: 75 },
   { min: 80, max: 100, releasePct: 100 },
 ];
+
+const QUORUM_THRESHOLD = 60; // ≥60% of evaluators must have rated
 
 // ── 1. pledgePayment ───────────────────────────────────────────────────
 
@@ -93,17 +103,88 @@ export async function pledgePayment(
   return payment;
 }
 
-// ── 2. releasePayment ──────────────────────────────────────────────────
+// ── 2. checkQuorum ─────────────────────────────────────────────────────
+// Returns quorum status for a branch: ≥60% of evaluators must have rated.
+
+export async function checkQuorum(branchId: string): Promise<QuorumStatus> {
+  // Get all deliverables for this branch
+  const deliverables = await prisma.phaseDeliverable.findMany({
+    where: { branchId },
+    select: { id: true },
+  });
+
+  if (deliverables.length === 0) {
+    return {
+      quorumMet: false,
+      evaluatorCount: 0,
+      ratedCount: 0,
+      quorumPct: 0,
+      threshold: QUORUM_THRESHOLD,
+    };
+  }
+
+  const deliverableIds = deliverables.map((d) => d.id);
+
+  // Get all assigned evaluators (unique users)
+  const evaluators = await prisma.satisfaccionEvaluador.findMany({
+    where: { deliverableId: { in: deliverableIds } },
+    select: { userId: true },
+    distinct: ['userId'],
+  });
+
+  const evaluatorCount = evaluators.length;
+
+  if (evaluatorCount === 0) {
+    return {
+      quorumMet: false,
+      evaluatorCount: 0,
+      ratedCount: 0,
+      quorumPct: 0,
+      threshold: QUORUM_THRESHOLD,
+    };
+  }
+
+  // Count how many unique evaluators have submitted a SatisfactionRating
+  const rated = await prisma.satisfactionRating.findMany({
+    where: {
+      deliverableId: { in: deliverableIds },
+      userId: { in: evaluators.map((e) => e.userId) },
+    },
+    select: { userId: true },
+    distinct: ['userId'],
+  });
+
+  const ratedCount = rated.length;
+  const quorumPct = Math.round((ratedCount / evaluatorCount) * 100);
+  const quorumMet = quorumPct >= QUORUM_THRESHOLD;
+
+  return { quorumMet, evaluatorCount, ratedCount, quorumPct, threshold: QUORUM_THRESHOLD };
+}
+
+// ── 3. releasePayment ──────────────────────────────────────────────────
 
 export async function releasePayment(paymentId: string): Promise<ReleaseResult> {
   const payment = await prisma.memberPayment.findUnique({
     where: { id: paymentId },
-    include: { tree: { select: { satisfactionTiers: true } } },
+    include: {
+      tree: { select: { satisfactionTiers: true } },
+      task: { select: { branchId: true } },
+    },
   });
 
   if (!payment) throw new Error('Payment not found');
   if (payment.status !== 'PLEDGED') {
     throw new Error(`Cannot release payment with status ${payment.status}`);
+  }
+
+  // Quorum gate: ≥60% of evaluators must have rated
+  if (payment.task?.branchId) {
+    const quorum = await checkQuorum(payment.task.branchId);
+    if (!quorum.quorumMet) {
+      throw new Error(
+        `Quorum not met: ${quorum.ratedCount}/${quorum.evaluatorCount} evaluators have rated (${quorum.quorumPct}%, need ≥${QUORUM_THRESHOLD}%)`,
+      );
+    }
   }
 
   // Determine satisfaction percentage from the task's branch deliverables
@@ -170,7 +251,7 @@ export async function releasePayment(paymentId: string): Promise<ReleaseResult> 
   return { releasedAmount, refundedAmount };
 }
 
-// ── 3. refundPayment ───────────────────────────────────────────────────
+// ── 4. refundPayment ───────────────────────────────────────────────────
 
 export async function refundPayment(paymentId: string) {
   const payment = await prisma.memberPayment.findUnique({
@@ -203,9 +284,6 @@ export async function refundPayment(paymentId: string) {
     );
   }
 
-  // Require multi-sig
-  await validateMultiSig(payment.treeId);
-
   // Update payment
   await prisma.memberPayment.update({
     where: { id: paymentId },
@@ -235,7 +313,7 @@ export async function refundPayment(paymentId: string) {
   return await prisma.memberPayment.findUnique({ where: { id: paymentId } });
 }
 
-// ── 4. disputePayment ──────────────────────────────────────────────────
+// ── 5. disputePayment ──────────────────────────────────────────────────
 
 export async function disputePayment(paymentId: string, reason: string) {
   const payment = await prisma.memberPayment.findUnique({
@@ -265,7 +343,7 @@ export async function disputePayment(paymentId: string, reason: string) {
   return await prisma.memberPayment.findUnique({ where: { id: paymentId } });
 }
 
-// ── 5. calculateTieredRelease ──────────────────────────────────────────
+// ── 6. calculateTieredRelease ──────────────────────────────────────────
 
 export function calculateTieredRelease(
   satisfactionPct: number,
@@ -292,28 +370,50 @@ export function calculateTieredRelease(
   return 0;
 }
 
-// ── 6. validateMultiSig ────────────────────────────────────────────────
+// ── 7. quorumTimeoutRefund ─────────────────────────────────────────────
+// Called by releaseCron when a payment's quorum timeout has expired.
 
-export async function validateMultiSig(treeId: string): Promise<void> {
-  const tree = await prisma.tree.findUnique({
-    where: { id: treeId },
-    select: {
-      minSigners: true,
-      signers: {
-        where: { status: 'ACTIVE' },
-        select: { id: true },
-      },
+export async function quorumTimeoutRefund(paymentId: string, branchId: string) {
+  const payment = await prisma.memberPayment.findUnique({
+    where: { id: paymentId },
+  });
+
+  if (!payment) throw new Error('Payment not found');
+  if (payment.status !== 'PLEDGED') {
+    throw new Error(`Cannot auto-refund payment with status ${payment.status}`);
+  }
+
+  const quorum = await checkQuorum(branchId);
+
+  // Update payment
+  await prisma.memberPayment.update({
+    where: { id: paymentId },
+    data: {
+      status: 'REFUNDED',
+      releasedAmount: 0,
+      refundedAmount: payment.amount,
     },
   });
 
-  if (!tree) throw new Error('Tree not found');
+  // Update treasury
+  await prisma.treeTreasury.update({
+    where: { treeId: payment.treeId },
+    data: { committedBalance: { decrement: payment.amount } },
+  });
 
-  const activeSigners = tree.signers.length;
-  const minSigners = tree.minSigners ?? 3;
+  void logEvent({
+    treeId: payment.treeId,
+    action: 'PAYMENT_QUORUM_TIMEOUT_REFUND',
+    entityType: 'MemberPayment',
+    entityId: paymentId,
+    metadataJson: {
+      amount: payment.amount,
+      quorum,
+      reason: 'Quorum timeout expired',
+    },
+    severity: 'WARNING',
+    source: 'AUTOMATION',
+  });
 
-  if (activeSigners < minSigners) {
-    throw new Error(
-      `Este Tree requiere multi-sig para liberar fondos (${activeSigners}/${minSigners} signers activos)`,
-    );
-  }
+  return await prisma.memberPayment.findUnique({ where: { id: paymentId } });
 }

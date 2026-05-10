@@ -1174,6 +1174,12 @@ ALTER TABLE `AiExecution` ADD CONSTRAINT `AiExecution_taskId_fkey` FOREIGN KEY (
 ALTER TABLE `AiExecution` ADD CONSTRAINT `AiExecution_aiMemberId_fkey` FOREIGN KEY (`aiMemberId`) REFERENCES `TreeMember`(`id`) ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- ═══════════════════════════════════════════════════════════════════════════════
+-- E12: quorumTimeoutDays — timeout de escrow configurable por Branch
+-- ═══════════════════════════════════════════════════════════════════════════════
+
+ALTER TABLE `Branch` ADD COLUMN IF NOT EXISTS `quorum_timeout_days` INT NOT NULL DEFAULT 30;
+
+-- ═══════════════════════════════════════════════════════════════════════════════
 -- Prisma migration tracking table (keeps Prisma happy)
 -- ═══════════════════════════════════════════════════════════════════════════════
 

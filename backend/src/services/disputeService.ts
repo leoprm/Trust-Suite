@@ -1,6 +1,5 @@
 import { prisma } from '../index';
 import { logEvent } from './eventLogService';
-import { requireMultiSig, notifySigners } from './signerService';
 
 // ── 1. freezeFunds (open dispute) ───────────────────────────────────────
 
@@ -23,9 +22,6 @@ export async function freezeFunds(
     where: { id: paymentId },
     data: { status: 'DISPUTED' },
   });
-
-  // Notify all active signers so they can vote on resolution
-  void notifySigners(payment.treeId, 'DISPUTE_OPENED', paymentId);
 
   void logEvent({
     treeId: payment.treeId,
@@ -65,9 +61,6 @@ export async function resolveDispute(
   if (payment.status !== 'DISPUTED') {
     throw new Error(`Payment is not in dispute (status: ${payment.status})`);
   }
-
-  // Multi-sig gate — requires active signers ≥ threshold
-  await requireMultiSig(payment.treeId);
 
   const { action, splitPct } = resolution;
 

@@ -1,17 +1,22 @@
 import cron from 'node-cron';
 import { prisma } from '../index';
-import { releasePayment, refundPayment } from '../services/escrowService';
+import { releasePayment, refundPayment, checkQuorum, quorumTimeoutRefund } from '../services/escrowService';
 import { logEvent } from '../services/eventLogService';
 
 // ── Config ─────────────────────────────────────────────────────────────
 
 const DRY_RUN = process.env.CRON_TIERED_RELEASE !== 'true';
 const REFLECTION_HOURS = 24;
+const QUORUM_THRESHOLD = 60;
 
 // ── Helpers ────────────────────────────────────────────────────────────
 
 function hoursAgo(date: Date): number {
   return (Date.now() - date.getTime()) / (1000 * 60 * 60);
+}
+
+function daysAgo(date: Date): number {
+  return (Date.now() - date.getTime()) / (1000 * 60 * 60 * 24);
 }
 
 function avg(numbers: number[]): number {
@@ -49,8 +54,10 @@ async function runReleaseCron(): Promise<void> {
   let totalProcessed = 0;
   let totalReleased = 0;
   let totalRefunded = 0;
+  let totalTimeoutRefunded = 0;
   let totalSkippedNoRating = 0;
   let totalSkippedReflection = 0;
+  let totalSkippedNoQuorum = 0;
   let totalErrors = 0;
 
   for (const payment of payments) {
@@ -59,6 +66,19 @@ async function runReleaseCron(): Promise<void> {
       if (!task) {
         console.log(
           `[ReleaseCron] Payment ${payment.id} — task not found, skipping.`,
+        );
+        continue;
+      }
+
+      // 2a. Get branch info (quorumTimeoutDays, deliverables)
+      const branch = await prisma.branch.findUnique({
+        where: { id: task.branchId },
+        select: { id: true, quorumTimeoutDays: true },
+      });
+
+      if (!branch) {
+        console.log(
+          `[ReleaseCron] Payment ${payment.id} — branch ${task.branchId} not found, skipping.`,
         );
         continue;
       }
@@ -85,12 +105,50 @@ async function runReleaseCron(): Promise<void> {
         orderBy: { createdAt: 'desc' },
       });
 
-      // 2d. No ratings yet → skip
+      // 2d. No ratings yet → check timeout
       if (ratings.length === 0) {
-        console.log(
-          `[ReleaseCron] Payment ${payment.id} — no ratings yet for branch ${task.branchId}, skipping.`,
-        );
-        totalSkippedNoRating++;
+        // Check if timeout has expired
+        const timeoutDays = branch.quorumTimeoutDays ?? 30;
+        const ageDays = daysAgo(payment.paidAt);
+
+        if (ageDays >= timeoutDays) {
+          console.log(
+            `[ReleaseCron] Payment ${payment.id} — no ratings and ${ageDays.toFixed(1)}d elapsed (timeout: ${timeoutDays}d), auto-refunding.`,
+          );
+
+          if (DRY_RUN) {
+            console.log(
+              `[ReleaseCron]   DRY RUN — would auto-refund payment ${payment.id} (amount=${payment.amount}) due to quorum timeout`,
+            );
+            totalTimeoutRefunded++;
+            totalProcessed++;
+          } else {
+            await quorumTimeoutRefund(payment.id, task.branchId);
+            totalTimeoutRefunded++;
+
+            void logEvent({
+              treeId: payment.treeId,
+              action: 'PAYMENT_QUORUM_TIMEOUT_REFUND',
+              entityType: 'MemberPayment',
+              entityId: payment.id,
+              metadataJson: {
+                amount: payment.amount,
+                ageDays: Math.round(ageDays * 10) / 10,
+                timeoutDays,
+                reason: 'No ratings after quorum timeout',
+                source: 'releaseCron',
+              },
+              severity: 'WARNING',
+              source: 'AUTOMATION',
+            });
+          }
+          totalProcessed++;
+        } else {
+          console.log(
+            `[ReleaseCron] Payment ${payment.id} — no ratings yet, ${ageDays.toFixed(1)}d elapsed (timeout: ${timeoutDays}d), skipping.`,
+          );
+          totalSkippedNoRating++;
+        }
         continue;
       }
 
@@ -106,11 +164,63 @@ async function runReleaseCron(): Promise<void> {
         continue;
       }
 
-      // Calculate average satisfaction across all ratings
+      // 2f. Quorum check: ≥60% of evaluators must have rated
+      const quorum = await checkQuorum(task.branchId);
+
+      if (!quorum.quorumMet) {
+        const timeoutDays = branch.quorumTimeoutDays ?? 30;
+        const ageDays = daysAgo(payment.paidAt);
+
+        if (ageDays >= timeoutDays) {
+          // Quorum timeout — auto-refund
+          console.log(
+            `[ReleaseCron] Payment ${payment.id} — quorum not met (${quorum.ratedCount}/${quorum.evaluatorCount}=${quorum.quorumPct}%) and ${ageDays.toFixed(1)}d elapsed (timeout: ${timeoutDays}d), auto-refunding.`,
+          );
+
+          if (DRY_RUN) {
+            console.log(
+              `[ReleaseCron]   DRY RUN — would auto-refund payment ${payment.id} (amount=${payment.amount}) due to quorum timeout`,
+            );
+            totalTimeoutRefunded++;
+            totalProcessed++;
+          } else {
+            await quorumTimeoutRefund(payment.id, task.branchId);
+            totalTimeoutRefunded++;
+
+            void logEvent({
+              treeId: payment.treeId,
+              action: 'PAYMENT_QUORUM_TIMEOUT_REFUND',
+              entityType: 'MemberPayment',
+              entityId: payment.id,
+              metadataJson: {
+                amount: payment.amount,
+                quorum,
+                ageDays: Math.round(ageDays * 10) / 10,
+                timeoutDays,
+                reason: 'Quorum not met after timeout',
+                source: 'releaseCron',
+              },
+              severity: 'WARNING',
+              source: 'AUTOMATION',
+            });
+          }
+          totalProcessed++;
+        } else {
+          console.log(
+            `[ReleaseCron] Payment ${payment.id} — quorum not met (${quorum.ratedCount}/${quorum.evaluatorCount}=${quorum.quorumPct}%), ` +
+              `${ageDays.toFixed(1)}d elapsed (timeout: ${timeoutDays}d), skipping.`,
+          );
+          totalSkippedNoQuorum++;
+        }
+        continue;
+      }
+
+      // 2g. Quorum met — calculate satisfaction and release
       const satisfactionPct = avg(ratings.map((r) => r.rating));
 
       console.log(
         `[ReleaseCron] Payment ${payment.id} — branch ${task.branchId}, ` +
+          `quorum ${quorum.ratedCount}/${quorum.evaluatorCount}=${quorum.quorumPct}%, ` +
           `${ratings.length} ratings, avg=${satisfactionPct.toFixed(1)}%, ` +
           `newest ${ageHours.toFixed(1)}h old`,
       );
@@ -126,7 +236,7 @@ async function runReleaseCron(): Promise<void> {
         continue;
       }
 
-      // 2f/2g. Route to escrow
+      // Route to escrow
       if (satisfactionPct >= 20) {
         await releasePayment(payment.id);
         totalReleased++;
@@ -139,6 +249,7 @@ async function runReleaseCron(): Promise<void> {
           metadataJson: {
             satisfactionPct: Math.round(satisfactionPct * 100) / 100,
             ratingsCount: ratings.length,
+            quorum,
             source: 'releaseCron',
           },
           severity: 'INFO',
@@ -156,6 +267,7 @@ async function runReleaseCron(): Promise<void> {
           metadataJson: {
             satisfactionPct: Math.round(satisfactionPct * 100) / 100,
             ratingsCount: ratings.length,
+            quorum,
             source: 'releaseCron',
           },
           severity: 'WARNING',
@@ -179,8 +291,10 @@ async function runReleaseCron(): Promise<void> {
       `Processed: ${totalProcessed}, ` +
       `Released: ${totalReleased}, ` +
       `Refunded: ${totalRefunded}, ` +
+      `Timeout-refunded: ${totalTimeoutRefunded}, ` +
       `Skipped (no rating): ${totalSkippedNoRating}, ` +
       `Skipped (reflection): ${totalSkippedReflection}, ` +
+      `Skipped (no quorum): ${totalSkippedNoQuorum}, ` +
       `Errors: ${totalErrors}`,
   );
 }

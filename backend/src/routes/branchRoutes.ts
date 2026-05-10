@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { getBranches, updateBranchPhase, joinBranchPhase, getBranchTasks, createHashtagBranch, searchHashtagBranches, deleteBranch, voteBranchNeed, injectBerries } from '../controllers/branchController';
+import { getBranches, updateBranchPhase, joinBranchPhase, getBranchTasks, createHashtagBranch, searchHashtagBranches, deleteBranch, voteBranchNeed, injectBerries, updateBranchQuorumTimeout } from '../controllers/branchController';
 import { authenticateJWT, optionalAuth } from '../middleware/authMiddleware';
 
 const router = Router();
@@ -14,6 +14,7 @@ router.post('/hashtag', createHashtagBranch);
 router.post('/:id/phases/:phase/join', joinBranchPhase);
 router.post('/:id/vote', voteBranchNeed);
 router.post('/:id/inject-berries', injectBerries);
+router.patch('/:id/quorum-timeout', updateBranchQuorumTimeout);
 router.delete('/:id', authenticateJWT, deleteBranch);
 
 export default router;

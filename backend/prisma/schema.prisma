@@ -78,7 +78,6 @@ model User {
   resolvedEndorsements         ExpertEndorsement[]          @relation("EndorsementResolver")
   assignedCandidates           ExternalCandidate[]          @relation("CandidateAssigner")
   treeExpensesAdded            TreeExpense[]                @relation("UserExpenses")
-  signers                      TreeSigner[]
   ownedAIs                     TreeMember[]                 @relation("AIOwner")
 }
 
@@ -290,7 +289,6 @@ model Tree {
   // Escrow & Multi-sig
   satisfactionTiers Json?
   multiSigThreshold Int     @default(2)
-  minSigners        Int     @default(3)
 
   // Relations
   members          TreeMember[]
@@ -324,7 +322,6 @@ model Tree {
   memberPayments         MemberPayment[]
   externalCandidates     ExternalCandidate[]
   skillInfluences        SkillInfluence[]
-  signers                TreeSigner[]
   treasury               TreeTreasury?
 
   @@index([country, city, sector])
@@ -798,6 +795,7 @@ model Branch {
   activePhasesJson  String?     @db.Text // JSON array of BranchPhase, set during Idea promotion
   currentPhaseIndex Int         @default(0)
   expiresAt         DateTime?
+  quorumTimeoutDays Int         @default(30)
   createdAt         DateTime    @default(now())
 
   idea             Idea?              @relation(fields: [ideaId], references: [id])
@@ -1224,11 +1222,6 @@ enum PaymentStatus {
   RELEASED
   REFUNDED
   DISPUTED
-}
-
-enum SignerStatus {
-  ACTIVE
-  REMOVED
 }
 
 // ── Member Payments ──────────────────────────────────────────────────
@@ -2392,23 +2385,6 @@ model SkillInfluence {
   @@unique([treeId, skillTag])
   @@index([skillTag])
   @@index([calculatedAt])
-}
-
-// ── Tree Multi-Sig Signers ────────────────────────────────────────────
-
-model TreeSigner {
-  id        String       @id @default(uuid())
-  treeId    String
-  tree      Tree         @relation(fields: [treeId], references: [id], onDelete: Cascade)
-  userId    String
-  user      User         @relation(fields: [userId], references: [id], onDelete: Cascade)
-  status    SignerStatus @default(ACTIVE)
-  addedAt   DateTime     @default(now())
-  removedAt DateTime?
-
-  @@unique([treeId, userId])
-  @@index([treeId])
-  @@index([userId])
 }
 
 // ── Tree Treasury (escrow balance) ────────────────────────────────────

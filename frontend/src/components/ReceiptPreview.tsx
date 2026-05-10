@@ -198,7 +198,7 @@ export default function ReceiptPreview({ paymentId, expectedAmount, onClose }: P
                 {isManual ? (
                   <>
                     <ShieldCheck size={14} />
-                    Verificado por signer
+                    Verificado manualmente
                   </>
                 ) : (
                   <>

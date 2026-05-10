@@ -73,19 +73,6 @@ export async function requireHumanToRate(userId: string, deliverableId: string):
 }
 
 /**
- * Enforce: "Un AI no es firmante multi-sig".
- * Check before adding a signer.
- */
-export async function requireHumanToSign(treeId: string, userId: string): Promise<{ allowed: boolean; error?: string }> {
-  const member = await getTreeMember(userId, treeId);
-  if (!member) return { allowed: false, error: 'User is not a member of this tree' };
-  if (member.isAI) {
-    return { allowed: false, error: 'Protocolo Asimov: Un AI no puede ser firmante multi-sig. Solo humanos pueden ser TreeSigners.' };
-  }
-  return { allowed: true };
-}
-
-/**
  * Enforce: "Un AI no vota en gobernanza" (IdeaLike / BranchNeedVote).
  */
 export async function requireHumanToVote(userId: string, treeId: string): Promise<{ allowed: boolean; error?: string }> {
@@ -93,18 +80,6 @@ export async function requireHumanToVote(userId: string, treeId: string): Promis
   if (!member) return { allowed: false, error: 'User is not a member of this tree' };
   if (member.isAI) {
     return { allowed: false, error: 'Protocolo Asimov: Un AI no puede votar en gobernanza. Solo humanos pueden emitir votos.' };
-  }
-  return { allowed: true };
-}
-
-/**
- * Enforce: "Un AI no crea Needs".
- */
-export async function requireHumanToCreateNeed(userId: string, treeId: string): Promise<{ allowed: boolean; error?: string }> {
-  const member = await getTreeMember(userId, treeId);
-  if (!member) return { allowed: false, error: 'User is not a member of this tree' };
-  if (member.isAI) {
-    return { allowed: false, error: 'Protocolo Asimov: Un AI no puede crear Needs. El punto de partida de la economía debe ser humano.' };
   }
   return { allowed: true };
 }
@@ -136,9 +111,7 @@ export async function requireHumanForAction(
   if (member.isAI) {
     const messages: Record<string, string> = {
       RATE: 'Protocolo Asimov: Un AI no puede evaluar. Solo humanos pueden emitir SatisfactionRatings.',
-      SIGN: 'Protocolo Asimov: Un AI no puede ser firmante multi-sig.',
       VOTE: 'Protocolo Asimov: Un AI no puede votar en gobernanza.',
-      CREATE_NEED: 'Protocolo Asimov: Un AI no puede crear Needs.',
       TREE_ADMIN: 'Protocolo Asimov: Un AI no puede ser administrador ni creador de un Tree.',
     };
     return { allowed: false, error: messages[action] || `Protocolo Asimov: Acción "${action}" restringida para humanos.` };

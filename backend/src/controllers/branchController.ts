@@ -5,6 +5,7 @@ import { redistributeTreeBudget } from '../utils/economicEngine';
 import { syncBerriesBalance } from '../utils/berriesEngine';
 import { canViewUserPrivacyLevel, redactTaskEvidenceFields, withDefaultPrivacySettings } from '../utils/privacy';
 import { getRequestContext, getRequestMetadata, logEvent } from '../services/eventLogService';
+import { updateQuorumTimeoutDays } from '../services/branchService';
 
 const PHASE_ORDER = ['INVESTIGATION', 'DEVELOPMENT', 'PRODUCTION', 'DISTRIBUTION', 'MAINTENANCE', 'RECYCLING'];
 
@@ -511,5 +512,31 @@ export const injectBerries = async (req: any, res: Response) => {
   } catch (error) {
     console.error('injectBerries error:', error);
     res.status(500).json({ error: 'Error al inyectar Berries' });
+  }
+};
+
+// PATCH /api/branches/:id/quorum-timeout — configurar quorumTimeoutDays (solo en DEVELOPMENT)
+export const updateBranchQuorumTimeout = async (req: any, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { days } = req.body;
+    const userId = req.user!.id;
+
+    if (days === undefined || days === null) {
+      return res.status(400).json({ error: 'days field is required' });
+    }
+
+    const updated = await updateQuorumTimeoutDays(id, Number(days), userId);
+    res.json(updated);
+  } catch (error: any) {
+    if (error.message?.includes('only be configured in DEVELOPMENT') ||
+        error.message?.includes('must be an integer between')) {
+      return res.status(400).json({ error: error.message });
+    }
+    if (error.message === 'Branch not found') {
+      return res.status(404).json({ error: error.message });
+    }
+    console.error('updateBranchQuorumTimeout error:', error);
+    res.status(500).json({ error: 'Failed to update quorum timeout' });
   }
 };

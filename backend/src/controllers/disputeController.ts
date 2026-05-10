@@ -4,7 +4,6 @@ import {
   resolveDispute,
   getActiveDisputes,
 } from '../services/disputeService';
-import { getSigners } from '../services/signerService';
 
 // ── POST /api/payments/:id/dispute ──────────────────────────────────────
 
@@ -30,14 +29,6 @@ export async function openDisputeHandler(req: Request, res: Response) {
 export async function listDisputesHandler(req: Request, res: Response) {
   try {
     const treeId = String(req.params.id);
-
-    // Only signers can see disputes
-    const signers = await getSigners(treeId);
-    const isSigner = signers.some((s) => s.userId === req.user!.id);
-
-    if (!isSigner) {
-      return res.status(403).json({ error: 'Only signers can view disputes' });
-    }
 
     const disputes = await getActiveDisputes(treeId);
     return res.json(disputes);
