@@ -8,23 +8,23 @@ datasource db {
 }
 
 model User {
-  id        String   @id @default(uuid())
-  username  String   @unique
-  email     String?  @unique
-  password  String?
-  is_guest  Boolean  @default(false)
-  is_onboarded Boolean @default(false)
-  role      Role     @default(PERSON)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id           String   @id @default(uuid())
+  username     String   @unique
+  email        String?  @unique
+  password     String?
+  is_guest     Boolean  @default(false)
+  is_onboarded Boolean  @default(false)
+  role         Role     @default(PERSON)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 
   // Relations
   memberships         TreeMember[]
-  invitedMembers      TreeMember[]         @relation("Inviter")
-  createdNeeds        Need[]               @relation("NeedCreator")
+  invitedMembers      TreeMember[]            @relation("Inviter")
+  createdNeeds        Need[]                  @relation("NeedCreator")
   needFundings        NeedFunding[]
   ideas               Idea[]
-  plantillas          PlantillaArbol[]     @relation("CreadorPlantilla")
+  plantillas          PlantillaArbol[]        @relation("CreadorPlantilla")
   taskVotes           TaskVote[]
   branches            Branch[]
   taskQuestions       TaskQuestion[]
@@ -35,50 +35,53 @@ model User {
   difficultyVoteLikes DifficultyVoteLike[]
   createdTokens       TokenInvitacion[]
 
-  sharingCode String        @unique @default(uuid()) // fallback to uuid if dbgenerated fails in some environments
-  profilePic  String?       // URL to uploaded profile photo
-  publicProfileEnabled Boolean @default(false)
-  publicShowLevels     Boolean @default(true)
-  publicShowTreeSize   Boolean @default(true)
-  publicShowTaskHistory Boolean @default(true)
-  visibleForRecruitment Boolean @default(false) // opt-in: visible to external recruiters
-  seekingWork           Boolean @default(false) // actively looking for opportunities
-  contacts    UserContact[] @relation("UserContacts")
-  contactOf   UserContact[] @relation("ContactOf")
-  branchNeedVotes BranchNeedVote[]
-  IdeaLike    IdeaLike[]
-  auditorias  Auditoria[]
-  promisesPledged PromiseP2P[] @relation("Sponsor")
-  bonusVotes      BonusVote[]
-  notifications      Notification[]
-  skillMigrations    SkillMigration[]
-  connectionTokens   ConnectionToken[]
-  skillProposals     SkillProposal[]
-  skillEndorsements  SkillEndorsement[]
-  searchPasses       SearchPass[]
-  sentInvitations    InterviewInvitation[] @relation("InvitationSender")
-  receivedInvitations InterviewInvitation[] @relation("InvitationReceiver")
-  privacySettings    PrivacySettings?
-  eventLogs          EventLog[]            @relation("EventActor")
-  evidenceFiles      EvidenceFile[]        @relation("EvidenceUploader")
-  externalNeedsCreated ExternalNeed[]      @relation("ExternalNeedCreator")
-  solutionProposalsCreated SolutionProposal[] @relation("SolutionProposalCreator")
-  solutionProposalsSelected SolutionProposal[] @relation("SolutionProposalSelector")
-  scopePreferencesCreated ScopePreference[] @relation("ScopePreferenceCreator")
-  autosustentoBranchConfigsCreated AutosustentoBranchConfig[] @relation("AutosustentoBranchConfigCreator")
-  autosustentoIdeasCreated    AutosustentoIdea[]    @relation("AutosustentoIdeaCreator")
-  autosustentoIdeaSupports    AutosustentoIdeaSupport[]
-  fiatTransactionsCreated     FiatTransaction[]     @relation("FiatTransactionCreator")
-  fiatTransactionsCertified   FiatTransaction[]     @relation("FiatTransactionCertifier")
-  berryTransactions           BerryTransaction[]
-  insightSignalsCreated       InsightSignal[]       @relation("InsightSignalCreator")
-  insightInternalMatches      InsightInternalMatch[]
-  insightExternalApplications InsightExternalApplication[]
-  insightOpeningsCreated      InsightExternalOpening[]    @relation("OpeningCreator")
-  resolvedEndorsements         ExpertEndorsement[]          @relation("EndorsementResolver")
-  assignedCandidates           ExternalCandidate[]          @relation("CandidateAssigner")
-  treeExpensesAdded          TreeExpense[]                @relation("UserExpenses")
-  ownedAIs                     TreeMember[]                 @relation("AIOwner")
+  sharingCode                      String                       @unique @default(uuid()) // fallback to uuid if dbgenerated fails in some environments
+  profilePic                       String? // URL to uploaded profile photo
+  publicProfileEnabled             Boolean                      @default(false)
+  publicShowLevels                 Boolean                      @default(true)
+  publicShowTreeSize               Boolean                      @default(true)
+  publicShowTaskHistory            Boolean                      @default(true)
+  visibleForRecruitment            Boolean                      @default(false) // opt-in: visible to external recruiters
+  seekingWork                      Boolean                      @default(false) // actively looking for opportunities
+  contacts                         UserContact[]                @relation("UserContacts")
+  contactOf                        UserContact[]                @relation("ContactOf")
+  branchNeedVotes                  BranchNeedVote[]
+  IdeaLike                         IdeaLike[]
+  auditorias                       Auditoria[]
+  promisesPledged                  PromiseP2P[]                 @relation("Sponsor")
+  bonusVotes                       BonusVote[]
+  notifications                    Notification[]
+  skillMigrations                  SkillMigration[]
+  connectionTokens                 ConnectionToken[]
+  skillProposals                   SkillProposal[]
+  skillEndorsements                SkillEndorsement[]
+  searchPasses                     SearchPass[]
+  sentInvitations                  InterviewInvitation[]        @relation("InvitationSender")
+  receivedInvitations              InterviewInvitation[]        @relation("InvitationReceiver")
+  privacySettings                  PrivacySettings?
+  eventLogs                        EventLog[]                   @relation("EventActor")
+  evidenceFiles                    EvidenceFile[]               @relation("EvidenceUploader")
+  externalNeedsCreated             ExternalNeed[]               @relation("ExternalNeedCreator")
+  solutionProposalsCreated         SolutionProposal[]           @relation("SolutionProposalCreator")
+  solutionProposalsSelected        SolutionProposal[]           @relation("SolutionProposalSelector")
+  scopePreferencesCreated          ScopePreference[]            @relation("ScopePreferenceCreator")
+  autosustentoBranchConfigsCreated AutosustentoBranchConfig[]   @relation("AutosustentoBranchConfigCreator")
+  autosustentoIdeasCreated         AutosustentoIdea[]           @relation("AutosustentoIdeaCreator")
+  autosustentoIdeaSupports         AutosustentoIdeaSupport[]
+  fiatTransactionsCreated          FiatTransaction[]            @relation("FiatTransactionCreator")
+  fiatTransactionsCertified        FiatTransaction[]            @relation("FiatTransactionCertifier")
+  berryTransactions                BerryTransaction[]
+  insightSignalsCreated            InsightSignal[]              @relation("InsightSignalCreator")
+  insightInternalMatches           InsightInternalMatch[]
+  insightExternalApplications      InsightExternalApplication[]
+  insightOpeningsCreated           InsightExternalOpening[]     @relation("OpeningCreator")
+  resolvedEndorsements             ExpertEndorsement[]          @relation("EndorsementResolver")
+  assignedCandidates               ExternalCandidate[]          @relation("CandidateAssigner")
+  treeExpensesAdded                TreeExpense[]                @relation("UserExpenses")
+  ownedAIs                         TreeMember[]                 @relation("AIOwner")
+  wallet                           UserWallet?
+  walletTransactionsFrom           WalletTransaction[]          @relation("WalletFromUser")
+  walletTransactionsTo             WalletTransaction[]          @relation("WalletToUser")
 }
 
 model UserContact {
@@ -94,13 +97,13 @@ model UserContact {
 }
 
 model ConnectionToken {
-  id        String   @id @default(uuid())
-  token     String   @unique @default(uuid())
+  id        String    @id @default(uuid())
+  token     String    @unique @default(uuid())
   userId    String
   expiresAt DateTime
   usedById  String?
   usedAt    DateTime?
-  createdAt DateTime @default(now())
+  createdAt DateTime  @default(now())
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -194,16 +197,16 @@ enum EvidenceFileStatus {
 }
 
 model PrivacySettings {
-  id                         String          @id @default(uuid())
-  userId                     String          @unique
-  user                       User            @relation(fields: [userId], references: [id], onDelete: Cascade)
-  traceProfileVisibility     VisibilityLevel @default(TREE_ONLY)
-  taskHistoryVisibility      VisibilityLevel @default(PRIVATE)
-  evidenceVisibility         VisibilityLevel @default(PRIVATE)
-  showInTalentSearch         Boolean         @default(false)
-  allowAggregatedMetrics     Boolean         @default(true)
-  createdAt                  DateTime        @default(now())
-  updatedAt                  DateTime        @updatedAt
+  id                     String          @id @default(uuid())
+  userId                 String          @unique
+  user                   User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  traceProfileVisibility VisibilityLevel @default(TREE_ONLY)
+  taskHistoryVisibility  VisibilityLevel @default(PRIVATE)
+  evidenceVisibility     VisibilityLevel @default(PRIVATE)
+  showInTalentSearch     Boolean         @default(false)
+  allowAggregatedMetrics Boolean         @default(true)
+  createdAt              DateTime        @default(now())
+  updatedAt              DateTime        @updatedAt
 
   @@index([traceProfileVisibility])
   @@index([showInTalentSearch])
@@ -244,31 +247,31 @@ enum EvidenceStatus {
 }
 
 model Tree {
-  id                       String                @id @default(uuid())
-  name                     String
-  icono                    String                @default("🌳")
-  description              String?               @db.Text
-  inviteCode               String                @unique
-  creatorId                String?
-  createdAt                DateTime              @default(now())
-  
+  id          String   @id @default(uuid())
+  name        String
+  icono       String   @default("🌳")
+  description String?  @db.Text
+  inviteCode  String   @unique
+  creatorId   String?
+  createdAt   DateTime @default(now())
+
   // Territorial & Geographic Discovery
-  capacidades              String                @default("[]") @db.Text
-  country                  String?
-  city                     String?
-  sector                   String?
-  
+  capacidades String  @default("[]") @db.Text
+  country     String?
+  city        String?
+  sector      String?
+
   // Ubicación Exacta GPS
-  latitude                 Float?
-  longitude                Float?
-  direccionExacta          String?
-  locationPrivacy          LocationPrivacy @default(SECTOR)
-  
+  latitude        Float?
+  longitude       Float?
+  direccionExacta String?
+  locationPrivacy LocationPrivacy @default(SECTOR)
+
   // Verificación Local / Fachada
-  fachadaUrl               String?         @db.Text
-  googlePlaceId            String?
-  isLocationVerified       Boolean         @default(false)
-  
+  fachadaUrl         String? @db.Text
+  googlePlaceId      String?
+  isLocationVerified Boolean @default(false)
+
   settings                 String?               @db.Text
   visibility               TreeVisibility        @default(PRIVATE)
   admissionPolicy          AdmissionPolicy       @default(INVITE_ONLY)
@@ -278,68 +281,74 @@ model Tree {
   modoCrisis               Boolean               @default(false)
   crisisSubjects           String                @default("[]") @db.Text
   crisisExpiresAt          DateTime?
-  
+
   // Economic Engine Settings
-  economyMode              TreeEconomyMode       @default(NO_ECONOMY)
-  presupuestoTotal         Float                 @default(100)
-  limiteSemanasEstabilidad Int                   @default(24)
-  factorDesgaste           Float                 @default(0.15)
-  
+  economyMode              TreeEconomyMode @default(NO_ECONOMY)
+  presupuestoTotal         Float           @default(100)
+  limiteSemanasEstabilidad Int             @default(24)
+  factorDesgaste           Float           @default(0.15)
+
   // Governance Settings
-  modoGobierno             String                @default("DEMOCRATICO")
-  creacionRamaDirecta      Boolean               @default(false)
-  creacionRamaComunitaria  Boolean               @default(true)
+  modoGobierno            String  @default("DEMOCRATICO")
+  creacionRamaDirecta     Boolean @default(false)
+  creacionRamaComunitaria Boolean @default(true)
 
   // Financing fields
-  financingMode            TreeFinancingMode      @default(GRATUITO)
-  subscriptionAmount       Float?
-  subscriptionCurrency     String?                @default("CLP")
-  subscriptionDayOfMonth   Int?                   @default(1)
-  subscriptionBillingMode  String?                @default("FIXED") // FIXED | PROPORTIONAL
+  financingMode           TreeFinancingMode @default(GRATUITO)
+  subscriptionAmount      Float?
+  subscriptionCurrency    String?           @default("CLP")
+  subscriptionDayOfMonth  Int?              @default(1)
+  subscriptionBillingMode String?           @default("FIXED") // FIXED | PROPORTIONAL
 
   // AI Council
-  treeType                TreeType               @default(NORMAL)
-  lastAuditGeneratedAt    DateTime?
-  auditReportJson         Json?
+  treeType             TreeType  @default(NORMAL)
+  lastAuditGeneratedAt DateTime?
+  auditReportJson      Json?
+
+  // TrustCore Fee Protocol
+  isTrustCore         Boolean  @default(false)
+  trustCoreBalanceClp Float    @default(0)
 
   // Escrow & Multi-sig
   satisfactionTiers Json?
-  multiSigThreshold Int     @default(2)
+  multiSigThreshold Int   @default(2)
 
   // Relations
-  members          TreeMember[]
-  needLinks        NeedTree[]
-  assetFunds       AssetFund[]
-  fiatTransactions FiatTransaction[]
-  fiatTemplates    FiatTemplate[]
-  branches         Branch[]
-  tokensInvitacion TokenInvitacion[]
-  relationsInitiated TreeRelation[] @relation("TreeRelationsSource")
-  relationsReceived  TreeRelation[] @relation("TreeRelationsTarget")
-  alertasZonales     AlertaZonal[]
-  bonusPools         BonusPool[]
-  migrationsAsSource SkillMigration[] @relation("MigrationSource")
-  migrationsAsTarget SkillMigration[] @relation("MigrationTarget")
-  treatiesAsSource   TrustTreaty[]    @relation("TreatySource")
-  treatiesAsTarget   TrustTreaty[]    @relation("TreatyTarget")
-  eventLogs          EventLog[]
-  evidenceFiles      EvidenceFile[]
-  externalNeeds      ExternalNeed[]
+  trustCoreConfig     TrustCoreConfig?
+  feeDistributions    FeeDistribution[]
+  members                   TreeMember[]
+  needLinks                 NeedTree[]
+  assetFunds                AssetFund[]
+  fiatTransactions          FiatTransaction[]
+  fiatTemplates             FiatTemplate[]
+  branches                  Branch[]
+  tokensInvitacion          TokenInvitacion[]
+  relationsInitiated        TreeRelation[]             @relation("TreeRelationsSource")
+  relationsReceived         TreeRelation[]             @relation("TreeRelationsTarget")
+  alertasZonales            AlertaZonal[]
+  bonusPools                BonusPool[]
+  migrationsAsSource        SkillMigration[]           @relation("MigrationSource")
+  migrationsAsTarget        SkillMigration[]           @relation("MigrationTarget")
+  treatiesAsSource          TrustTreaty[]              @relation("TreatySource")
+  treatiesAsTarget          TrustTreaty[]              @relation("TreatyTarget")
+  eventLogs                 EventLog[]
+  evidenceFiles             EvidenceFile[]
+  externalNeeds             ExternalNeed[]
   autosustentoBranchConfigs AutosustentoBranchConfig[]
-  autosustentoIdeas  AutosustentoIdea[]
-  sustainabilityCycles SustainabilityCycle[]
-  berryConfig        BerryConfig?
-  berryTransactions  BerryTransaction[]
-  berryCycles        BerryMonthlyCycle[]
-  insightSignals         InsightSignal[]
-  externalOpenings       InsightExternalOpening[]  @relation("TreeExternalOpenings")
-  expertEndorsements     ExpertEndorsement[]
-  expenses               TreeExpense[]
-  memberPayments         MemberPayment[]
-  externalCandidates     ExternalCandidate[]
-  skillInfluences        SkillInfluence[]
-  treasury               TreeTreasury?
-  needImportanceVotes    NeedImportanceVote[]
+  autosustentoIdeas         AutosustentoIdea[]
+  sustainabilityCycles      SustainabilityCycle[]
+  berryConfig               BerryConfig?
+  berryTransactions         BerryTransaction[]
+  berryCycles               BerryMonthlyCycle[]
+  insightSignals            InsightSignal[]
+  externalOpenings          InsightExternalOpening[]   @relation("TreeExternalOpenings")
+  expertEndorsements        ExpertEndorsement[]
+  expenses                  TreeExpense[]
+  memberPayments            MemberPayment[]
+  externalCandidates        ExternalCandidate[]
+  skillInfluences           SkillInfluence[]
+  treasury                  TreeTreasury?
+  walletTransactions        WalletTransaction[]
 
   @@index([country, city, sector])
 }
@@ -365,9 +374,9 @@ model ExternalNeed {
   createdAt      DateTime               @default(now())
   updatedAt      DateTime               @updatedAt
 
-  agents          ExternalAgent[]
-  scopePoints     ScopePreference[]
-  solutions       SolutionProposal[]
+  agents           ExternalAgent[]
+  scopePoints      ScopePreference[]
+  solutions        SolutionProposal[]
   fiatTransactions FiatTransaction[]
 
   @@index([treeId])
@@ -377,17 +386,17 @@ model ExternalNeed {
 }
 
 model ExternalAgent {
-  id              String            @id @default(uuid())
-  externalNeedId  String
-  externalNeed    ExternalNeed      @relation(fields: [externalNeedId], references: [id], onDelete: Cascade)
-  name            String
-  email           String?
-  organization    String?
-  role            ExternalAgentRole @default(CLIENT)
-  notes           String?           @db.Text
-  consentAccepted Boolean           @default(false)
-  createdAt       DateTime          @default(now())
-  updatedAt       DateTime          @updatedAt
+  id               String            @id @default(uuid())
+  externalNeedId   String
+  externalNeed     ExternalNeed      @relation(fields: [externalNeedId], references: [id], onDelete: Cascade)
+  name             String
+  email            String?
+  organization     String?
+  role             ExternalAgentRole @default(CLIENT)
+  notes            String?           @db.Text
+  consentAccepted  Boolean           @default(false)
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
   scopePreferences ScopePreference[]
 
   @@index([externalNeedId])
@@ -449,7 +458,7 @@ model SolutionProposal {
   createdAt             DateTime               @default(now())
   updatedAt             DateTime               @updatedAt
 
-  budgetLines           BudgetLine[]
+  budgetLines BudgetLine[]
 
   @@index([externalNeedId])
   @@index([createdById])
@@ -459,20 +468,20 @@ model SolutionProposal {
 }
 
 model BudgetLine {
-  id                 String         @id @default(uuid())
+  id                 String           @id @default(uuid())
   solutionProposalId String
   solutionProposal   SolutionProposal @relation(fields: [solutionProposalId], references: [id], onDelete: Cascade)
   label              String
-  description        String?        @db.Text
+  description        String?          @db.Text
   type               BudgetLineType
   estimatedFiat      Float?
   estimatedBerries   Int?
-  currency           String?        @default("CLP")
+  currency           String?          @default("CLP")
   quantity           Float?
   unit               String?
   unitCostFiat       Float?
-  createdAt          DateTime       @default(now())
-  updatedAt          DateTime       @updatedAt
+  createdAt          DateTime         @default(now())
+  updatedAt          DateTime         @updatedAt
 
   @@index([solutionProposalId])
   @@index([type])
@@ -596,8 +605,8 @@ model EvidenceFile {
   createdAt      DateTime           @default(now())
   updatedAt      DateTime           @updatedAt
 
-  fiatTransactions     FiatTransaction[]
-  insightApplications  InsightExternalApplication[]
+  fiatTransactions    FiatTransaction[]
+  insightApplications InsightExternalApplication[]
 
   @@index([uploaderId])
   @@index([treeId])
@@ -607,38 +616,39 @@ model EvidenceFile {
 }
 
 model TreeMember {
-  id               String         @id @default(uuid())
-  isAI             Boolean        @default(false)
-  aiProfile        String?        // nombre del perfil Hermes (ej: "backend-eng", "codex-worker")
-  aiProvider       String?        // "hermes-agent" | "codex" | "claude-code"
-  aiModel          String?        // modelo que usa (ej: "deepseek-v4-pro", "gpt-5.5")
-  aiOwnerId        String?        // User dueño del AI (recibe pagos, NO XP)
-  userId           String
-  treeId           String
-  invitedById      String?
-  needPointsPool   Int            @default(1000)
-  availableNeedPoints Int         @default(1000)
-  bayasBalance     Float          @default(0)
-  lastBerriesUpdate DateTime      @default(now())
-  lastCycleKey      String?
-  strikesEconomicos String        @default("[]") @db.Text
-  status           MemberStatus   @default(UNVERIFIED)
-  aiStatus         AIMemberStatus @default(IDLE)
-  xp               Float          @default(0)
-  level            Int            @default(1)
-  skills           String         @default("[]") @db.Text
-  goldenTickets    String         @default("{}") @db.Text  // JSON: { "#Skill": { tickets: 3, usedOnCritical: [], streakTaskIds: [] } }
-  role             MembershipRole @default(MEMBER)
-  joinedAt         DateTime       @default(now())
-  bonoMentoriaActivo Boolean      @default(false)
-  bonoMentoriaExpira DateTime?    // null = no active bonus
-  avalBanHasta       DateTime?    // null = not banned from endorsing
-  endorsementsGiven   ExpertEndorsement[] @relation("EndorsementsGiven")
-  endorsementsReceived ExpertEndorsement[] @relation("EndorsementsReceived")
+  id                   String               @id @default(uuid())
+  isAI                 Boolean              @default(false)
+  aiProfile            String? // nombre del perfil Hermes (ej: "backend-eng", "codex-worker")
+  aiProvider           String? // "hermes-agent" | "codex" | "claude-code"
+  aiModel              String? // modelo que usa (ej: "deepseek-v4-pro", "gpt-5.5")
+  aiOwnerId            String? // User dueño del AI (recibe pagos, NO XP)
+  userId               String
+  treeId               String
+  invitedById          String?
+  needPointsPool       Int                  @default(1000)
+  availableNeedPoints  Int                  @default(1000)
+  bayasBalance         Float                @default(0)
+  lastBerriesUpdate    DateTime             @default(now())
+  lastCycleKey         String?
+  strikesEconomicos    String               @default("[]") @db.Text
+  status               MemberStatus         @default(UNVERIFIED)
+  aiStatus             AIMemberStatus       @default(IDLE)
+  xp                   Float                @default(0)
+  level                Int                  @default(1)
+  skills               String               @default("[]") @db.Text
+  goldenTickets        String               @default("{}") @db.Text // JSON: { "#Skill": { tickets: 3, usedOnCritical: [], streakTaskIds: [] } }
+  role                 MembershipRole       @default(MEMBER)
+  joinedAt             DateTime             @default(now())
+  bonoMentoriaActivo   Boolean              @default(false)
+  bonoMentoriaExpira   DateTime? // null = no active bonus
+  avalBanHasta         DateTime? // null = not banned from endorsing
+  endorsementsGiven    ExpertEndorsement[]  @relation("EndorsementsGiven")
+  endorsementsReceived ExpertEndorsement[]  @relation("EndorsementsReceived")
   payments             MemberPayment[]
   aiConfig             AIMemberConfig?
-  claimedTasks         Task[]            @relation("AIClaimedTasks")
+  claimedTasks         Task[]               @relation("AIClaimedTasks")
   executions           AiExecution[]
+  importanceVotes      NeedImportanceVote[]
 
   // Subscription fields
   isPayingMember     Boolean            @default(true)
@@ -662,38 +672,38 @@ enum AIMemberStatus {
 }
 
 enum AutonomyLevel {
-  L1   // requiere aprobación humana para reclamar Tasks
-  L2   // auto-claim habilitado, deliverables requieren review
-  L3   // completamente autónomo: claim + deliver + release automático
+  L1 // requiere aprobación humana para reclamar Tasks
+  L2 // auto-claim habilitado, deliverables requieren review
+  L3 // completamente autónomo: claim + deliver + release automático
 }
 
 model AIMemberConfig {
-  id                  String         @id @default(uuid())
-  treeMemberId        String         @unique
-  maxConcurrentTasks  Int            @default(1)
-  autoClaimEnabled    Boolean        @default(true)
-  allowedPhases       Json?          // fases en las que puede trabajar ["DEVELOPMENT", "TESTING"]
-  skillOverrides      Json?          // skills adicionales que el AI reporta
-  autonomyLevel       AutonomyLevel  @default(L1)
-  aiFailCount         Int            @default(0)
-  aiLastFailedAt      DateTime?
-  aiRateLimitedUntil  DateTime?
-  createdAt           DateTime       @default(now())
+  id                 String        @id @default(uuid())
+  treeMemberId       String        @unique
+  maxConcurrentTasks Int           @default(1)
+  autoClaimEnabled   Boolean       @default(true)
+  allowedPhases      Json? // fases en las que puede trabajar ["DEVELOPMENT", "TESTING"]
+  skillOverrides     Json? // skills adicionales que el AI reporta
+  autonomyLevel      AutonomyLevel @default(L1)
+  aiFailCount        Int           @default(0)
+  aiLastFailedAt     DateTime?
+  aiRateLimitedUntil DateTime?
+  createdAt          DateTime      @default(now())
 
-  treeMember          TreeMember     @relation(fields: [treeMemberId], references: [id], onDelete: Cascade)
+  treeMember TreeMember @relation(fields: [treeMemberId], references: [id], onDelete: Cascade)
 }
 
 model AiExecution {
-  id              String   @id @default(uuid())
-  taskId          String
-  aiMemberId      String
-  kanbanTaskId    String?
-  status          String   @default("PENDING") // PENDING, RUNNING, COMPLETED, FAILED, TIMED_OUT
-  promptText      String   @db.Text
-  output          String?  @db.Text
-  attemptNumber   Int      @default(1)
-  createdAt       DateTime @default(now())
-  completedAt     DateTime?
+  id            String    @id @default(uuid())
+  taskId        String
+  aiMemberId    String
+  kanbanTaskId  String?
+  status        String    @default("PENDING") // PENDING, RUNNING, COMPLETED, FAILED, TIMED_OUT
+  promptText    String    @db.Text
+  output        String?   @db.Text
+  attemptNumber Int       @default(1)
+  createdAt     DateTime  @default(now())
+  completedAt   DateTime?
 
   task     Task       @relation(fields: [taskId], references: [id], onDelete: Cascade)
   aiMember TreeMember @relation(fields: [aiMemberId], references: [id], onDelete: Cascade)
@@ -709,7 +719,7 @@ model Need {
   title               String
   description         String     @db.Text
   totalPointsAssigned Int        @default(0)
-  pointsAllocated     Int        @default(0)  // points currently locked by funders (released on close)
+  pointsAllocated     Int        @default(0) // points currently locked by funders (released on close)
   failedAttempts      Int        @default(0)
   createdAt           DateTime   @default(now())
   status              NeedStatus @default(ACTIVE)
@@ -718,25 +728,32 @@ model Need {
 
   // Pipeline thresholds
   relevanceThresholdMet Boolean   @default(false)
-  relevanceMetAt         DateTime?  // when threshold was first met (for timeout tracking)
-  quorumMet              Boolean   @default(false)
-  totalPeopleEquivalent  Int       @default(0)  // persons * concentration multiplier
+  relevanceMetAt        DateTime? // when threshold was first met (for timeout tracking)
+  quorumMet             Boolean   @default(false)
+  totalPeopleEquivalent Int       @default(0) // persons * concentration multiplier
 
   // Base Need (sedimentación a 12 meses)
-  isBase              Boolean   @default(false)
-  sedimentedAt        DateTime?
-  baselineUserCount   Int?
+  isBase            Boolean   @default(false)
+  sedimentedAt      DateTime?
+  baselineUserCount Int?
   // Ciclos de revisión trimestral (para decay)
-  lastReviewCycle1    DateTime?
-  lastReviewCycle2    DateTime?
-  userCountCycle1     Int?
-  userCountCycle2     Int?
+  lastReviewCycle1  DateTime?
+  lastReviewCycle2  DateTime?
+  userCountCycle1   Int?
+  userCountCycle2   Int?
 
-  creator   User          @relation("NeedCreator", fields: [creatorId], references: [id])
-  task      Task?         @relation(fields: [taskId], references: [id])
-  treeLinks NeedTree[]
-  fundings  NeedFunding[]
-  ideas     Idea[]
+  // AI Council
+  importanceScore    Float           @default(0)
+  externalReferences Json?
+  auditStatus        NeedAuditStatus @default(PENDING)
+
+  creator         User                 @relation("NeedCreator", fields: [creatorId], references: [id])
+  task            Task?                @relation(fields: [taskId], references: [id])
+  treeLinks       NeedTree[]
+  fundings        NeedFunding[]
+  ideas           Idea[]
+  importanceVotes NeedImportanceVote[]
+  sourcedBranches Branch[]             @relation("NeedSourceBranch")
 }
 
 enum NeedStatus {
@@ -769,6 +786,21 @@ model NeedFunding {
   need Need @relation(fields: [needId], references: [id], onDelete: Cascade)
 }
 
+model NeedImportanceVote {
+  id        String   @id @default(uuid())
+  needId    String
+  voterId   String // FK → TreeMember (AI member only)
+  score     Int // 1-10
+  createdAt DateTime @default(now())
+
+  need  Need       @relation(fields: [needId], references: [id], onDelete: Cascade)
+  voter TreeMember @relation(fields: [voterId], references: [id], onDelete: Cascade)
+
+  @@unique([needId, voterId])
+  @@index([needId])
+  @@index([voterId])
+}
+
 model Idea {
   id          String   @id @default(uuid())
   needId      String
@@ -796,7 +828,7 @@ model IdeaLike {
   id        String   @id @default(uuid())
   ideaId    String
   userId    String
-  weight    Float    @default(1.0)  // influence × concentration multiplier
+  weight    Float    @default(1.0) // influence × concentration multiplier
   createdAt DateTime @default(now())
 
   idea Idea @relation(fields: [ideaId], references: [id], onDelete: Cascade)
@@ -806,20 +838,21 @@ model IdeaLike {
 }
 
 model Branch {
-  id                String      @id @default(uuid())
-  ideaId            String?     @unique
-  treeId            String?
-  name              String? // For hashtag branches that don't have an Idea
-  type              BranchType  @default(NORMAL)
-  xpPool            Float       @default(0)
-  isDesire          Boolean     @default(false)
-  isHashtag         Boolean     @default(false)
-  bayasFund         Float       @default(0)
-  
+  id          String     @id @default(uuid())
+  ideaId      String?    @unique
+  treeId      String?
+  name        String? // For hashtag branches that don't have an Idea
+  description String?    @db.Text
+  type        BranchType @default(NORMAL)
+  xpPool      Float      @default(0)
+  isDesire    Boolean    @default(false)
+  isHashtag   Boolean    @default(false)
+  bayasFund   Float      @default(0)
+
   // Consensus & Governance
-  esVotable         Boolean     @default(true)
-  valorSugerido     Float?
-  valorOficial      Float       @default(0)
+  esVotable     Boolean @default(true)
+  valorSugerido Float?
+  valorOficial  Float   @default(0)
 
   phase             BranchPhase @default(INVESTIGATION)
   activePhasesJson  String?     @db.Text // JSON array of BranchPhase, set during Idea promotion
@@ -828,51 +861,55 @@ model Branch {
   quorumTimeoutDays Int         @default(30)
   createdAt         DateTime    @default(now())
 
-  idea             Idea?              @relation(fields: [ideaId], references: [id])
-  tree             Tree?              @relation(fields: [treeId], references: [id])
-  members          BranchMember[]
-  tasks            Task[]
-  deliverables     PhaseDeliverable[]
-  fiatTransactions FiatTransaction[]
-  autosustentoConfig AutosustentoBranchConfig?
-  User             User?              @relation(fields: [userId], references: [id])
-  userId           String?
-  needVotes        BranchNeedVote[]
+  idea                 Idea?                     @relation(fields: [ideaId], references: [id])
+  tree                 Tree?                     @relation(fields: [treeId], references: [id])
+  members              BranchMember[]
+  tasks                Task[]
+  deliverables         PhaseDeliverable[]
+  fiatTransactions     FiatTransaction[]
+  autosustentoConfig   AutosustentoBranchConfig?
+  User                 User?                     @relation(fields: [userId], references: [id])
+  userId               String?
+  needVotes            BranchNeedVote[]
   sustainabilityCycles SustainabilityCycle[]
+
+  // AI Council
+  sourceNeedId String? // FK → Need — hashtag branch created from approved Need
+  sourceNeed   Need?   @relation("NeedSourceBranch", fields: [sourceNeedId], references: [id], onDelete: SetNull)
 
   @@index([treeId])
   @@index([type])
 }
 
 model AutosustentoBranchConfig {
-  id                        String              @id @default(uuid())
-  branchId                  String              @unique
-  branch                    Branch              @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  id                        String             @id @default(uuid())
+  branchId                  String             @unique
+  branch                    Branch             @relation(fields: [branchId], references: [id], onDelete: Cascade)
   treeId                    String
-  tree                      Tree                @relation(fields: [treeId], references: [id], onDelete: Cascade)
+  tree                      Tree               @relation(fields: [treeId], references: [id], onDelete: Cascade)
   businessName              String?
   productOrService          String
-  targetClient              String?             @db.Text
-  valueProposition          String?             @db.Text
-  status                    AutosustentoStatus  @default(PROPOSED)
-  viabilitySummary          String?             @db.Text
-  requiredResources         String?             @db.Text
-  legalRisks                String?             @db.Text
-  operationalRisks          String?             @db.Text
+  targetClient              String?            @db.Text
+  valueProposition          String?            @db.Text
+  status                    AutosustentoStatus @default(PROPOSED)
+  viabilitySummary          String?            @db.Text
+  requiredResources         String?            @db.Text
+  legalRisks                String?            @db.Text
+  operationalRisks          String?            @db.Text
   startupCostFiat           Float?
   expectedMonthlyIncomeFiat Float?
   expectedMonthlyCostFiat   Float?
-  currency                  String?             @default("CLP")
-  reviewPeriodDays          Int?                @default(90)
+  currency                  String?            @default("CLP")
+  reviewPeriodDays          Int?               @default(90)
   nextReviewAt              DateTime?
-  closureCriteria           String?             @db.Text
+  closureCriteria           String?            @db.Text
   metadataJson              Json?
   createdById               String?
-  createdBy                 User?               @relation("AutosustentoBranchConfigCreator", fields: [createdById], references: [id], onDelete: SetNull)
-  createdAt                 DateTime            @default(now())
-  updatedAt                 DateTime            @updatedAt
+  createdBy                 User?              @relation("AutosustentoBranchConfigCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt                 DateTime           @default(now())
+  updatedAt                 DateTime           @updatedAt
 
-  split                     SustainabilitySplit?
+  split SustainabilitySplit?
 
   @@index([treeId])
   @@index([status])
@@ -916,7 +953,7 @@ model Task {
   description String      @db.Text
   status      TaskStatus  @default(OPEN)
   assignedTo  String?
-  claimedByAI String?   // FK → TreeMember, cuando un AI reclama la tarea
+  claimedByAI String? // FK → TreeMember, cuando un AI reclama la tarea
   aiClaimedAt DateTime?
   creatorId   String?
   phase       BranchPhase @default(INVESTIGATION)
@@ -935,26 +972,26 @@ model Task {
   // Effort Evaluation
   requiredHours  Float?
   difficulty     Float? // 1.0 to 7.0
-  isAnonymous    Boolean @default(false)
-  requiresVoting Boolean @default(false)
-  auditada       Boolean @default(false)
+  isAnonymous    Boolean   @default(false)
+  requiresVoting Boolean   @default(false)
+  auditada       Boolean   @default(false)
   deadlineAt     DateTime? // 1.3x requiredHours after assignment
 
   createdAt DateTime @default(now())
 
-  branch    Branch         @relation(fields: [branchId], references: [id], onDelete: Cascade)
-  tags      TaskTag[]
-  votes     TaskVote[]
-  questions       TaskQuestion[]
-  needs           Need[]
-  difficultyVotes DifficultyVote[]
-  auditorias       Auditoria[]
-  promises         PromiseP2P[]
-  evidenceFiles    EvidenceFile[]
-  fiatTransactions FiatTransaction[]
-  payments         MemberPayment[]
-  claimedByAIMember TreeMember? @relation("AIClaimedTasks", fields: [claimedByAI], references: [id], onDelete: SetNull)
-  executions       AiExecution[]
+  branch            Branch            @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  tags              TaskTag[]
+  votes             TaskVote[]
+  questions         TaskQuestion[]
+  needs             Need[]
+  difficultyVotes   DifficultyVote[]
+  auditorias        Auditoria[]
+  promises          PromiseP2P[]
+  evidenceFiles     EvidenceFile[]
+  fiatTransactions  FiatTransaction[]
+  payments          MemberPayment[]
+  claimedByAIMember TreeMember?       @relation("AIClaimedTasks", fields: [claimedByAI], references: [id], onDelete: SetNull)
+  executions        AiExecution[]
 }
 
 enum TaskStatus {
@@ -981,7 +1018,7 @@ model TaskVote {
   requiredHours    Float?
   difficulty       Float?
   isRandomAssignee Boolean  @default(false)
-  createdAt DateTime @default(now())
+  createdAt        DateTime @default(now())
 
   task Task @relation(fields: [taskId], references: [id], onDelete: Cascade)
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -1051,9 +1088,9 @@ model PhaseDeliverable {
   initialXpAwarded Boolean           @default(false)
   createdAt        DateTime          @default(now())
 
-  branch      Branch                  @relation(fields: [branchId], references: [id], onDelete: Cascade)
-  evaluators  SatisfaccionEvaluador[]
-  ratings     SatisfactionRating[]
+  branch     Branch                  @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  evaluators SatisfaccionEvaluador[]
+  ratings    SatisfactionRating[]
 }
 
 model SatisfaccionEvaluador {
@@ -1063,8 +1100,8 @@ model SatisfaccionEvaluador {
   hasEvaluated  Boolean  @default(false)
   createdAt     DateTime @default(now())
 
-  deliverable   PhaseDeliverable @relation(fields: [deliverableId], references: [id], onDelete: Cascade)
-  user          User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  deliverable PhaseDeliverable @relation(fields: [deliverableId], references: [id], onDelete: Cascade)
+  user        User             @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([deliverableId, userId])
 }
@@ -1080,7 +1117,7 @@ model PlantillaArbol {
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
-  creador       User     @relation("CreadorPlantilla", fields: [creadorId], references: [id])
+  creador User @relation("CreadorPlantilla", fields: [creadorId], references: [id])
 }
 
 model SatisfactionRating {
@@ -1199,16 +1236,16 @@ model FiatTransaction {
   updatedAt          DateTime               @updatedAt
   isAutomatic        Boolean                @default(false)
 
-  tree            Tree           @relation(fields: [treeId], references: [id], onDelete: Cascade)
-  branch          Branch?        @relation(fields: [branchId], references: [id], onDelete: SetNull)
-  task            Task?          @relation(fields: [taskId], references: [id], onDelete: SetNull)
-  externalNeed    ExternalNeed?  @relation(fields: [externalNeedId], references: [id], onDelete: SetNull)
-  template        FiatTemplate?  @relation(fields: [templateId], references: [id], onDelete: SetNull)
-  createdBy       User?          @relation("FiatTransactionCreator", fields: [createdById], references: [id], onDelete: SetNull)
-  certifiedBy     User?          @relation("FiatTransactionCertifier", fields: [certifiedById], references: [id], onDelete: SetNull)
-  receiptEvidence EvidenceFile?  @relation(fields: [receiptEvidenceId], references: [id], onDelete: SetNull)
-  relatedExpenses  TreeExpense[]   @relation("ExpenseFiatTx")
-  relatedPayments  MemberPayment[] @relation("PaymentFiatTx")
+  tree            Tree            @relation(fields: [treeId], references: [id], onDelete: Cascade)
+  branch          Branch?         @relation(fields: [branchId], references: [id], onDelete: SetNull)
+  task            Task?           @relation(fields: [taskId], references: [id], onDelete: SetNull)
+  externalNeed    ExternalNeed?   @relation(fields: [externalNeedId], references: [id], onDelete: SetNull)
+  template        FiatTemplate?   @relation(fields: [templateId], references: [id], onDelete: SetNull)
+  createdBy       User?           @relation("FiatTransactionCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  certifiedBy     User?           @relation("FiatTransactionCertifier", fields: [certifiedById], references: [id], onDelete: SetNull)
+  receiptEvidence EvidenceFile?   @relation(fields: [receiptEvidenceId], references: [id], onDelete: SetNull)
+  relatedExpenses TreeExpense[]   @relation("ExpenseFiatTx")
+  relatedPayments MemberPayment[] @relation("PaymentFiatTx")
 
   @@index([treeId])
   @@index([branchId])
@@ -1236,7 +1273,7 @@ model TreeExpense {
   dueDayOfMonth Int?
   addedById     String
   addedBy       User                @relation("UserExpenses", fields: [addedById], references: [id], onDelete: Cascade)
-  month         String              // "2026-05"
+  month         String // "2026-05"
   fiatTxId      String?
   fiatTx        FiatTransaction?    @relation("ExpenseFiatTx", fields: [fiatTxId], references: [id], onDelete: SetNull)
   createdAt     DateTime            @default(now())
@@ -1257,26 +1294,26 @@ enum PaymentStatus {
 // ── Member Payments ──────────────────────────────────────────────────
 
 model MemberPayment {
-  id       String           @id @default(uuid())
-  treeId   String
-  tree     Tree             @relation(fields: [treeId], references: [id], onDelete: Cascade)
-  memberId String
-  member   TreeMember       @relation(fields: [memberId], references: [id], onDelete: Cascade)
-  amount   Float
-  currency String           @default("CLP")
-  status   PaymentStatus    @default(PLEDGED)
-  releasedAmount Float      @default(0)
-  refundedAmount Float      @default(0)
-  period   String           // "2026-05"
-  fiatTxId String?
-  fiatTx   FiatTransaction? @relation("PaymentFiatTx", fields: [fiatTxId], references: [id], onDelete: SetNull)
-  taskId   String?
-  task     Task?            @relation(fields: [taskId], references: [id], onDelete: SetNull)
-  paidAt           DateTime         @default(now())
-  receiptPath      String?
-  receiptFileName  String?
-  receiptAttempts  Int              @default(0)
-  receiptJSON      Json?
+  id              String           @id @default(uuid())
+  treeId          String
+  tree            Tree             @relation(fields: [treeId], references: [id], onDelete: Cascade)
+  memberId        String
+  member          TreeMember       @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  amount          Float
+  currency        String           @default("CLP")
+  status          PaymentStatus    @default(PLEDGED)
+  releasedAmount  Float            @default(0)
+  refundedAmount  Float            @default(0)
+  period          String // "2026-05"
+  fiatTxId        String?
+  fiatTx          FiatTransaction? @relation("PaymentFiatTx", fields: [fiatTxId], references: [id], onDelete: SetNull)
+  taskId          String?
+  task            Task?            @relation(fields: [taskId], references: [id], onDelete: SetNull)
+  paidAt          DateTime         @default(now())
+  receiptPath     String?
+  receiptFileName String?
+  receiptAttempts Int              @default(0)
+  receiptJSON     Json?
 
   @@index([treeId, period])
   @@index([memberId])
@@ -1288,7 +1325,7 @@ model DifficultyVote {
   id        String   @id @default(uuid())
   taskId    String
   userId    String
-  value     Int      // 1 to 10
+  value     Int // 1 to 10
   comment   String?  @db.Text
   status    String   @default("valido")
   createdAt DateTime @default(now())
@@ -1298,7 +1335,7 @@ model DifficultyVote {
   user  User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
   likes DifficultyVoteLike[]
 
-  @@unique([userId, taskId], name: "user_task_unique")
+  @@unique([userId, taskId])
 }
 
 model DifficultyVoteLike {
@@ -1327,11 +1364,11 @@ model BranchNeedVote {
 }
 
 model TokenInvitacion {
-  id        String   @id @default(uuid())
+  id        String    @id @default(uuid())
   arbolId   String
   creadorId String
-  usado     Boolean  @default(false)
-  createdAt DateTime @default(now())
+  usado     Boolean   @default(false)
+  createdAt DateTime  @default(now())
   expiresAt DateTime?
 
   arbol   Tree @relation(fields: [arbolId], references: [id], onDelete: Cascade)
@@ -1356,8 +1393,8 @@ model TreeRelation {
   id                     String   @id @default(uuid())
   sourceTreeId           String
   targetTreeId           String
-  relationType           String   // e.g. "LOGISTICA_FISICA", "INTERCAMBIO_CONOCIMIENTO"
-  socialDistanceCategory String   // e.g. "MISMO_SECTOR", "INTERNACIONAL", etc.
+  relationType           String // e.g. "LOGISTICA_FISICA", "INTERCAMBIO_CONOCIMIENTO"
+  socialDistanceCategory String // e.g. "MISMO_SECTOR", "INTERNACIONAL", etc.
   createdAt              DateTime @default(now())
 
   sourceTree Tree @relation("TreeRelationsSource", fields: [sourceTreeId], references: [id], onDelete: Cascade)
@@ -1367,19 +1404,19 @@ model TreeRelation {
 }
 
 model PromiseP2P {
-  id                String   @id @default(uuid())
+  id                String        @id @default(uuid())
   taskId            String
   sponsorId         String
   amount            Float
   currencyType      CurrencyType
   status            PromiseStatus @default(PENDING)
-  comprobanteUrl    String?  @db.Text
-  motivoCancelacion String?  @db.Text
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
+  comprobanteUrl    String?       @db.Text
+  motivoCancelacion String?       @db.Text
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
 
-  task              Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
-  sponsor           User     @relation("Sponsor", fields: [sponsorId], references: [id], onDelete: Cascade)
+  task    Task @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  sponsor User @relation("Sponsor", fields: [sponsorId], references: [id], onDelete: Cascade)
 
   @@index([taskId])
   @@index([sponsorId])
@@ -1408,7 +1445,7 @@ model AlertaZonal {
   createdAt      DateTime    @default(now())
   expiresAt      DateTime
 
-  emisor         Tree        @relation(fields: [emisorId], references: [id], onDelete: Cascade)
+  emisor Tree @relation(fields: [emisorId], references: [id], onDelete: Cascade)
 
   @@index([scope, targetLocation])
   @@index([expiresAt])
@@ -1425,13 +1462,13 @@ enum AlertaScope {
 // always equals exactly MAX_TOTAL_BONUS (100%).
 
 model BonusPool {
-  id                      String   @id @default(uuid())
-  treeId                  String
-  hashtag                 String   // e.g. "%Ecológico", "%Sostenible"
-  puntosImportanciaTotal  Float    @default(0) // sum of all votes (1-10)
-  porcentajeActual        Float    @default(0) // calculated proportional %  (0.0 – 1.0)
-  createdAt               DateTime @default(now())
-  updatedAt               DateTime @updatedAt
+  id                     String   @id @default(uuid())
+  treeId                 String
+  hashtag                String // e.g. "%Ecológico", "%Sostenible"
+  puntosImportanciaTotal Float    @default(0) // sum of all votes (1-10)
+  porcentajeActual       Float    @default(0) // calculated proportional %  (0.0 – 1.0)
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
 
   tree  Tree        @relation(fields: [treeId], references: [id], onDelete: Cascade)
   votes BonusVote[]
@@ -1459,36 +1496,36 @@ model BonusVote {
 // Notification
 // ─────────────────────────────────────────────────────────────────────────────
 enum NotificationType {
-  TASK_AUDIT       // Operativa: tarea pendiente de auditoría
-  BUDGET_COMPLETE  // Económica: presupuesto de rama 100%
-  LEVEL_UP         // Mérito: cambio de nivel
-  XP_GAIN          // Mérito: ganancia de XP
-  SKILL_UNLOCK     // Mérito: arroba dorado
-  AVAL_RISK        // Riesgo: candidato avalado en riesgo
-  TASK_ASSIGNED    // Operativa: te asignaron tarea
-  TASK_COMPLETED   // Operativa: tarea completada
-  BRANCH_VOTE      // Flujo: votación de rama
-  GENERAL          // General
+  TASK_AUDIT // Operativa: tarea pendiente de auditoría
+  BUDGET_COMPLETE // Económica: presupuesto de rama 100%
+  LEVEL_UP // Mérito: cambio de nivel
+  XP_GAIN // Mérito: ganancia de XP
+  SKILL_UNLOCK // Mérito: arroba dorado
+  AVAL_RISK // Riesgo: candidato avalado en riesgo
+  TASK_ASSIGNED // Operativa: te asignaron tarea
+  TASK_COMPLETED // Operativa: tarea completada
+  BRANCH_VOTE // Flujo: votación de rama
+  GENERAL // General
 }
 
 enum NotificationCategory {
-  URGENTE  // Auditorías, avales
-  FLUJO    // Dinero, progreso ramas
-  MERITO   // XP, niveles
+  URGENTE // Auditorías, avales
+  FLUJO // Dinero, progreso ramas
+  MERITO // XP, niveles
 }
 
 model Notification {
-  id         String               @id @default(uuid())
-  userId     String
-  type       NotificationType     @default(GENERAL)
-  category   NotificationCategory @default(FLUJO)
-  title      String
-  body       String               @db.Text
-  entityType String?              // 'arbol' | 'necesidad' | 'rama' | 'tarea'
-  entityAction String?            // 'crear' | 'hacer' | 'medir'
-  entityId   String?              // ID of related entity for deep-link
-  isRead     Boolean              @default(false)
-  createdAt  DateTime             @default(now())
+  id           String               @id @default(uuid())
+  userId       String
+  type         NotificationType     @default(GENERAL)
+  category     NotificationCategory @default(FLUJO)
+  title        String
+  body         String               @db.Text
+  entityType   String? // 'arbol' | 'necesidad' | 'rama' | 'tarea'
+  entityAction String? // 'crear' | 'hacer' | 'medir'
+  entityId     String? // ID of related entity for deep-link
+  isRead       Boolean              @default(false)
+  createdAt    DateTime             @default(now())
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -1501,24 +1538,24 @@ model Notification {
 // ─────────────────────────────────────────────────────────────────────────────
 
 enum MigrationStatus {
-  EN_PRUEBA       // Foreign specialist completing 3 trial tasks
-  APROBADO        // Passed — local ESPECIALISTA
-  REPROBADO       // Failed — did not pass trial
+  EN_PRUEBA // Foreign specialist completing 3 trial tasks
+  APROBADO // Passed — local ESPECIALISTA
+  REPROBADO // Failed — did not pass trial
 }
 
 // Individual user skill migration attempt between two trees for a specific hashtag
 model SkillMigration {
-  id               String          @id @default(uuid())
-  userId           String
-  hashtag          String          // The skill/arroba being migrated
-  sourceTreeId     String          // Tree where skill was originally certified
-  targetTreeId     String          // Tree where user wants to use skill
-  status           MigrationStatus @default(EN_PRUEBA)
-  tasksCompleted   Int             @default(0)  // 0-3 trial tasks completed successfully
-  tasksFailed      Int             @default(0)  // failed trial tasks
-  autoApproved     Boolean         @default(false) // true if approved via TrustTreaty
-  createdAt        DateTime        @default(now())
-  updatedAt        DateTime        @updatedAt
+  id             String          @id @default(uuid())
+  userId         String
+  hashtag        String // The skill/arroba being migrated
+  sourceTreeId   String // Tree where skill was originally certified
+  targetTreeId   String // Tree where user wants to use skill
+  status         MigrationStatus @default(EN_PRUEBA)
+  tasksCompleted Int             @default(0) // 0-3 trial tasks completed successfully
+  tasksFailed    Int             @default(0) // failed trial tasks
+  autoApproved   Boolean         @default(false) // true if approved via TrustTreaty
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
 
   user       User @relation(fields: [userId], references: [id], onDelete: Cascade)
   sourceTree Tree @relation("MigrationSource", fields: [sourceTreeId], references: [id], onDelete: Cascade)
@@ -1532,9 +1569,9 @@ model SkillMigration {
 // Trust treaty between two trees for a specific hashtag (mass-critical validation)
 model TrustTreaty {
   id                    String   @id @default(uuid())
-  sourceTreeId          String   // Tree sending specialists
-  targetTreeId          String   // Tree receiving specialists
-  hashtag               String   // Specific skill hashtag
+  sourceTreeId          String // Tree sending specialists
+  targetTreeId          String // Tree receiving specialists
+  hashtag               String // Specific skill hashtag
   exitosos              Int      @default(0) // successful migrations (max counted: 7 window)
   totalIntentos         Int      @default(0) // total attempts (max 7 rolling window)
   activo                Boolean  @default(false) // true when exitosos >= 6 of 7
@@ -1554,24 +1591,24 @@ model TrustTreaty {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 enum ProposalStatus {
-  PENDIENTE_AVALES  // Waiting for 3 peer endorsements (Maturity Phase)
-  EN_PRUEBA         // User must complete 7 tasks diff 1-3
-  APROBADO          // Passed trial → skill granted
-  RECHAZADO         // Failed/rejected
+  PENDIENTE_AVALES // Waiting for 3 peer endorsements (Maturity Phase)
+  EN_PRUEBA // User must complete 7 tasks diff 1-3
+  APROBADO // Passed trial → skill granted
+  RECHAZADO // Failed/rejected
 }
 
 model SkillProposal {
-  id              String         @id @default(uuid())
-  userId          String
-  treeId          String
-  hashtag         String         // e.g. "#Diseño"
-  status          ProposalStatus @default(PENDIENTE_AVALES)
-  tasksCompleted  Int            @default(0)  // 0-7 trial tasks completed
-  tasksFailed     Int            @default(0)
-  createdAt       DateTime       @default(now())
-  updatedAt       DateTime       @updatedAt
+  id             String         @id @default(uuid())
+  userId         String
+  treeId         String
+  hashtag        String // e.g. "#Diseño"
+  status         ProposalStatus @default(PENDIENTE_AVALES)
+  tasksCompleted Int            @default(0) // 0-7 trial tasks completed
+  tasksFailed    Int            @default(0)
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
 
-  user         User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user         User               @relation(fields: [userId], references: [id], onDelete: Cascade)
   endorsements SkillEndorsement[]
 
   @@unique([userId, treeId, hashtag])
@@ -1579,10 +1616,10 @@ model SkillProposal {
 }
 
 model SkillEndorsement {
-  id           String   @id @default(uuid())
-  proposalId   String
-  endorserId   String
-  createdAt    DateTime @default(now())
+  id         String   @id @default(uuid())
+  proposalId String
+  endorserId String
+  createdAt  DateTime @default(now())
 
   proposal SkillProposal @relation(fields: [proposalId], references: [id], onDelete: Cascade)
   endorser User          @relation(fields: [endorserId], references: [id], onDelete: Cascade)
@@ -1606,11 +1643,11 @@ model SearchPass {
 model UserSkillXP {
   id                String   @id @default(uuid())
   userId            String
-  skillTag          String   // the @ / # skill name
+  skillTag          String // the @ / # skill name
   treeId            String
   accumulatedPoints Int      @default(0)
   completedTasks    Int      @default(0)
-  cachedPercentile  Int?     // 0-100, recalculated by cron
+  cachedPercentile  Int? // 0-100, recalculated by cron
   updatedAt         DateTime @updatedAt
 
   @@unique([userId, skillTag, treeId])
@@ -1665,44 +1702,44 @@ enum AutosustentoSupportType {
 }
 
 model AutosustentoIdea {
-  id                        String                 @id @default(uuid())
-  treeId                    String
-  tree                      Tree                   @relation(fields: [treeId], references: [id], onDelete: Cascade)
-  createdById               String?
-  createdBy                 User?                  @relation("AutosustentoIdeaCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  id          String  @id @default(uuid())
+  treeId      String
+  tree        Tree    @relation(fields: [treeId], references: [id], onDelete: Cascade)
+  createdById String?
+  createdBy   User?   @relation("AutosustentoIdeaCreator", fields: [createdById], references: [id], onDelete: SetNull)
 
-  title                     String
-  description               String                 @db.Text
-  status                    AutosustentoIdeaStatus @default(PROPOSED)
+  title       String
+  description String                 @db.Text
+  status      AutosustentoIdeaStatus @default(PROPOSED)
 
-  productOrService          String?
-  targetClient              String?                @db.Text
-  valueProposition          String?                @db.Text
-  requiredResources         String?                @db.Text
+  productOrService  String?
+  targetClient      String? @db.Text
+  valueProposition  String? @db.Text
+  requiredResources String? @db.Text
 
   estimatedStartupCostFiat  Float?
   expectedMonthlyIncomeFiat Float?
   expectedMonthlyCostFiat   Float?
-  currency                  String?                @default("CLP")
+  currency                  String? @default("CLP")
 
-  legalRisks                String?                @db.Text
-  operationalRisks          String?                @db.Text
-  socialRisks               String?                @db.Text
+  legalRisks       String? @db.Text
+  operationalRisks String? @db.Text
+  socialRisks      String? @db.Text
 
-  viabilitySummary          String?                @db.Text
-  closureCriteria           String?                @db.Text
-  reviewPeriodDays          Int?                   @default(90)
+  viabilitySummary String? @db.Text
+  closureCriteria  String? @db.Text
+  reviewPeriodDays Int?    @default(90)
 
-  convertedBranchId         String?
-  convertedAt               DateTime?
-  convertedById             String?
+  convertedBranchId String?
+  convertedAt       DateTime?
+  convertedById     String?
 
-  metadataJson              Json?
+  metadataJson Json?
 
-  createdAt                 DateTime               @default(now())
-  updatedAt                 DateTime               @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-  supports                  AutosustentoIdeaSupport[]
+  supports AutosustentoIdeaSupport[]
 
   @@index([treeId])
   @@index([createdById])
@@ -1750,58 +1787,58 @@ enum SustainabilityAllocationType {
 }
 
 model SustainabilityCycle {
-  id                 String                   @id @default(uuid())
-  treeId             String
-  tree               Tree                     @relation(fields: [treeId], references: [id], onDelete: Cascade)
-  branchId           String
-  branch             Branch                   @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  id       String @id @default(uuid())
+  treeId   String
+  tree     Tree   @relation(fields: [treeId], references: [id], onDelete: Cascade)
+  branchId String
+  branch   Branch @relation(fields: [branchId], references: [id], onDelete: Cascade)
 
-  periodStart        DateTime
-  periodEnd          DateTime
-  currency           String                   @default("CLP")
+  periodStart DateTime
+  periodEnd   DateTime
+  currency    String   @default("CLP")
 
   // Aggregated from FiatTransactions
-  totalIncomeFiat    Float                    @default(0)
-  totalExpenseFiat   Float                    @default(0)
-  totalInvestmentFiat Float                   @default(0)
-  netFiat            Float                    @default(0)
-  surplusFiat        Float                    @default(0)
-  deficitFiat        Float                    @default(0)
-  marginPct          Float                    @default(0)
+  totalIncomeFiat     Float @default(0)
+  totalExpenseFiat    Float @default(0)
+  totalInvestmentFiat Float @default(0)
+  netFiat             Float @default(0)
+  surplusFiat         Float @default(0)
+  deficitFiat         Float @default(0)
+  marginPct           Float @default(0)
 
   // Expense breakdown by category (mapped from TransactionCategory)
-  materialsFiat      Float                    @default(0)
-  laborFiat          Float                    @default(0)
-  operationsFiat     Float                    @default(0)
-  taxFiat            Float                    @default(0)
-  reserveFiat        Float                    @default(0)
-  maintenanceFiat    Float                    @default(0)
-  reinvestmentFiat   Float                    @default(0)
-  otherFiat          Float                    @default(0)
+  materialsFiat    Float @default(0)
+  laborFiat        Float @default(0)
+  operationsFiat   Float @default(0)
+  taxFiat          Float @default(0)
+  reserveFiat      Float @default(0)
+  maintenanceFiat  Float @default(0)
+  reinvestmentFiat Float @default(0)
+  otherFiat        Float @default(0)
 
   // Suggested allocation from surplus (based on SustainabilitySplit)
-  treeFundFiat       Float                    @default(0)
+  treeFundFiat Float @default(0)
 
   // Verification quality
-  transactionsCount  Int                      @default(0)
-  verifiedAmountFiat Float                    @default(0)
-  includeOnlyVerified Boolean                 @default(false)
-  multiCurrencyWarning Boolean                @default(false)
+  transactionsCount    Int     @default(0)
+  verifiedAmountFiat   Float   @default(0)
+  includeOnlyVerified  Boolean @default(false)
+  multiCurrencyWarning Boolean @default(false)
 
-  status             SustainabilityCycleStatus @default(DRAFT)
-  calculatedAt       DateTime?
-  approvedAt         DateTime?
-  approvedById       String?
-  lockedAt           DateTime?
-  lockedById         String?
+  status       SustainabilityCycleStatus @default(DRAFT)
+  calculatedAt DateTime?
+  approvedAt   DateTime?
+  approvedById String?
+  lockedAt     DateTime?
+  lockedById   String?
 
-  notes              String?                  @db.Text
-  metadataJson       Json?
+  notes        String? @db.Text
+  metadataJson Json?
 
-  createdAt          DateTime                 @default(now())
-  updatedAt          DateTime                 @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-  allocations        SustainabilityAllocation[]
+  allocations SustainabilityAllocation[]
 
   @@index([treeId])
   @@index([branchId])
@@ -1811,18 +1848,100 @@ model SustainabilityCycle {
 }
 
 model SustainabilityAllocation {
-  id          String                       @id @default(uuid())
-  cycleId     String
-  cycle       SustainabilityCycle          @relation(fields: [cycleId], references: [id], onDelete: Cascade)
-  type        SustainabilityAllocationType
-  amountFiat  Float
-  currency    String                       @default("CLP")
-  notes       String?                      @db.Text
-  createdAt   DateTime                     @default(now())
-  updatedAt   DateTime                     @updatedAt
+  id         String                       @id @default(uuid())
+  cycleId    String
+  cycle      SustainabilityCycle          @relation(fields: [cycleId], references: [id], onDelete: Cascade)
+  type       SustainabilityAllocationType
+  amountFiat Float
+  currency   String                       @default("CLP")
+  notes      String?                      @db.Text
+  createdAt  DateTime                     @default(now())
+  updatedAt  DateTime                     @updatedAt
 
   @@index([cycleId])
   @@index([type])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Trust Wallet — monedero personal de usuario
+// Cada usuario tiene un único monedero. El balance CLP es real (fiat).
+// Los Berries se cachean aquí para consultas rápidas.
+// ─────────────────────────────────────────────────────────────────────────────
+
+model UserWallet {
+  id             String   @id @default(uuid())
+  userId         String   @unique
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  balanceClp     Float    @default(0)
+  lockedClp      Float    @default(0)
+  balanceBerries Float    @default(0)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  transactions WalletTransaction[]
+
+  @@index([userId])
+}
+
+enum WalletTransactionType {
+  DEPOSIT
+  WITHDRAWAL
+  P2P_TRANSFER
+  P2P_TRANSFER_OUT
+  P2P_TRANSFER_IN
+  TREE_PAYMENT
+  MEMBER_REWARD
+  REFUND
+  LOCK
+  UNLOCK
+  FEE
+}
+
+enum WalletTransactionStatus {
+  PENDING
+  COMPLETED
+  FAILED
+  REVERSED
+}
+
+enum WalletCurrency {
+  CLP
+  BERRIES
+}
+
+model WalletTransaction {
+  id              String                  @id @default(uuid())
+  walletId        String
+  wallet          UserWallet              @relation(fields: [walletId], references: [id], onDelete: Cascade)
+  type            WalletTransactionType
+  status          WalletTransactionStatus @default(PENDING)
+  amount          Float
+  currency        WalletCurrency          @default(CLP)
+  balanceBefore   Float?
+  balanceAfter    Float?
+  providerTxId    String?
+  providerPayload Json?
+  treeId          String?
+  tree            Tree?                   @relation(fields: [treeId], references: [id], onDelete: SetNull)
+  fromUserId      String?
+  fromUser        User?                   @relation("WalletFromUser", fields: [fromUserId], references: [id], onDelete: SetNull)
+  toUserId        String?
+  toUser          User?                   @relation("WalletToUser", fields: [toUserId], references: [id], onDelete: SetNull)
+  metadataJson    Json?
+  idempotencyKey  String?                 @unique
+  description     String?                 @db.Text
+  createdAt       DateTime                @default(now())
+
+  feeDistributions  FeeDistribution[]
+
+  @@index([walletId])
+  @@index([type])
+  @@index([status])
+  @@index([treeId])
+  @@index([fromUserId])
+  @@index([toUserId])
+  @@index([createdAt])
+  @@index([idempotencyKey])
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1849,18 +1968,18 @@ enum BerryCycleStatus {
 }
 
 model BerryConfig {
-  id                  String   @id @default(uuid())
-  treeId              String   @unique
-  tree                Tree     @relation(fields: [treeId], references: [id], onDelete: Cascade)
-  berriesEnabled      Boolean  @default(false)
+  id                   String   @id @default(uuid())
+  treeId               String   @unique
+  tree                 Tree     @relation(fields: [treeId], references: [id], onDelete: Cascade)
+  berriesEnabled       Boolean  @default(false)
   minMembersForBerries Int      @default(10000)
-  monthlyFlowRate     Float    @default(0.10)
-  monthlyFlowDay      Int      @default(1)
-  allowP2PTransfers   Boolean  @default(false)
-  allowTaskRewards    Boolean  @default(true)
-  allowAuditRewards   Boolean  @default(true)
-  createdAt           DateTime @default(now())
-  updatedAt           DateTime @updatedAt
+  monthlyFlowRate      Float    @default(0.10)
+  monthlyFlowDay       Int      @default(1)
+  allowP2PTransfers    Boolean  @default(false)
+  allowTaskRewards     Boolean  @default(true)
+  allowAuditRewards    Boolean  @default(true)
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
 
   @@index([treeId])
 }
@@ -2048,61 +2167,61 @@ enum CorporateReferralStatus {
 }
 
 model InsightSignal {
-  id                   String                 @id @default(uuid())
+  id String @id @default(uuid())
 
-  treeId               String
-  tree                 Tree                   @relation(fields: [treeId], references: [id], onDelete: Cascade)
+  treeId String
+  tree   Tree   @relation(fields: [treeId], references: [id], onDelete: Cascade)
 
-  sourceType           InsightSourceType      @default(MANUAL)
+  sourceType           InsightSourceType @default(MANUAL)
   // String refs to source records — no formal FK to avoid coupling existing models
   sourceNeedId         String?
   sourceExternalNeedId String?
   sourceBranchId       String?
   sourceSolutionId     String?
 
-  createdById          String?
-  createdBy            User?                  @relation("InsightSignalCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  createdById String?
+  createdBy   User?   @relation("InsightSignalCreator", fields: [createdById], references: [id], onDelete: SetNull)
 
-  title                String
-  description          String                 @db.Text
+  title       String
+  description String @db.Text
 
-  status               InsightSignalStatus    @default(DRAFT)
-  escalationLevel      InsightEscalationLevel @default(INTERNAL_TRUST)
-  visibility           InsightVisibility      @default(TREE_ONLY)
+  status          InsightSignalStatus    @default(DRAFT)
+  escalationLevel InsightEscalationLevel @default(INTERNAL_TRUST)
+  visibility      InsightVisibility      @default(TREE_ONLY)
 
-  persistenceScore     Float?
-  capacityGapScore     Float?
-  urgencyScore         Float?
-  strategicValueScore  Float?
+  persistenceScore    Float?
+  capacityGapScore    Float?
+  urgencyScore        Float?
+  strategicValueScore Float?
 
-  requiredSkillTags    Json?
-  requiredResources    String?                @db.Text
-  locationText         String?
-  remoteAllowed        Boolean                @default(true)
+  requiredSkillTags Json?
+  requiredResources String? @db.Text
+  locationText      String?
+  remoteAllowed     Boolean @default(true)
 
-  budgetFiatMin        Float?
-  budgetFiatExpected   Float?
-  budgetFiatMax        Float?
-  currency             String?                @default("CLP")
+  budgetFiatMin      Float?
+  budgetFiatExpected Float?
+  budgetFiatMax      Float?
+  currency           String? @default("CLP")
 
-  estimatedBerries     Int?
+  estimatedBerries Int?
 
-  internalSearchStartedAt  DateTime?
-  internalSearchEndedAt    DateTime?
-  externalPeopleOpenedAt   DateTime?
-  externalPeopleClosedAt   DateTime?
-  corporateOpenedAt        DateTime?
-  corporateClosedAt        DateTime?
+  internalSearchStartedAt DateTime?
+  internalSearchEndedAt   DateTime?
+  externalPeopleOpenedAt  DateTime?
+  externalPeopleClosedAt  DateTime?
+  corporateOpenedAt       DateTime?
+  corporateClosedAt       DateTime?
 
-  resolutionNotes      String?                @db.Text
-  metadataJson         Json?
+  resolutionNotes String? @db.Text
+  metadataJson    Json?
 
-  createdAt            DateTime               @default(now())
-  updatedAt            DateTime               @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-  internalMatches      InsightInternalMatch[]
-  externalOpenings     InsightExternalOpening[]
-  corporateReferrals   InsightCorporateReferral[]
+  internalMatches    InsightInternalMatch[]
+  externalOpenings   InsightExternalOpening[]
+  corporateReferrals InsightCorporateReferral[]
 
   @@index([treeId])
   @@index([status])
@@ -2112,28 +2231,28 @@ model InsightSignal {
 }
 
 model InsightInternalMatch {
-  id                String              @id @default(uuid())
+  id String @id @default(uuid())
 
-  insightSignalId   String
-  insightSignal     InsightSignal       @relation(fields: [insightSignalId], references: [id], onDelete: Cascade)
+  insightSignalId String
+  insightSignal   InsightSignal @relation(fields: [insightSignalId], references: [id], onDelete: Cascade)
 
-  userId            String?
-  user              User?               @relation(fields: [userId], references: [id], onDelete: SetNull)
+  userId String?
+  user   User?   @relation(fields: [userId], references: [id], onDelete: SetNull)
 
-  branchId          String?
-  treeId            String?
+  branchId String?
+  treeId   String?
 
-  matchType         InternalMatchType
-  matchScore        Float?
+  matchType  InternalMatchType
+  matchScore Float?
 
-  skillTags         Json?
-  evidenceSummary   String?             @db.Text
-  availabilityNote  String?             @db.Text
+  skillTags        Json?
+  evidenceSummary  String? @db.Text
+  availabilityNote String? @db.Text
 
-  status            InternalMatchStatus @default(SUGGESTED)
+  status InternalMatchStatus @default(SUGGESTED)
 
-  createdAt         DateTime            @default(now())
-  updatedAt         DateTime            @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@index([insightSignalId])
   @@index([userId])
@@ -2142,66 +2261,66 @@ model InsightInternalMatch {
 }
 
 model InsightExternalOpening {
-  id                     String                     @id @default(uuid())
+  id String @id @default(uuid())
 
-  insightSignalId        String
-  insightSignal          InsightSignal              @relation(fields: [insightSignalId], references: [id], onDelete: Cascade)
+  insightSignalId String
+  insightSignal   InsightSignal @relation(fields: [insightSignalId], references: [id], onDelete: Cascade)
 
-  treeId                 String?
-  tree                   Tree?                      @relation("TreeExternalOpenings", fields: [treeId], references: [id], onDelete: Cascade)
+  treeId String?
+  tree   Tree?   @relation("TreeExternalOpenings", fields: [treeId], references: [id], onDelete: Cascade)
 
-  createdById            String?
-  createdBy              User?                      @relation("OpeningCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  createdById String?
+  createdBy   User?   @relation("OpeningCreator", fields: [createdById], references: [id], onDelete: SetNull)
 
-  title                  String
-  summary                String?                    @db.Text
-  description            String                     @db.Text
+  title       String
+  summary     String? @db.Text
+  description String  @db.Text
 
-  status                 ExternalOpeningStatus      @default(DRAFT)
+  status ExternalOpeningStatus @default(DRAFT)
 
-  requiredSkillTags      Json?
-  adjacentSkillTags      Json?
-  desiredExperience      String?                    @db.Text
-  desiredEvidence        String?                    @db.Text
-  practicalTestNote      String?                    @db.Text
+  requiredSkillTags Json?
+  adjacentSkillTags Json?
+  desiredExperience String? @db.Text
+  desiredEvidence   String? @db.Text
+  practicalTestNote String? @db.Text
 
-  workMode               ExternalWorkMode           @default(REMOTE_ALLOWED)
-  remoteAllowed          Boolean                    @default(true)
-  locationText           String?
+  workMode      ExternalWorkMode @default(REMOTE_ALLOWED)
+  remoteAllowed Boolean          @default(true)
+  locationText  String?
 
-  paymentMode            ExternalPaymentMode        @default(FIAT)
+  paymentMode            ExternalPaymentMode @default(FIAT)
   paymentFiatMin         Float?
   paymentFiatExpected    Float?
   paymentFiatMax         Float?
-  currency               String?                    @default("CLP")
+  currency               String?             @default("CLP")
   paymentBerries         Int?
   paymentBerriesMin      Int?
   paymentBerriesExpected Int?
   paymentBerriesMax      Int?
 
-  estimatedDurationDays  Int?
-  estimatedHours         Int?
+  estimatedDurationDays Int?
+  estimatedHours        Int?
 
-  urgencyLevel           OpeningUrgencyLevel        @default(MEDIUM)
-  riskLevel              OpeningRiskLevel           @default(MEDIUM)
+  urgencyLevel OpeningUrgencyLevel @default(MEDIUM)
+  riskLevel    OpeningRiskLevel    @default(MEDIUM)
 
-  applicationDeadline    DateTime?
-  maxCandidates          Int?
-  minCandidatesNeeded    Int?                       @default(1)
+  applicationDeadline DateTime?
+  maxCandidates       Int?
+  minCandidatesNeeded Int?      @default(1)
 
-  publicVisibility       ExternalOpeningVisibility  @default(TRUST_NETWORK)
-  externalShareToken     String?                    @unique
+  publicVisibility   ExternalOpeningVisibility @default(TRUST_NETWORK)
+  externalShareToken String?                   @unique
 
-  openedAt               DateTime?
-  closedAt               DateTime?
-  cancelledAt            DateTime?
+  openedAt    DateTime?
+  closedAt    DateTime?
+  cancelledAt DateTime?
 
-  metadataJson           Json?
+  metadataJson Json?
 
-  createdAt              DateTime                   @default(now())
-  updatedAt              DateTime                   @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-  applications           InsightExternalApplication[]
+  applications InsightExternalApplication[]
 
   @@index([insightSignalId])
   @@index([treeId])
@@ -2212,58 +2331,58 @@ model InsightExternalOpening {
 }
 
 model InsightExternalApplication {
-  id                    String                    @id @default(uuid())
+  id String @id @default(uuid())
 
-  openingId             String
-  opening               InsightExternalOpening    @relation(fields: [openingId], references: [id], onDelete: Cascade)
+  openingId String
+  opening   InsightExternalOpening @relation(fields: [openingId], references: [id], onDelete: Cascade)
 
-  insightSignalId       String?
-  treeId                String?
+  insightSignalId String?
+  treeId          String?
 
-  applicantName         String
-  applicantEmail        String?
-  applicantPhone        String?
-  applicantLocation     String?
+  applicantName     String
+  applicantEmail    String?
+  applicantPhone    String?
+  applicantLocation String?
 
-  applicantSummary      String?                   @db.Text
-  motivation            String?                   @db.Text
-  experienceSummary     String?                   @db.Text
+  applicantSummary  String? @db.Text
+  motivation        String? @db.Text
+  experienceSummary String? @db.Text
 
-  portfolioUrl          String?
-  externalProfileUrl    String?
-  evidenceNote          String?                   @db.Text
-  skillTags             Json?
+  portfolioUrl       String?
+  externalProfileUrl String?
+  evidenceNote       String? @db.Text
+  skillTags          Json?
 
-  requestedFiat         Float?
-  requestedBerries      Int?
-  currency              String?                   @default("CLP")
+  requestedFiat    Float?
+  requestedBerries Int?
+  currency         String? @default("CLP")
 
-  availabilityNote      String?
-  earliestStartDate     DateTime?
+  availabilityNote  String?
+  earliestStartDate DateTime?
 
-  status                ExternalApplicationStatus @default(RECEIVED)
+  status ExternalApplicationStatus @default(RECEIVED)
 
-  privacyConsent        Boolean                   @default(false)
-  termsAccepted         Boolean                   @default(false)
+  privacyConsent Boolean @default(false)
+  termsAccepted  Boolean @default(false)
 
-  linkedUserId          String?
-  linkedUser            User?                     @relation(fields: [linkedUserId], references: [id], onDelete: SetNull)
+  linkedUserId String?
+  linkedUser   User?   @relation(fields: [linkedUserId], references: [id], onDelete: SetNull)
 
-  evidenceFileId        String?
-  evidenceFile          EvidenceFile?             @relation(fields: [evidenceFileId], references: [id], onDelete: SetNull)
+  evidenceFileId String?
+  evidenceFile   EvidenceFile? @relation(fields: [evidenceFileId], references: [id], onDelete: SetNull)
 
-  reviewedById          String?
-  reviewedAt            DateTime?
-  reviewNotes           String?                   @db.Text
+  reviewedById String?
+  reviewedAt   DateTime?
+  reviewNotes  String?   @db.Text
 
   invitedToValidationAt DateTime?
   rejectedAt            DateTime?
-  rejectionReason       String?                   @db.Text
+  rejectionReason       String?   @db.Text
 
-  metadataJson          Json?
+  metadataJson Json?
 
-  createdAt             DateTime                  @default(now())
-  updatedAt             DateTime                  @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@index([openingId])
   @@index([insightSignalId])
@@ -2275,30 +2394,30 @@ model InsightExternalApplication {
 }
 
 model InsightCorporateReferral {
-  id                  String                  @id @default(uuid())
+  id String @id @default(uuid())
 
-  insightSignalId     String
-  insightSignal       InsightSignal           @relation(fields: [insightSignalId], references: [id], onDelete: Cascade)
+  insightSignalId String
+  insightSignal   InsightSignal @relation(fields: [insightSignalId], references: [id], onDelete: Cascade)
 
-  providerName        String
-  providerContact     String?
-  providerWebsite     String?
+  providerName    String
+  providerContact String?
+  providerWebsite String?
 
-  status              CorporateReferralStatus @default(DRAFT)
+  status CorporateReferralStatus @default(DRAFT)
 
-  reasonForEscalation String?                 @db.Text
-  expectedScope       String?                 @db.Text
+  reasonForEscalation String? @db.Text
+  expectedScope       String? @db.Text
 
-  estimatedFiatMin    Float?
-  estimatedFiatMax    Float?
-  currency            String?                 @default("CLP")
+  estimatedFiatMin Float?
+  estimatedFiatMax Float?
+  currency         String? @default("CLP")
 
-  selectedAt          DateTime?
-  notes               String?                 @db.Text
-  metadataJson        Json?
+  selectedAt   DateTime?
+  notes        String?   @db.Text
+  metadataJson Json?
 
-  createdAt           DateTime                @default(now())
-  updatedAt           DateTime                @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@index([insightSignalId])
   @@index([status])
@@ -2314,26 +2433,26 @@ enum ExpertEndorsementStatus {
 }
 
 model ExpertEndorsement {
-  id                   String                   @id @default(uuid())
-  treeId               String
-  tree                 Tree                     @relation(fields: [treeId], references: [id], onDelete: Cascade)
-  endorserId           String
-  endorser             TreeMember               @relation("EndorsementsGiven", fields: [endorserId], references: [id], onDelete: Cascade)
-  endorsedId           String
-  endorsed             TreeMember               @relation("EndorsementsReceived", fields: [endorsedId], references: [id], onDelete: Cascade)
-  expertise            String
-  status               ExpertEndorsementStatus  @default(ACTIVE)
-  requiredTasks        Int                      @default(3)
-  completedTasks       Int                      @default(0)
+  id                    String                  @id @default(uuid())
+  treeId                String
+  tree                  Tree                    @relation(fields: [treeId], references: [id], onDelete: Cascade)
+  endorserId            String
+  endorser              TreeMember              @relation("EndorsementsGiven", fields: [endorserId], references: [id], onDelete: Cascade)
+  endorsedId            String
+  endorsed              TreeMember              @relation("EndorsementsReceived", fields: [endorsedId], references: [id], onDelete: Cascade)
+  expertise             String
+  status                ExpertEndorsementStatus @default(ACTIVE)
+  requiredTasks         Int                     @default(3)
+  completedTasks        Int                     @default(0)
   satisfactionThreshold Float                   @default(80)
-  avgSatisfaction      Float?
-  boostApplied         Boolean                  @default(true)
-  evidenceTaskIds      String                   @default("[]") @db.Text
-  createdAt            DateTime                 @default(now())
-  resolvedAt           DateTime?
-  resolvedById         String?
-  resolvedBy           User?                    @relation("EndorsementResolver", fields: [resolvedById], references: [id], onDelete: SetNull)
-  resolutionNote       String?                  @db.Text
+  avgSatisfaction       Float?
+  boostApplied          Boolean                 @default(true)
+  evidenceTaskIds       String                  @default("[]") @db.Text
+  createdAt             DateTime                @default(now())
+  resolvedAt            DateTime?
+  resolvedById          String?
+  resolvedBy            User?                   @relation("EndorsementResolver", fields: [resolvedById], references: [id], onDelete: SetNull)
+  resolutionNote        String?                 @db.Text
 
   @@index([endorserId, endorsedId, treeId, expertise])
   @@index([treeId, endorserId, status])
@@ -2354,44 +2473,44 @@ enum ExternalCandidateStatus {
 }
 
 model ExternalCandidate {
-  id             String                    @id @default(uuid())
-  treeId         String
-  tree           Tree                      @relation(fields: [treeId], references: [id], onDelete: Cascade)
+  id     String @id @default(uuid())
+  treeId String
+  tree   Tree   @relation(fields: [treeId], references: [id], onDelete: Cascade)
 
-  name           String
-  email          String?
-  skills         String                    @db.Text
-  experience     String?                   @db.Text
-  portfolioUrl   String?
+  name         String
+  email        String?
+  skills       String  @db.Text
+  experience   String? @db.Text
+  portfolioUrl String?
 
-  status         ExternalCandidateStatus   @default(APPLIED)
-  reviewerNotes  String?                   @db.Text
+  status        ExternalCandidateStatus @default(APPLIED)
+  reviewerNotes String?                 @db.Text
 
-  evaluatorIds   String                    @default("[]") @db.Text
-  evaluatorMode  String?                   // "exact" | "similar" | "adjacent" | "fallback"
-  evaluatorVotes String                    @default("[]") @db.Text  // [{evaluatorId, passed, notes, submittedAt}]
+  evaluatorIds   String  @default("[]") @db.Text
+  evaluatorMode  String? // "exact" | "similar" | "adjacent" | "fallback"
+  evaluatorVotes String  @default("[]") @db.Text // [{evaluatorId, passed, notes, submittedAt}]
 
-  testDesign     String?                   @db.Text
-  testResult     String?                   @db.Text
-  testPassed     Boolean?
+  testDesign String?  @db.Text
+  testResult String?  @db.Text
+  testPassed Boolean?
 
-  entryTaskId    String?
-  entryBranchId  String?
+  entryTaskId   String?
+  entryBranchId String?
 
-  auditLevel     Int                       @default(80)
+  auditLevel Int @default(80)
 
-  appliedAt      DateTime                  @default(now())
-  reviewedAt     DateTime?
-  provisionalAt  DateTime?
-  validatedAt    DateTime?
-  rejectedAt     DateTime?
-  rejectionReason String?                  @db.Text
+  appliedAt       DateTime  @default(now())
+  reviewedAt      DateTime?
+  provisionalAt   DateTime?
+  validatedAt     DateTime?
+  rejectedAt      DateTime?
+  rejectionReason String?   @db.Text
 
-  assignedById   String?
-  assignedBy     User?                     @relation("CandidateAssigner", fields: [assignedById], references: [id], onDelete: SetNull)
+  assignedById String?
+  assignedBy   User?   @relation("CandidateAssigner", fields: [assignedById], references: [id], onDelete: SetNull)
 
-  createdAt      DateTime                  @default(now())
-  updatedAt      DateTime                  @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@index([treeId, status])
   @@index([status])
@@ -2405,9 +2524,9 @@ model SkillInfluence {
   skillTag            String
   greenAvgDifficulty  Float    @default(0)
   goldenAvgDifficulty Float    @default(0)
-  greenInfluence      Float    @default(20)   // 20–80%
-  goldenInfluence     Float    @default(20)   // 20–80%
-  finalInfluence      Float    @default(20)   // 0.6*green + 0.4*golden
+  greenInfluence      Float    @default(20) // 20–80%
+  goldenInfluence     Float    @default(20) // 20–80%
+  finalInfluence      Float    @default(20) // 0.6*green + 0.4*golden
   calculatedAt        DateTime @default(now())
 
   tree Tree @relation(fields: [treeId], references: [id], onDelete: Cascade)
@@ -2420,12 +2539,78 @@ model SkillInfluence {
 // ── Tree Treasury (escrow balance) ────────────────────────────────────
 
 model TreeTreasury {
-  id              String   @id @default(uuid())
-  treeId          String   @unique
-  tree            Tree     @relation(fields: [treeId], references: [id], onDelete: Cascade)
-  balance         Float    @default(0)
-  committedBalance Float   @default(0)
-  updatedAt       DateTime @updatedAt
+  id               String   @id @default(uuid())
+  treeId           String   @unique
+  tree             Tree     @relation(fields: [treeId], references: [id], onDelete: Cascade)
+  balance          Float    @default(0)
+  committedBalance Float    @default(0)
+  updatedAt        DateTime @updatedAt
 
   @@index([treeId])
+}
+
+model TrustCoreConfig {
+  id                    String   @id @default(uuid())
+  treeId                String   @unique
+  tree                  Tree     @relation(fields: [treeId], references: [id], onDelete: Cascade)
+
+  maintenanceShare      Float    @default(0.70)
+  growthShare           Float    @default(0.30)
+
+  monthlyMaintenanceCost Float   @default(0)
+  totalFeesCollected     Float   @default(0)
+  totalFeesDistributed   Float   @default(0)
+
+  isActive              Boolean  @default(true)
+  activatedAt           DateTime @default(now())
+  deactivatedAt         DateTime?
+
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  @@index([treeId])
+  @@index([isActive])
+}
+
+model GlobalFeeConfig {
+  id                          String   @id @default("default")
+
+  baseMaintenanceCostClp      Float    @default(500000)
+  growthFactor                Float    @default(0.02)
+  minFeePercent               Float    @default(0.5)
+  maxFeePercent               Float    @default(5.0)
+
+  currentFeePercent           Float    @default(0.5)
+  maintenanceComponent        Float    @default(0.35)
+  growthComponent             Float    @default(0.15)
+  lastRecalculatedAt          DateTime?
+
+  totalActiveUsers            Int      @default(0)
+  totalMonthlyVolumeClp       Float    @default(0)
+  totalActiveTrees            Int      @default(0)
+  totalTrustCoreTrees         Int      @default(0)
+  systemMetricsUpdatedAt      DateTime?
+
+  serverAdminIds              Json     @default("[]")
+  recalculationIntervalHours  Int      @default(6)
+
+  createdAt                   DateTime @default(now())
+  updatedAt                   DateTime @updatedAt
+}
+
+model FeeDistribution {
+  id                  String   @id @default(uuid())
+  walletTransactionId String
+  walletTransaction   WalletTransaction @relation(fields: [walletTransactionId], references: [id], onDelete: Cascade)
+  trustCoreTreeId     String
+  trustCoreTree       Tree     @relation(fields: [trustCoreTreeId], references: [id])
+  amount              Float
+  totalFeeAmount      Float
+  splitRatio          Float
+
+  createdAt           DateTime @default(now())
+
+  @@index([trustCoreTreeId])
+  @@index([walletTransactionId])
+  @@index([createdAt])
 }

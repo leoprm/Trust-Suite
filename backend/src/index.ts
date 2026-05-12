@@ -55,6 +55,7 @@ import escrowRoutes from './routes/escrowRoutes';
 import disputeRoutes from './routes/disputeRoutes';
 import publicRoutes from './routes/publicRoutes';
 import pingRoutes from './routes/pingRoutes';
+import aiCouncilRoutes from './routes/aiCouncilRoutes';
 import { listMyEvaluations } from './controllers/externalCandidateController';
 import { startCronJobs } from './cron/weeklyResolution';
 import { startMonthlyJob } from './cron/monthlyEconomy';
@@ -71,6 +72,9 @@ import { startTaskMatcherCron } from './cron/taskMatcherCron';
 import { startAIExecutorCron } from './cron/aiExecutorCron';
 import { startBaseNeedReviewCron } from './cron/baseNeedReviewCron';
 import { startMonthlyNeedPointsCron } from './cron/monthlyNeedPointsCron';
+import { startAICouncilAuditCron } from './cron/aiCouncilAuditCron';
+import { startAIDailyInteractionCron } from './cron/aiDailyInteractionCron';
+import { startFeeRecalculationCron } from './cron/feeRecalculation';
 import { getInfluenceWeight, getTreeInfluences } from './services/skillInfluenceService';
 import aiTaskRoutes from './routes/aiTaskRoutes';
 import aiExecutorRoutes from './routes/aiExecutorRoutes';
@@ -78,6 +82,7 @@ import aiReputationRoutes from './routes/aiReputationRoutes';
 import { aiLeaderboard } from './controllers/aiReputationController';
 import conciergeRoutes from './routes/conciergeRoutes';
 import walletRoutes from './routes/walletRoutes';
+import trustCoreRoutes from './routes/trustCoreRoutes';
 
 const app = express();
 const port = process.env.PORT || 3000;
@@ -245,6 +250,7 @@ app.use('/api/payments', authenticateJWT, receiptRoutes);
 app.use('/api/escrow', authenticateJWT, escrowRoutes);
 app.use('/api', authenticateJWT, disputeRoutes);
 app.use('/api/ping', pingRoutes);
+app.use('/api', aiCouncilRoutes);
 app.get('/api/evaluations/mine', authenticateJWT, listMyEvaluations);
 app.get('/api/trees/:treeId/influence', authenticateJWT, async (req: any, res: any) => {
   try {
@@ -280,6 +286,9 @@ app.use('/api/concierge', conciergeRoutes);
 // Wallet — unified fiat + berries balance + subscriptions
 app.use('/api/wallet', walletRoutes);
 
+// TrustCore Fee Protocol — tree opt-in, admin, config, withdrawal
+app.use('/api', trustCoreRoutes);
+
 startCronJobs();
 startMonthlyJob();
 startMaterialFallbackJob();
@@ -295,6 +304,9 @@ startTaskMatcherCron();
 startAIExecutorCron();
 startBaseNeedReviewCron();
 startMonthlyNeedPointsCron();
+startAICouncilAuditCron();
+startAIDailyInteractionCron();
+startFeeRecalculationCron();
 
 // Bootstrap database schema, then start server
 bootstrapDatabase().then(() => {
