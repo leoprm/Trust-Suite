@@ -703,6 +703,16 @@ model Need {
   quorumMet              Boolean   @default(false)
   totalPeopleEquivalent  Int       @default(0)  // persons * concentration multiplier
 
+  // Base Need (sedimentación a 12 meses)
+  isBase              Boolean   @default(false)
+  sedimentedAt        DateTime?
+  baselineUserCount   Int?
+  // Ciclos de revisión trimestral (para decay)
+  lastReviewCycle1    DateTime?
+  lastReviewCycle2    DateTime?
+  userCountCycle1     Int?
+  userCountCycle2     Int?
+
   creator   User          @relation("NeedCreator", fields: [creatorId], references: [id])
   task      Task?         @relation(fields: [taskId], references: [id])
   treeLinks NeedTree[]

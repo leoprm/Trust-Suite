@@ -344,6 +344,26 @@ export const completeTask = async (req: any, res: Response) => {
       const rawXp = await calculateTaskXpReward(id);
       const xpToAward = Math.floor(rawXp);
       let deltaXp = (currentTask.status === 'COMPLETED') ? (xpToAward - oldXp) : xpToAward;
+
+      // ── Base Need evidence gate ──────────────────────────────────
+      // Si la need es Base, requiere EvidenceFile público y activo
+      // para otorgar XP. Sin evidence → task completa sin XP.
+      const needForTask = (task as any).branch?.idea?.need;
+      if (needForTask?.isBase) {
+        const hasEvidence = await prisma.evidenceFile.findFirst({
+          where: {
+            taskId: id,
+            visibility: { not: 'PRIVATE' },
+            status: 'ACTIVE',
+          },
+        });
+        if (!hasEvidence) {
+          console.log(`[completeTask] Base Need evidence gate: no public evidence, XP = 0`);
+          deltaXp = 0;
+        } else {
+          console.log(`[completeTask] Base Need evidence gate: evidence found (${hasEvidence.id}), XP normal`);
+        }
+      }
       
       console.log(`[completeTask] XP delta: ${deltaXp} (rawTotal: ${rawXp})`);
 

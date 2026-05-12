@@ -18,6 +18,7 @@ import TraceProfile from './pages/TraceProfile';
 import PrivacyPage from './pages/PrivacyPage';
 import TrustInsightDashboard from './pages/TrustInsightDashboard';
 import LandingPage from './pages/LandingPage';
+import WalletPage from './pages/Wallet';
 
 import MainLayout from './layouts/MainLayout';
 import ConciergeChat from './components/ConciergeChat';
@@ -134,6 +135,7 @@ function App() {
                 <Route path="/needs/new" element={<NewNeed />} />
                 <Route path="/admin" element={<AdminDashboard />} />
                 <Route path="/privacy" element={<PrivacyPage />} />
+                <Route path="/wallet" element={<WalletPage />} />
               </Route>
 
               <Route element={<MainLayout />}>
@@ -147,6 +149,7 @@ function App() {
               <Route path="/" element={<BranchOSDashboard />} />
               <Route path="/tasks" element={<BranchOSDashboard />} />
               <Route path="/privacy" element={<PrivacyPage />} />
+              <Route path="/wallet" element={<WalletPage />} />
             </Route>
           )}
 
@@ -157,6 +160,7 @@ function App() {
                 <Route path="/profile" element={<TraceProfile />} />
                 <Route path="/talent" element={<TalentHunter />} />
                 <Route path="/privacy" element={<PrivacyPage />} />
+                <Route path="/wallet" element={<WalletPage />} />
               </Route>
 
               <Route path="/p/:code" element={<PublicProfile />} />
@@ -167,6 +171,7 @@ function App() {
             <Route element={isAuthenticated ? <MainLayout /> : <Navigate to="/login" />}>
               <Route path="/" element={<TrustInsightDashboard />} />
               <Route path="/privacy" element={<PrivacyPage />} />
+              <Route path="/wallet" element={<WalletPage />} />
             </Route>
           )}
 

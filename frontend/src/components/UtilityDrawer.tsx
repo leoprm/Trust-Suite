@@ -1,6 +1,6 @@
 import { useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Bell, User, Users, ChevronLeft, Crosshair, Globe, LogOut, Eye, ShieldCheck, HelpCircle } from 'lucide-react';
+import { X, Bell, User, Users, ChevronLeft, Crosshair, Globe, LogOut, Eye, ShieldCheck, HelpCircle, Wallet } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useMatrixStore } from '../store/matrixStore';
 import type { UtilityPanel } from '../store/matrixStore';
@@ -192,6 +192,32 @@ export default function UtilityDrawer({ open, onClose }: UtilityDrawerProps) {
                       </button>
                     );
                   })}
+
+                  {/* ── Wallet link ─────────────────────────── */}
+                  <button
+                    onClick={() => { onClose(); navigate('/wallet'); }}
+                    style={{
+                      display: 'flex', alignItems: 'center', gap: '0.75rem',
+                      padding: '0.85rem 0.9rem', borderRadius: 14,
+                      background: 'rgba(59,130,246,0.06)',
+                      border: '1px solid rgba(59,130,246,0.15)',
+                      cursor: 'pointer', textAlign: 'left',
+                      transition: 'background 0.15s',
+                    }}
+                    onPointerDown={e => (e.currentTarget.style.background = 'rgba(59,130,246,0.14)')}
+                    onPointerUp={e => (e.currentTarget.style.background = 'rgba(59,130,246,0.06)')}
+                    onPointerLeave={e => (e.currentTarget.style.background = 'rgba(59,130,246,0.06)')}
+                  >
+                    <Wallet size={22} color="#60a5fa" />
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <span style={{ fontSize: '0.82rem', fontWeight: 600, color: '#60a5fa', display: 'block' }}>
+                        Wallet
+                      </span>
+                      <span style={{ fontSize: '0.62rem', color: 'rgba(255,255,255,0.45)', display: 'block', marginTop: 2 }}>
+                        Saldos y transacciones
+                      </span>
+                    </div>
+                  </button>
 
                   {/* ── Buscar Talento link ────────────────────── */}
                   {appConfig.features.talentSearch && (

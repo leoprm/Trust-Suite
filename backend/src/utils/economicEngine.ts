@@ -26,16 +26,8 @@ import { getBonusMultiplierForTags } from '../controllers/bonusController';
  */
 export async function redistributeTreeBudget(treeId: string): Promise<void> {
   try {
-    // 1. Contar usuarios activos (level >= 3) de forma eficiente
-    const activeUsersCount = await prisma.treeMember.count({
-      where: {
-        treeId,
-        level: { gte: 3 },
-      },
-    });
-
-    // 2. Calcular presupuesto dinámico (Presupuesto Total)
-    const budget = 100 + activeUsersCount * 50;
+    // 1. Presupuesto fijo de 1000 puntos
+    const budget = 1000;
 
     // Actualizar el presupuesto total en el Árbol
     await prisma.tree.update({
@@ -43,7 +35,7 @@ export async function redistributeTreeBudget(treeId: string): Promise<void> {
       data: { presupuestoTotal: budget }
     });
 
-    // 3. Obtener todas las ramas del árbol
+    // 2. Obtener todas las ramas del árbol con su creador
     //    Incluimos ramas hashtag (treeId directo) y ramas de ideas via NeedTree
     const branches = await (prisma as any).branch.findMany({
       where: {
@@ -58,25 +50,45 @@ export async function redistributeTreeBudget(treeId: string): Promise<void> {
           },
         ],
       },
-      select: { id: true, valorOficial: true },
+      select: { id: true, valorOficial: true, createdById: true },
     });
 
     if (branches.length === 0) return;
 
-    // 4. Suma total de valores
-    const totalValue: number = branches.reduce(
-      (sum: number, b: any) => sum + Number(b.valorOficial || 0),
+    // 3. Obtener niveles de los creadores
+    const creatorIds = [...new Set(branches.map((b: any) => b.createdById).filter(Boolean))];
+    const members = creatorIds.length > 0
+      ? await prisma.treeMember.findMany({
+          where: { treeId, userId: { in: creatorIds } },
+          select: { userId: true, level: true },
+        })
+      : [];
+    const levelMap = new Map<string, number>();
+    for (const m of members) {
+      levelMap.set(m.userId, m.level);
+    }
+
+    // 4. Calcular peso ponderado: valorOficial × (nivelCreador / 10)
+    const weightedBranches = branches.map((b: any) => {
+      const valor = Number(b.valorOficial || 0);
+      const level = b.createdById ? (levelMap.get(b.createdById) || 1) : 1;
+      const weight = valor * (level / 10);
+      return { ...b, valor, level, weight };
+    });
+
+    // 5. Suma total de pesos
+    const totalWeight: number = weightedBranches.reduce(
+      (sum: number, b: any) => sum + b.weight,
       0
     );
 
-    // 5. Distribuir proporcionalmente y actualizar cada rama
-    for (const branch of branches) {
-      const valor = Number(branch.valorOficial || 0);
+    // 6. Distribuir proporcionalmente al peso y actualizar cada rama
+    for (const branch of weightedBranches) {
       let xpPool = 0;
       let isDesire = false;
 
-      if (totalValue > 0 && valor > 0) {
-        xpPool = Math.floor((valor / totalValue) * budget);
+      if (totalWeight > 0 && branch.weight > 0) {
+        xpPool = Math.floor((branch.weight / totalWeight) * budget);
       }
 
       if (xpPool < 1) {
@@ -91,7 +103,7 @@ export async function redistributeTreeBudget(treeId: string): Promise<void> {
     }
 
     console.log(
-      `[EconomicEngine] Árbol ${treeId}: budget=${budget} (${activeUsersCount} usuarios activos), ${branches.length} ramas redistribuidas.`
+      `[EconomicEngine] Árbol ${treeId}: budget=1000 fijo, ${branches.length} ramas redistribuidas por nivel relativo.`
     );
   } catch (err) {
     console.error('[EconomicEngine] Error en redistributeTreeBudget:', err);

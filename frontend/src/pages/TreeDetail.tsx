@@ -426,6 +426,20 @@ export default function TreeDetail() {
             >
               <LogOut size={18} /> Abandonar
             </button>
+            <button
+              onClick={() => navigate(`/wallet?treeId=${id}`)}
+              className="btn btn-outline"
+              style={{
+                color: 'var(--accent-primary)',
+                borderColor: 'rgba(59,130,246,0.25)',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.5rem',
+              }}
+              title="Ver Wallet de este Tree"
+            >
+              <DollarSign size={18} /> Wallet
+            </button>
           </div>
         ) : (
           tree.admissionPolicy === 'OPEN' ? (

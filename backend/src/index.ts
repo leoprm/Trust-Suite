@@ -14,6 +14,7 @@ import { authenticateJWT } from './middleware/authMiddleware';
 import userRoutes from './routes/userRoutes';
 import treeRoutes from './routes/treeRoutes';
 import needRoutes from './routes/needRoutes';
+import baseNeedRoutes from './routes/baseNeedRoutes';
 import ideaRoutes from './routes/ideaRoutes';
 import taskRoutes from './routes/taskRoutes';
 import assetRoutes from './routes/assetRoutes';
@@ -68,12 +69,14 @@ import { startBillingCron } from './cron/billingCron';
 import { startReleaseCron } from './cron/releaseCron';
 import { startTaskMatcherCron } from './cron/taskMatcherCron';
 import { startAIExecutorCron } from './cron/aiExecutorCron';
+import { startBaseNeedReviewCron } from './cron/baseNeedReviewCron';
 import { getInfluenceWeight, getTreeInfluences } from './services/skillInfluenceService';
 import aiTaskRoutes from './routes/aiTaskRoutes';
 import aiExecutorRoutes from './routes/aiExecutorRoutes';
 import aiReputationRoutes from './routes/aiReputationRoutes';
 import { aiLeaderboard } from './controllers/aiReputationController';
 import conciergeRoutes from './routes/conciergeRoutes';
+import walletRoutes from './routes/walletRoutes';
 
 const app = express();
 const port = process.env.PORT || 3000;
@@ -201,6 +204,7 @@ app.get('/api/health', (req, res) => {
 app.use('/api/auth', authRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/trees', treeRoutes);
+app.use('/api/needs', baseNeedRoutes);
 app.use('/api/needs', needRoutes);
 app.use('/api/ideas', ideaRoutes);
 app.use('/api/tasks', taskRoutes);
@@ -272,6 +276,9 @@ app.get('/api/trees/:id/ai/leaderboard', authenticateJWT, aiLeaderboard);
 // Concierge — tree setup wizard
 app.use('/api/concierge', conciergeRoutes);
 
+// Wallet — unified fiat + berries balance + subscriptions
+app.use('/api/wallet', walletRoutes);
+
 startCronJobs();
 startMonthlyJob();
 startMaterialFallbackJob();
@@ -285,6 +292,7 @@ startBillingCron();
 startReleaseCron();
 startTaskMatcherCron();
 startAIExecutorCron();
+startBaseNeedReviewCron();
 
 // Bootstrap database schema, then start server
 bootstrapDatabase().then(() => {

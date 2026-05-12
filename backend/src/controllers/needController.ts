@@ -390,6 +390,34 @@ export const getHashtagProposals = async (req: any, res: Response) => {
   }
 };
 
+export const getNeed = async (req: any, res: Response) => {
+  try {
+    const { id } = req.params;
+    const need = await prisma.need.findUnique({
+      where: { id },
+      include: {
+        creator: { select: { username: true } },
+        treeLinks: { include: { tree: { select: { id: true, name: true } } } },
+        _count: { select: { ideas: true, fundings: true } },
+        ideas: {
+          select: { id: true, branch: { select: { id: true } } },
+          orderBy: { likesCount: 'desc' },
+          take: 1,
+        },
+      },
+    });
+    if (!need) return res.status(404).json({ error: 'Need not found' });
+
+    const formatted = {
+      ...need,
+      branchId: (need as any).ideas[0]?.branch?.id ?? null,
+    };
+    res.json(formatted);
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to fetch Need' });
+  }
+};
+
 export const searchNeeds = async (req: any, res: Response) => {
   try {
     const { q } = req.query;
