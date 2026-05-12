@@ -48,7 +48,6 @@ model User {
   branchNeedVotes                  BranchNeedVote[]
   IdeaLike                         IdeaLike[]
   auditorias                       Auditoria[]
-  promisesPledged                  PromiseP2P[]                 @relation("Sponsor")
   bonusVotes                       BonusVote[]
   notifications                    Notification[]
   skillMigrations                  SkillMigration[]
@@ -68,20 +67,13 @@ model User {
   autosustentoBranchConfigsCreated AutosustentoBranchConfig[]   @relation("AutosustentoBranchConfigCreator")
   autosustentoIdeasCreated         AutosustentoIdea[]           @relation("AutosustentoIdeaCreator")
   autosustentoIdeaSupports         AutosustentoIdeaSupport[]
-  fiatTransactionsCreated          FiatTransaction[]            @relation("FiatTransactionCreator")
-  fiatTransactionsCertified        FiatTransaction[]            @relation("FiatTransactionCertifier")
-  berryTransactions                BerryTransaction[]
   insightSignalsCreated            InsightSignal[]              @relation("InsightSignalCreator")
   insightInternalMatches           InsightInternalMatch[]
   insightExternalApplications      InsightExternalApplication[]
   insightOpeningsCreated           InsightExternalOpening[]     @relation("OpeningCreator")
   resolvedEndorsements             ExpertEndorsement[]          @relation("EndorsementResolver")
   assignedCandidates               ExternalCandidate[]          @relation("CandidateAssigner")
-  treeExpensesAdded                TreeExpense[]                @relation("UserExpenses")
   ownedAIs                         TreeMember[]                 @relation("AIOwner")
-  wallet                           UserWallet?
-  walletTransactionsFrom           WalletTransaction[]          @relation("WalletFromUser")
-  walletTransactionsTo             WalletTransaction[]          @relation("WalletToUser")
 }
 
 model UserContact {
@@ -293,34 +285,17 @@ model Tree {
   creacionRamaDirecta     Boolean @default(false)
   creacionRamaComunitaria Boolean @default(true)
 
-  // Financing fields
-  financingMode           TreeFinancingMode @default(GRATUITO)
-  subscriptionAmount      Float?
-  subscriptionCurrency    String?           @default("CLP")
-  subscriptionDayOfMonth  Int?              @default(1)
-  subscriptionBillingMode String?           @default("FIXED") // FIXED | PROPORTIONAL
 
   // AI Council
   treeType             TreeType  @default(NORMAL)
   lastAuditGeneratedAt DateTime?
   auditReportJson      Json?
 
-  // TrustCore Fee Protocol
-  isTrustCore         Boolean  @default(false)
-  trustCoreBalanceClp Float    @default(0)
-
-  // Escrow & Multi-sig
-  satisfactionTiers Json?
-  multiSigThreshold Int   @default(2)
 
   // Relations
-  trustCoreConfig     TrustCoreConfig?
-  feeDistributions    FeeDistribution[]
   members                   TreeMember[]
   needLinks                 NeedTree[]
   assetFunds                AssetFund[]
-  fiatTransactions          FiatTransaction[]
-  fiatTemplates             FiatTemplate[]
   branches                  Branch[]
   tokensInvitacion          TokenInvitacion[]
   relationsInitiated        TreeRelation[]             @relation("TreeRelationsSource")
@@ -337,18 +312,11 @@ model Tree {
   autosustentoBranchConfigs AutosustentoBranchConfig[]
   autosustentoIdeas         AutosustentoIdea[]
   sustainabilityCycles      SustainabilityCycle[]
-  berryConfig               BerryConfig?
-  berryTransactions         BerryTransaction[]
-  berryCycles               BerryMonthlyCycle[]
   insightSignals            InsightSignal[]
   externalOpenings          InsightExternalOpening[]   @relation("TreeExternalOpenings")
   expertEndorsements        ExpertEndorsement[]
-  expenses                  TreeExpense[]
-  memberPayments            MemberPayment[]
   externalCandidates        ExternalCandidate[]
   skillInfluences           SkillInfluence[]
-  treasury                  TreeTreasury?
-  walletTransactions        WalletTransaction[]
 
   @@index([country, city, sector])
 }
@@ -377,7 +345,6 @@ model ExternalNeed {
   agents           ExternalAgent[]
   scopePoints      ScopePreference[]
   solutions        SolutionProposal[]
-  fiatTransactions FiatTransaction[]
 
   @@index([treeId])
   @@index([status])
@@ -546,17 +513,6 @@ enum BudgetLineType {
   OTHER
 }
 
-enum TreeFinancingMode {
-  GRATUITO
-  SUBSCRIPCION
-}
-
-enum SubscriptionStatus {
-  ACTIVE
-  GRACE
-  SUSPENDED
-  CANCELLED
-}
 
 model EventLog {
   id           String        @id @default(uuid())
@@ -605,7 +561,6 @@ model EvidenceFile {
   createdAt      DateTime           @default(now())
   updatedAt      DateTime           @updatedAt
 
-  fiatTransactions    FiatTransaction[]
   insightApplications InsightExternalApplication[]
 
   @@index([uploaderId])
@@ -644,17 +599,10 @@ model TreeMember {
   avalBanHasta         DateTime? // null = not banned from endorsing
   endorsementsGiven    ExpertEndorsement[]  @relation("EndorsementsGiven")
   endorsementsReceived ExpertEndorsement[]  @relation("EndorsementsReceived")
-  payments             MemberPayment[]
   aiConfig             AIMemberConfig?
   claimedTasks         Task[]               @relation("AIClaimedTasks")
   executions           AiExecution[]
-  importanceVotes      NeedImportanceVote[]
 
-  // Subscription fields
-  isPayingMember     Boolean            @default(true)
-  lastPaymentDate    DateTime?
-  paymentDueDate     DateTime?
-  subscriptionStatus SubscriptionStatus @default(ACTIVE)
 
   user      User  @relation(fields: [userId], references: [id], onDelete: Cascade)
   aiOwner   User? @relation("AIOwner", fields: [aiOwnerId], references: [id], onDelete: SetNull)
@@ -752,7 +700,6 @@ model Need {
   treeLinks       NeedTree[]
   fundings        NeedFunding[]
   ideas           Idea[]
-  importanceVotes NeedImportanceVote[]
   sourcedBranches Branch[]             @relation("NeedSourceBranch")
 }
 
@@ -786,20 +733,6 @@ model NeedFunding {
   need Need @relation(fields: [needId], references: [id], onDelete: Cascade)
 }
 
-model NeedImportanceVote {
-  id        String   @id @default(uuid())
-  needId    String
-  voterId   String // FK → TreeMember (AI member only)
-  score     Int // 1-10
-  createdAt DateTime @default(now())
-
-  need  Need       @relation(fields: [needId], references: [id], onDelete: Cascade)
-  voter TreeMember @relation(fields: [voterId], references: [id], onDelete: Cascade)
-
-  @@unique([needId, voterId])
-  @@index([needId])
-  @@index([voterId])
-}
 
 model Idea {
   id          String   @id @default(uuid())
@@ -866,7 +799,6 @@ model Branch {
   members              BranchMember[]
   tasks                Task[]
   deliverables         PhaseDeliverable[]
-  fiatTransactions     FiatTransaction[]
   autosustentoConfig   AutosustentoBranchConfig?
   User                 User?                     @relation(fields: [userId], references: [id])
   userId               String?
@@ -986,10 +918,7 @@ model Task {
   needs             Need[]
   difficultyVotes   DifficultyVote[]
   auditorias        Auditoria[]
-  promises          PromiseP2P[]
   evidenceFiles     EvidenceFile[]
-  fiatTransactions  FiatTransaction[]
-  payments          MemberPayment[]
   claimedByAIMember TreeMember?       @relation("AIClaimedTasks", fields: [claimedByAI], references: [id], onDelete: SetNull)
   executions        AiExecution[]
 }
@@ -1138,188 +1067,6 @@ enum DeliverableStatus {
   COMPLETED
 }
 
-enum TransactionType {
-  INCOME
-  EXPENSE
-  INVESTMENT
-  SALARY
-  MATERIALS
-  INFRASTRUCTURE
-  TAX
-  RESERVE
-  MAINTENANCE
-  TREE_FUND
-  EXTERNAL_CONTRACT
-  REFUND
-}
-
-enum TransactionCategory {
-  WATER
-  ELECTRICITY
-  GAS
-  MORTGAGE
-  FUEL
-  SHOPPING
-  EQUIPMENT
-  MATERIAL
-  MONEY
-  OTHER
-}
-
-enum FiatPeriodicity {
-  BEGINNING_OF_YEAR
-  BEGINNING_OF_MONTH
-  BEGINNING_OF_WEEK
-  CUSTOM_DAYS
-}
-
-enum FiatVerificationStatus {
-  DECLARED
-  BACKED_BY_RECEIPT
-  RECONCILED
-  AUDITED
-  API_VERIFIED
-  REJECTED
-}
-
-enum FiatCounterpartyType {
-  CLIENT
-  SUPPLIER
-  MEMBER
-  EXTERNAL_WORKER
-  INSTITUTION
-  OTHER
-}
-
-model FiatTemplate {
-  id          String              @id @default(uuid())
-  treeId      String
-  amount      Float? // Fixed amount if set
-  type        TransactionType
-  category    TransactionCategory
-  description String?             @db.Text
-  isPeriodic  Boolean             @default(false)
-  periodicity FiatPeriodicity?
-  daysCount   Int? // Used if CUSTOM_DAYS
-  isFixed     Boolean             @default(false)
-  createdAt   DateTime            @default(now())
-  lastUsedAt  DateTime?
-
-  tree         Tree              @relation(fields: [treeId], references: [id], onDelete: Cascade)
-  transactions FiatTransaction[]
-}
-
-model FiatTransaction {
-  id                 String                 @id @default(uuid())
-  treeId             String
-  branchId           String?
-  taskId             String?
-  externalNeedId     String?
-  createdById        String?
-  templateId         String?
-  certifiedById      String?
-  solutionProposalId String?
-  amount             Float
-  currency           String                 @default("CLP")
-  type               TransactionType
-  category           TransactionCategory
-  description        String?                @db.Text
-  counterpartyName   String?                @db.Text
-  counterpartyType   FiatCounterpartyType?
-  verificationStatus FiatVerificationStatus @default(DECLARED)
-  receiptEvidenceId  String?
-  rejectionReason    String?                @db.Text
-  certifiedAt        DateTime?
-  metadataJson       Json?
-  date               DateTime               @default(now())
-  createdAt          DateTime               @default(now())
-  updatedAt          DateTime               @updatedAt
-  isAutomatic        Boolean                @default(false)
-
-  tree            Tree            @relation(fields: [treeId], references: [id], onDelete: Cascade)
-  branch          Branch?         @relation(fields: [branchId], references: [id], onDelete: SetNull)
-  task            Task?           @relation(fields: [taskId], references: [id], onDelete: SetNull)
-  externalNeed    ExternalNeed?   @relation(fields: [externalNeedId], references: [id], onDelete: SetNull)
-  template        FiatTemplate?   @relation(fields: [templateId], references: [id], onDelete: SetNull)
-  createdBy       User?           @relation("FiatTransactionCreator", fields: [createdById], references: [id], onDelete: SetNull)
-  certifiedBy     User?           @relation("FiatTransactionCertifier", fields: [certifiedById], references: [id], onDelete: SetNull)
-  receiptEvidence EvidenceFile?   @relation(fields: [receiptEvidenceId], references: [id], onDelete: SetNull)
-  relatedExpenses TreeExpense[]   @relation("ExpenseFiatTx")
-  relatedPayments MemberPayment[] @relation("PaymentFiatTx")
-
-  @@index([treeId])
-  @@index([branchId])
-  @@index([taskId])
-  @@index([createdById])
-  @@index([certifiedById])
-  @@index([solutionProposalId])
-  @@index([type])
-  @@index([counterpartyType])
-  @@index([verificationStatus])
-  @@index([date])
-}
-
-// ── Tree Expenses ─────────────────────────────────────────────────────
-
-model TreeExpense {
-  id            String              @id @default(uuid())
-  treeId        String
-  tree          Tree                @relation(fields: [treeId], references: [id], onDelete: Cascade)
-  description   String              @db.Text
-  amount        Float
-  currency      String              @default("CLP")
-  category      TransactionCategory
-  isRecurring   Boolean             @default(false)
-  dueDayOfMonth Int?
-  addedById     String
-  addedBy       User                @relation("UserExpenses", fields: [addedById], references: [id], onDelete: Cascade)
-  month         String // "2026-05"
-  fiatTxId      String?
-  fiatTx        FiatTransaction?    @relation("ExpenseFiatTx", fields: [fiatTxId], references: [id], onDelete: SetNull)
-  createdAt     DateTime            @default(now())
-
-  @@index([treeId, month])
-}
-
-// ── Payment Status ──────────────────────────────────────────────────
-
-enum PaymentStatus {
-  PLEDGED
-  PAID
-  RELEASED
-  REFUNDED
-  DISPUTED
-}
-
-// ── Member Payments ──────────────────────────────────────────────────
-
-model MemberPayment {
-  id              String           @id @default(uuid())
-  treeId          String
-  tree            Tree             @relation(fields: [treeId], references: [id], onDelete: Cascade)
-  memberId        String
-  member          TreeMember       @relation(fields: [memberId], references: [id], onDelete: Cascade)
-  amount          Float
-  currency        String           @default("CLP")
-  status          PaymentStatus    @default(PLEDGED)
-  releasedAmount  Float            @default(0)
-  refundedAmount  Float            @default(0)
-  period          String // "2026-05"
-  fiatTxId        String?
-  fiatTx          FiatTransaction? @relation("PaymentFiatTx", fields: [fiatTxId], references: [id], onDelete: SetNull)
-  taskId          String?
-  task            Task?            @relation(fields: [taskId], references: [id], onDelete: SetNull)
-  paidAt          DateTime         @default(now())
-  receiptPath     String?
-  receiptFileName String?
-  receiptAttempts Int              @default(0)
-  receiptJSON     Json?
-
-  @@index([treeId, period])
-  @@index([memberId])
-  @@index([status])
-  @@index([taskId])
-}
 
 model DifficultyVote {
   id        String   @id @default(uuid())
@@ -1403,37 +1150,6 @@ model TreeRelation {
   @@unique([sourceTreeId, targetTreeId, relationType])
 }
 
-model PromiseP2P {
-  id                String        @id @default(uuid())
-  taskId            String
-  sponsorId         String
-  amount            Float
-  currencyType      CurrencyType
-  status            PromiseStatus @default(PENDING)
-  comprobanteUrl    String?       @db.Text
-  motivoCancelacion String?       @db.Text
-  createdAt         DateTime      @default(now())
-  updatedAt         DateTime      @updatedAt
-
-  task    Task @relation(fields: [taskId], references: [id], onDelete: Cascade)
-  sponsor User @relation("Sponsor", fields: [sponsorId], references: [id], onDelete: Cascade)
-
-  @@index([taskId])
-  @@index([sponsorId])
-}
-
-enum CurrencyType {
-  FIAT
-  BERRY
-}
-
-enum PromiseStatus {
-  PENDING
-  PAYMENT_SENT
-  COMPLETED
-  DISPUTED
-  CANCELLED
-}
 
 model AlertaZonal {
   id             String      @id @default(uuid())
@@ -1797,7 +1513,6 @@ model SustainabilityCycle {
   periodEnd   DateTime
   currency    String   @default("CLP")
 
-  // Aggregated from FiatTransactions
   totalIncomeFiat     Float @default(0)
   totalExpenseFiat    Float @default(0)
   totalInvestmentFiat Float @default(0)
@@ -1806,7 +1521,6 @@ model SustainabilityCycle {
   deficitFiat         Float @default(0)
   marginPct           Float @default(0)
 
-  // Expense breakdown by category (mapped from TransactionCategory)
   materialsFiat    Float @default(0)
   laborFiat        Float @default(0)
   operationsFiat   Float @default(0)
@@ -1864,171 +1578,13 @@ model SustainabilityAllocation {
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Trust Wallet — monedero personal de usuario
-// Cada usuario tiene un único monedero. El balance CLP es real (fiat).
-// Los Berries se cachean aquí para consultas rápidas.
 // ─────────────────────────────────────────────────────────────────────────────
 
-model UserWallet {
-  id             String   @id @default(uuid())
-  userId         String   @unique
-  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  balanceClp     Float    @default(0)
-  lockedClp      Float    @default(0)
-  balanceBerries Float    @default(0)
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
-
-  transactions WalletTransaction[]
-
-  @@index([userId])
-}
-
-enum WalletTransactionType {
-  DEPOSIT
-  WITHDRAWAL
-  P2P_TRANSFER
-  P2P_TRANSFER_OUT
-  P2P_TRANSFER_IN
-  TREE_PAYMENT
-  MEMBER_REWARD
-  REFUND
-  LOCK
-  UNLOCK
-  FEE
-}
-
-enum WalletTransactionStatus {
-  PENDING
-  COMPLETED
-  FAILED
-  REVERSED
-}
-
-enum WalletCurrency {
-  CLP
-  BERRIES
-}
-
-model WalletTransaction {
-  id              String                  @id @default(uuid())
-  walletId        String
-  wallet          UserWallet              @relation(fields: [walletId], references: [id], onDelete: Cascade)
-  type            WalletTransactionType
-  status          WalletTransactionStatus @default(PENDING)
-  amount          Float
-  currency        WalletCurrency          @default(CLP)
-  balanceBefore   Float?
-  balanceAfter    Float?
-  providerTxId    String?
-  providerPayload Json?
-  treeId          String?
-  tree            Tree?                   @relation(fields: [treeId], references: [id], onDelete: SetNull)
-  fromUserId      String?
-  fromUser        User?                   @relation("WalletFromUser", fields: [fromUserId], references: [id], onDelete: SetNull)
-  toUserId        String?
-  toUser          User?                   @relation("WalletToUser", fields: [toUserId], references: [id], onDelete: SetNull)
-  metadataJson    Json?
-  idempotencyKey  String?                 @unique
-  description     String?                 @db.Text
-  createdAt       DateTime                @default(now())
-
-  feeDistributions  FeeDistribution[]
-
-  @@index([walletId])
-  @@index([type])
-  @@index([status])
-  @@index([treeId])
-  @@index([fromUserId])
-  @@index([toUserId])
-  @@index([createdAt])
-  @@index([idempotencyKey])
-}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Berries — circulación interna del Tree
-// El fiat no compra Berries. Las Berries no compran XP, votos ni autoridad.
-// Reducción mensual: 10% sobre saldo al inicio del ciclo. El 10% se destruye.
 // ─────────────────────────────────────────────────────────────────────────────
 
-enum BerryTransactionType {
-  TASK_REWARD
-  AUDIT_REWARD
-  LEVEL_REWARD
-  P2P_TRANSFER_IN
-  P2P_TRANSFER_OUT
-  MONTHLY_FLOW_LOSS
-  ADJUSTMENT
-  REVERSAL
-}
-
-enum BerryCycleStatus {
-  RUNNING
-  COMPLETED
-  FAILED
-}
-
-model BerryConfig {
-  id                   String   @id @default(uuid())
-  treeId               String   @unique
-  tree                 Tree     @relation(fields: [treeId], references: [id], onDelete: Cascade)
-  berriesEnabled       Boolean  @default(false)
-  minMembersForBerries Int      @default(10000)
-  monthlyFlowRate      Float    @default(0.10)
-  monthlyFlowDay       Int      @default(1)
-  allowP2PTransfers    Boolean  @default(false)
-  allowTaskRewards     Boolean  @default(true)
-  allowAuditRewards    Boolean  @default(true)
-  createdAt            DateTime @default(now())
-  updatedAt            DateTime @updatedAt
-
-  @@index([treeId])
-}
-
-model BerryTransaction {
-  id            String               @id @default(uuid())
-  treeId        String
-  tree          Tree                 @relation(fields: [treeId], references: [id], onDelete: Cascade)
-  userId        String?
-  user          User?                @relation(fields: [userId], references: [id], onDelete: SetNull)
-  fromUserId    String?
-  toUserId      String?
-  type          BerryTransactionType
-  amount        Float
-  balanceBefore Float?
-  balanceAfter  Float?
-  cycleKey      String?
-  sourceType    String?
-  sourceId      String?
-  description   String?              @db.Text
-  metadataJson  Json?
-  createdAt     DateTime             @default(now())
-
-  @@index([treeId])
-  @@index([userId])
-  @@index([type])
-  @@index([cycleKey])
-  @@index([createdAt])
-}
-
-model BerryMonthlyCycle {
-  id             String           @id @default(uuid())
-  treeId         String
-  tree           Tree             @relation(fields: [treeId], references: [id], onDelete: Cascade)
-  cycleKey       String
-  startedAt      DateTime         @default(now())
-  completedAt    DateTime?
-  status         BerryCycleStatus @default(RUNNING)
-  usersProcessed Int              @default(0)
-  totalDestroyed Float            @default(0)
-  metadataJson   Json?
-  createdAt      DateTime         @default(now())
-  updatedAt      DateTime         @updatedAt
-
-  @@unique([treeId, cycleKey])
-  @@index([treeId])
-  @@index([cycleKey])
-  @@index([status])
-}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Trust Insight
@@ -2536,81 +2092,4 @@ model SkillInfluence {
   @@index([calculatedAt])
 }
 
-// ── Tree Treasury (escrow balance) ────────────────────────────────────
 
-model TreeTreasury {
-  id               String   @id @default(uuid())
-  treeId           String   @unique
-  tree             Tree     @relation(fields: [treeId], references: [id], onDelete: Cascade)
-  balance          Float    @default(0)
-  committedBalance Float    @default(0)
-  updatedAt        DateTime @updatedAt
-
-  @@index([treeId])
-}
-
-model TrustCoreConfig {
-  id                    String   @id @default(uuid())
-  treeId                String   @unique
-  tree                  Tree     @relation(fields: [treeId], references: [id], onDelete: Cascade)
-
-  maintenanceShare      Float    @default(0.70)
-  growthShare           Float    @default(0.30)
-
-  monthlyMaintenanceCost Float   @default(0)
-  totalFeesCollected     Float   @default(0)
-  totalFeesDistributed   Float   @default(0)
-
-  isActive              Boolean  @default(true)
-  activatedAt           DateTime @default(now())
-  deactivatedAt         DateTime?
-
-  createdAt             DateTime @default(now())
-  updatedAt             DateTime @updatedAt
-
-  @@index([treeId])
-  @@index([isActive])
-}
-
-model GlobalFeeConfig {
-  id                          String   @id @default("default")
-
-  baseMaintenanceCostClp      Float    @default(500000)
-  growthFactor                Float    @default(0.02)
-  minFeePercent               Float    @default(0.5)
-  maxFeePercent               Float    @default(5.0)
-
-  currentFeePercent           Float    @default(0.5)
-  maintenanceComponent        Float    @default(0.35)
-  growthComponent             Float    @default(0.15)
-  lastRecalculatedAt          DateTime?
-
-  totalActiveUsers            Int      @default(0)
-  totalMonthlyVolumeClp       Float    @default(0)
-  totalActiveTrees            Int      @default(0)
-  totalTrustCoreTrees         Int      @default(0)
-  systemMetricsUpdatedAt      DateTime?
-
-  serverAdminIds              Json     @default("[]")
-  recalculationIntervalHours  Int      @default(6)
-
-  createdAt                   DateTime @default(now())
-  updatedAt                   DateTime @updatedAt
-}
-
-model FeeDistribution {
-  id                  String   @id @default(uuid())
-  walletTransactionId String
-  walletTransaction   WalletTransaction @relation(fields: [walletTransactionId], references: [id], onDelete: Cascade)
-  trustCoreTreeId     String
-  trustCoreTree       Tree     @relation(fields: [trustCoreTreeId], references: [id])
-  amount              Float
-  totalFeeAmount      Float
-  splitRatio          Float
-
-  createdAt           DateTime @default(now())
-
-  @@index([trustCoreTreeId])
-  @@index([walletTransactionId])
-  @@index([createdAt])
-}
