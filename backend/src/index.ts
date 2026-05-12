@@ -75,6 +75,7 @@ import { startMonthlyNeedPointsCron } from './cron/monthlyNeedPointsCron';
 import { startAICouncilAuditCron } from './cron/aiCouncilAuditCron';
 import { startAIDailyInteractionCron } from './cron/aiDailyInteractionCron';
 import { startFeeRecalculationCron } from './cron/feeRecalculation';
+import { startCareerPathGraphCron } from './cron/careerPathGraphCron';
 import { getInfluenceWeight, getTreeInfluences } from './services/skillInfluenceService';
 import aiTaskRoutes from './routes/aiTaskRoutes';
 import aiExecutorRoutes from './routes/aiExecutorRoutes';
@@ -83,6 +84,7 @@ import { aiLeaderboard } from './controllers/aiReputationController';
 import conciergeRoutes from './routes/conciergeRoutes';
 import walletRoutes from './routes/walletRoutes';
 import trustCoreRoutes from './routes/trustCoreRoutes';
+import careerPathRoutes from './routes/careerPathRoutes';
 
 const app = express();
 const port = process.env.PORT || 3000;
@@ -289,6 +291,9 @@ app.use('/api/wallet', walletRoutes);
 // TrustCore Fee Protocol — tree opt-in, admin, config, withdrawal
 app.use('/api', trustCoreRoutes);
 
+// Career Path Network — skill graphs and path finding
+app.use('/api/career-path', careerPathRoutes);
+
 startCronJobs();
 startMonthlyJob();
 startMaterialFallbackJob();
@@ -307,6 +312,7 @@ startMonthlyNeedPointsCron();
 startAICouncilAuditCron();
 startAIDailyInteractionCron();
 startFeeRecalculationCron();
+startCareerPathGraphCron();
 
 // Bootstrap database schema, then start server
 bootstrapDatabase().then(() => {
