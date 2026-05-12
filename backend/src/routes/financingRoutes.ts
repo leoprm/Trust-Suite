@@ -6,7 +6,6 @@ import {
   addExpense,
   updateExpense,
   deleteExpense,
-  getMaturityGates,
 } from '../controllers/financingController';
 
 const router = Router({ mergeParams: true });
@@ -14,9 +13,6 @@ const router = Router({ mergeParams: true });
 // Financing config
 router.get('/', getFinancingConfig);
 router.put('/', updateFinancingConfig);
-
-// Maturity gates
-router.get('/gates', getMaturityGates);
 
 // Expenses
 router.get('/expenses', getExpenses);

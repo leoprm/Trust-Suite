@@ -4,7 +4,6 @@ import { AlertTriangle, BriefcaseBusiness, CheckCircle2, Lightbulb, Pause, Play,
 import api from '../lib/api';
 import AutosustentoIdeasPanel from './AutosustentoIdeasPanel';
 import SustainabilityCyclePanel from './SustainabilityCyclePanel';
-import LedgerFiatPanel from './LedgerFiatPanel';
 
 type AutosustentoPanelProps = {
   treeId: string;
@@ -413,10 +412,6 @@ export default function AutosustentoPanel({ treeId, isTreeAdmin }: AutosustentoP
 
             <Block title="Excedente de Sostenibilidad">
               <SustainabilityCyclePanel branchId={selected.branchId} isAdmin={isTreeAdmin} />
-            </Block>
-
-            <Block title="Ledger Fiat de la Rama">
-              <LedgerFiatPanel treeId={treeId} branchId={selected.branchId} isAdmin={isTreeAdmin} />
             </Block>
           </div>
         )}

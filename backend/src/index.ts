@@ -14,8 +14,6 @@ import { authenticateJWT } from './middleware/authMiddleware';
 import userRoutes from './routes/userRoutes';
 import treeRoutes from './routes/treeRoutes';
 import needRoutes from './routes/needRoutes';
-import baseNeedRoutes from './routes/baseNeedRoutes';
-import ideaRoutes from './routes/ideaRoutes';
 import taskRoutes from './routes/taskRoutes';
 import assetRoutes from './routes/assetRoutes';
 import branchRoutes from './routes/branchRoutes';
@@ -35,7 +33,6 @@ import migrationRoutes from './routes/migrationRoutes';
 import skillRoutes from './routes/skillRoutes';
 import recruitmentRoutes from './routes/recruitmentRoutes';
 import privacySettingsRoutes from './routes/privacySettingsRoutes';
-import eventLogRoutes from './routes/eventLogRoutes';
 import fileRoutes from './routes/fileRoutes';
 import evidenceRoutes from './routes/evidenceRoutes';
 import exportRoutes from './routes/exportRoutes';
@@ -46,16 +43,11 @@ import sustainabilityCycleRoutes from './routes/sustainabilityCycleRoutes';
 import branchOsLedgerRoutes from './routes/branchOsLedgerRoutes';
 import berryFlowRoutes from './routes/berryFlowRoutes';
 import insightRoutes from './routes/insightRoutes';
-import expertEndorsementRoutes from './routes/expertEndorsementRoutes';
 import externalCandidateRoutes from './routes/externalCandidateRoutes';
 import financingRoutes from './routes/financingRoutes';
-import subscriptionRoutes from './routes/subscriptionRoutes';
 import receiptRoutes from './routes/receiptRoutes';
-import escrowRoutes from './routes/escrowRoutes';
-import disputeRoutes from './routes/disputeRoutes';
 import publicRoutes from './routes/publicRoutes';
 import pingRoutes from './routes/pingRoutes';
-import aiCouncilRoutes from './routes/aiCouncilRoutes';
 import { listMyEvaluations } from './controllers/externalCandidateController';
 import { startCronJobs } from './cron/weeklyResolution';
 import { startMonthlyJob } from './cron/monthlyEconomy';
@@ -63,26 +55,15 @@ import { startMaterialFallbackJob } from './cron/materialFallback';
 import { startXpDecayCron } from './cron/xpDecay';
 import { startCorruptionCheckCron } from './cron/corruptionCheck';
 import { startSkillPercentileCron } from './cron/skillPercentile';
-import { startSkillInfluenceCron } from './cron/skillInfluenceCron';
-import { startQuorumTimeoutCron } from './cron/quorumTimeoutCron';
-import { startSubscriptionCron } from './cron/subscriptionCron';
-import { startBillingCron } from './cron/billingCron';
-import { startReleaseCron } from './cron/releaseCron';
 import { startTaskMatcherCron } from './cron/taskMatcherCron';
 import { startAIExecutorCron } from './cron/aiExecutorCron';
-import { startBaseNeedReviewCron } from './cron/baseNeedReviewCron';
 import { startMonthlyNeedPointsCron } from './cron/monthlyNeedPointsCron';
-import { startAICouncilAuditCron } from './cron/aiCouncilAuditCron';
-import { startAIDailyInteractionCron } from './cron/aiDailyInteractionCron';
-import { startFeeRecalculationCron } from './cron/feeRecalculation';
 import { startCareerPathGraphCron } from './cron/careerPathGraphCron';
-import { getInfluenceWeight, getTreeInfluences } from './services/skillInfluenceService';
 import aiTaskRoutes from './routes/aiTaskRoutes';
 import aiExecutorRoutes from './routes/aiExecutorRoutes';
 import aiReputationRoutes from './routes/aiReputationRoutes';
 import { aiLeaderboard } from './controllers/aiReputationController';
 import conciergeRoutes from './routes/conciergeRoutes';
-import walletRoutes from './routes/walletRoutes';
 import trustCoreRoutes from './routes/trustCoreRoutes';
 import careerPathRoutes from './routes/careerPathRoutes';
 
@@ -212,9 +193,7 @@ app.get('/api/health', (req, res) => {
 app.use('/api/auth', authRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/trees', treeRoutes);
-app.use('/api/needs', baseNeedRoutes);
 app.use('/api/needs', needRoutes);
-app.use('/api/ideas', ideaRoutes);
 app.use('/api/tasks', taskRoutes);
 app.use('/api/assets', assetRoutes);
 app.use('/api/branches', branchRoutes);
@@ -236,7 +215,6 @@ app.use('/api/migration', migrationRoutes);
 app.use('/api/skills', skillRoutes);
 app.use('/api/recruitment', recruitmentRoutes);
 app.use('/api/privacy-settings', privacySettingsRoutes);
-app.use('/api/event-logs', eventLogRoutes);
 app.use('/api/exports', exportRoutes);
 app.use('/api', autosustentoBranchRoutes);
 app.use('/api', autosustentoIdeaRoutes);
@@ -244,32 +222,11 @@ app.use('/api', sustainabilityCycleRoutes);
 app.use('/api', branchOsLedgerRoutes);
 app.use('/api', berryFlowRoutes);
 app.use('/api', insightRoutes);
-app.use('/api/expert-endorsements', expertEndorsementRoutes);
 app.use('/api/external-candidates', externalCandidateRoutes);
 app.use('/api/trees/:id/financing', authenticateJWT, financingRoutes);
-app.use('/api/trees/:id/members/:memberId', authenticateJWT, subscriptionRoutes);
 app.use('/api/payments', authenticateJWT, receiptRoutes);
-app.use('/api/escrow', authenticateJWT, escrowRoutes);
-app.use('/api', authenticateJWT, disputeRoutes);
 app.use('/api/ping', pingRoutes);
-app.use('/api', aiCouncilRoutes);
 app.get('/api/evaluations/mine', authenticateJWT, listMyEvaluations);
-app.get('/api/trees/:treeId/influence', authenticateJWT, async (req: any, res: any) => {
-  try {
-    const influences = await getTreeInfluences(req.params.treeId);
-    res.json(influences);
-  } catch (err: any) {
-    res.status(500).json({ error: 'Failed to fetch influences' });
-  }
-});
-app.get('/api/trees/:treeId/influence/:skillTag', authenticateJWT, async (req: any, res: any) => {
-  try {
-    const weight = await getInfluenceWeight(req.params.treeId, req.params.skillTag);
-    res.json({ treeId: req.params.treeId, skillTag: req.params.skillTag, finalInfluence: weight });
-  } catch (err: any) {
-    res.status(500).json({ error: 'Failed to fetch influence' });
-  }
-});
 app.use('/api', externalNeedRoutes);
 
 // AI Task matching routes (mount on /api/trees/:treeId to capture treeId param)
@@ -285,9 +242,6 @@ app.get('/api/trees/:id/ai/leaderboard', authenticateJWT, aiLeaderboard);
 // Concierge — tree setup wizard
 app.use('/api/concierge', conciergeRoutes);
 
-// Wallet — unified fiat + berries balance + subscriptions
-app.use('/api/wallet', walletRoutes);
-
 // TrustCore Fee Protocol — tree opt-in, admin, config, withdrawal
 app.use('/api', trustCoreRoutes);
 
@@ -300,18 +254,9 @@ startMaterialFallbackJob();
 startXpDecayCron();
 startCorruptionCheckCron();
 startSkillPercentileCron();
-startSkillInfluenceCron();
-startQuorumTimeoutCron();
-startSubscriptionCron();
-startBillingCron();
-startReleaseCron();
 startTaskMatcherCron();
 startAIExecutorCron();
-startBaseNeedReviewCron();
 startMonthlyNeedPointsCron();
-startAICouncilAuditCron();
-startAIDailyInteractionCron();
-startFeeRecalculationCron();
 startCareerPathGraphCron();
 
 // Bootstrap database schema, then start server

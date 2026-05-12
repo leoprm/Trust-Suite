@@ -3,22 +3,12 @@ import api from '../lib/api';
 import { useAuthStore } from '../store/authStore';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useTranslation } from 'react-i18next';
-import { Lightbulb, ChevronDown, ChevronUp, GitBranch, Check, X, Plus, Edit2, Trash2 } from 'lucide-react';
-import IdeaModal from './IdeaModal';
-import IdeasPanel from './IdeasPanel';
+import { GitBranch, Check, X, Plus, Edit2, Trash2 } from 'lucide-react';
 import { useTreeStore } from '../store/treeStore';
 import { OptimizedText } from './OptimizedText';
 
-interface IdeaModalState {
-  open: boolean;
-  needId: string;
-  needTitle: string;
-}
-
 export default function Feed({ treeId }: { treeId?: string }) {
   const [needs, setNeeds] = useState<any[]>([]);
-  const [ideaModal, setIdeaModal] = useState<IdeaModalState>({ open: false, needId: '', needTitle: '' });
-  const [expandedNeedId, setExpandedNeedId] = useState<string | null>(null);
   const [fundingNeedId, setFundingNeedId] = useState<string | null>(null);
   const [fundAmount, setFundAmount] = useState<string>('');
   const settings = useTreeStore(state => state.settings);
@@ -65,24 +55,6 @@ export default function Feed({ treeId }: { treeId?: string }) {
     }
   };
 
-  const openIdeaModal = (needId: string, needTitle: string) => {
-    setIdeaModal({ open: true, needId, needTitle });
-  };
-
-  const closeIdeaModal = () => {
-    setIdeaModal({ open: false, needId: '', needTitle: '' });
-  };
-
-  const submitIdea = async (title: string, description: string, resources: Record<string, any>) => {
-    await api.post(`/ideas`, { needId: ideaModal.needId, title, description, ...resources });
-    fetchNeeds();
-    setExpandedNeedId(ideaModal.needId);
-  };
-
-  const toggleIdeasPanel = (needId: string) => {
-    setExpandedNeedId(prev => (prev === needId ? null : needId));
-  };
-
   const [editingNeedId, setEditingNeedId] = useState<string | null>(null);
   const [editTitle, setEditTitle] = useState('');
   const [editDescription, setEditDescription] = useState('');
@@ -92,7 +64,7 @@ export default function Feed({ treeId }: { treeId?: string }) {
     try {
       await api.delete(`/needs/${id}`);
       fetchNeeds();
-      useAuthStore.getState().fetchUser(); // Refresh points
+      useAuthStore.getState().fetchUser();
     } catch (e: any) {
       alert(e.response?.data?.error || 'Failed to delete need');
     }
@@ -116,21 +88,12 @@ export default function Feed({ treeId }: { treeId?: string }) {
 
   return (
     <>
-      {ideaModal.open && (
-        <IdeaModal
-          needTitle={ideaModal.needTitle}
-          onSubmit={submitIdea}
-          onClose={closeIdeaModal}
-        />
-      )}
-
       <div className="flex-col gap-4 w-full">
         {needs.length === 0 && (
           <p style={{ color: 'var(--text-secondary)' }}>{t('dashboard.no_needs')}</p>
         )}
 
         {needs.map((need, idx) => {
-          const isExpanded = expandedNeedId === need.id;
           const userMembership = getNeedMembership(need);
           const isNeedMember = !!userMembership;
           const isNeedVerified = userMembership?.status === 'VERIFIED';
@@ -225,7 +188,6 @@ export default function Feed({ treeId }: { treeId?: string }) {
                       onClick={e => {
                         e.preventDefault();
                         document.getElementById(`branch-${need.branchId}`)?.scrollIntoView({ behavior: 'smooth' });
-                        // fallback: scroll to branches section
                         document.querySelector('.branches-section')?.scrollIntoView({ behavior: 'smooth' });
                       }}
                       style={{
@@ -237,34 +199,13 @@ export default function Feed({ treeId }: { treeId?: string }) {
                       <GitBranch size={13} /> Ver {settings.dictionary.branchName}
                     </a>
                   )}
-                  {/* Ideas toggle button */}
-                  <button
-                    className="btn btn-outline"
-                    style={{
-                      padding: '0.4rem 0.8rem',
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: '0.4rem',
-                      color: isExpanded ? 'var(--accent-warning)' : undefined,
-                      borderColor: isExpanded ? 'var(--accent-warning)' : undefined,
-                    }}
-                    onClick={() => toggleIdeasPanel(need.id)}
-                  >
-                    <Lightbulb size={14} fill={isExpanded ? 'var(--accent-warning)' : 'none'} />
-                    {t('ideas_panel.ideas_btn', { count: need._count?.ideas || 0 })}
-                    {isExpanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-                  </button>
 
                   {isNeedMember && (
                     <>
                       {isNeedVerified ? (
-                        <button
-                          className="btn btn-outline"
-                          style={{ padding: '0.4rem 0.8rem' }}
-                          onClick={() => openIdeaModal(need.id, need.title)}
-                        >
-                          {t('feed.idea_button')}
-                        </button>
+                        <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginRight: '0.5rem' }}>
+                          {t('feed.verified_member')}
+                        </span>
                       ) : (
                         <span style={{ fontSize: '0.8rem', color: 'var(--accent-warning)', fontStyle: 'italic', marginRight: '0.5rem' }} title="Comunidad requiere validación de identidad (Prueba de Trabajo)">
                           Rito Pendiente ⏳
@@ -322,11 +263,6 @@ export default function Feed({ treeId }: { treeId?: string }) {
                   )}
                 </div>
               </div>
-
-              {/* Ideas expansion panel */}
-              <AnimatePresence>
-                {isExpanded && <IdeasPanel key={need.id} needId={need.id} />}
-              </AnimatePresence>
             </motion.div>
           );
         })}

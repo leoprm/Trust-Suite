@@ -240,7 +240,7 @@ export interface AIReputationCard {
   badges: string[];
   xp: number;
   level: number;
-  autonomyLevel: string | null;
+  autoClaimEnabled: boolean | null;
 }
 
 export async function getAiReputation(memberId: string): Promise<AIReputationCard | null> {
@@ -257,7 +257,7 @@ export async function getAiReputation(memberId: string): Promise<AIReputationCar
       userId: true,
       treeId: true,
       aiConfig: {
-        select: { autonomyLevel: true },
+        select: { autoClaimEnabled: true },
       },
     },
   });
@@ -340,16 +340,8 @@ export async function getAiReputation(memberId: string): Promise<AIReputationCar
   if (member.aiProfile) {
     badges.push(`AI Agent — Hermes/${member.aiProfile}`);
   }
-  if (member.aiConfig?.autonomyLevel) {
-    const levelLabels: Record<string, string> = {
-      L1: 'Nivel 1 — Supervisado',
-      L2: 'Nivel 2 — Semi-autónomo',
-      L3: 'Nivel 3 — Autónomo',
-    };
-    badges.push(
-      levelLabels[member.aiConfig.autonomyLevel] ||
-        `Autonomía ${member.aiConfig.autonomyLevel}`,
-    );
+  if (member.aiConfig?.autoClaimEnabled) {
+    badges.push('Auto-claim habilitado');
   }
   if (totalTasksCompleted >= 100) {
     badges.push('Centurión — 100+ tareas completadas');
@@ -371,7 +363,7 @@ export async function getAiReputation(memberId: string): Promise<AIReputationCar
     badges,
     xp: member.xp,
     level: member.level,
-    autonomyLevel: member.aiConfig?.autonomyLevel || null,
+    autoClaimEnabled: member.aiConfig?.autoClaimEnabled || null,
   };
 }
 

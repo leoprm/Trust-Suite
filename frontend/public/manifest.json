@@ -1,7 +1,7 @@
 {
-  "name": "Trust Lite",
-  "short_name": "Trust Lite",
-  "description": "Multi-platform collaboration platform",
+  "name": "Trust Maker",
+  "short_name": "Trust Maker",
+  "description": "Plataforma de confianza organizacional descentralizada",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#1c1654",

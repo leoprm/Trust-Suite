@@ -1,6 +1,6 @@
 import { prisma } from '../index';
 
-export type VisibilityLevel = 'PRIVATE' | 'TREE_ONLY' | 'TRUST_NETWORK' | 'PUBLIC';
+export type VisibilityLevel = 'TREE_ONLY' | 'PUBLIC';
 
 export interface PrivacySettingsShape {
   id?: string;
@@ -14,12 +14,12 @@ export interface PrivacySettingsShape {
   updatedAt?: Date;
 }
 
-export const VISIBILITY_LEVELS: VisibilityLevel[] = ['PRIVATE', 'TREE_ONLY', 'TRUST_NETWORK', 'PUBLIC'];
+export const VISIBILITY_LEVELS: VisibilityLevel[] = ['TREE_ONLY', 'PUBLIC'];
 
 export const DEFAULT_PRIVACY_SETTINGS = {
   traceProfileVisibility: 'TREE_ONLY' as VisibilityLevel,
-  taskHistoryVisibility: 'PRIVATE' as VisibilityLevel,
-  evidenceVisibility: 'PRIVATE' as VisibilityLevel,
+  taskHistoryVisibility: 'TREE_ONLY' as VisibilityLevel,
+  evidenceVisibility: 'TREE_ONLY' as VisibilityLevel,
   showInTalentSearch: false,
   allowAggregatedMetrics: true,
 };
@@ -86,13 +86,9 @@ export async function canViewUserPrivacyLevel(options: {
   switch (level) {
     case 'PUBLIC':
       return true;
-    case 'TRUST_NETWORK':
-      return !!viewerId;
     case 'TREE_ONLY':
-      return !!viewerId && hasSharedTree(viewerId, ownerId);
-    case 'PRIVATE':
     default:
-      return false;
+      return !!viewerId && hasSharedTree(viewerId, ownerId);
   }
 }
 

@@ -1,5 +1,18 @@
 import { prisma } from '../index';
-import { getTicketStatus } from './goldenTicketEngine';
+// Inlined from deleted goldenTicketEngine.ts
+async function getTicketStatus(
+  userId: string, treeId: string, skill: string
+): Promise<{ tickets: number; streakProgress: number }> {
+  const membership = await (prisma as any).treeMember.findUnique({
+    where: { userId_treeId: { userId, treeId } },
+    select: { goldenTickets: true },
+  });
+  if (!membership) return { tickets: 0, streakProgress: 0 };
+  let ticketMap: Record<string, any> = {};
+  try { ticketMap = JSON.parse(membership.goldenTickets || '{}'); } catch { /* empty */ }
+  const data = ticketMap[skill] || { tickets: 0, streakTaskIds: [] };
+  return { tickets: data.tickets, streakProgress: data.streakTaskIds?.length || 0 };
+}
 import { getHashtagPhase } from './genesisPhase';
 
 /**

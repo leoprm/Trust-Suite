@@ -19,7 +19,7 @@ async function requireTreeAdmin(treeId: string, userId: string) {
   return { tree };
 }
 
-// ── Financing Config ───────────────────────────────────────────────────────
+// ── Financing Config (solo GRATUITO) ────────────────────────────────────────
 
 export const getFinancingConfig = async (req: any, res: Response) => {
   try {
@@ -30,10 +30,6 @@ export const getFinancingConfig = async (req: any, res: Response) => {
         id: true,
         name: true,
         financingMode: true,
-        subscriptionAmount: true,
-        subscriptionCurrency: true,
-        subscriptionDayOfMonth: true,
-        subscriptionBillingMode: true,
       },
     });
 
@@ -49,43 +45,23 @@ export const updateFinancingConfig = async (req: any, res: Response) => {
   try {
     const treeId = req.params.id;
     const userId = req.user!.id;
-    const { financingMode, subscriptionAmount, subscriptionCurrency, subscriptionDayOfMonth, subscriptionBillingMode } = req.body;
+    const { financingMode } = req.body;
 
     const { tree: t, error, status } = await requireTreeAdmin(treeId, userId);
     if (error) return res.status(status!).json({ error });
     const tree = t!;
 
-    // Validaciones de negocio (maturity gates eliminados — todos los modos son libremente seleccionables)
-    if (financingMode === 'SUBSCRIPCION') {
-      if (!subscriptionBillingMode || subscriptionBillingMode === 'FIXED') {
-        if (subscriptionAmount === undefined || subscriptionAmount === null || subscriptionAmount <= 0) {
-          return res.status(400).json({ error: 'subscriptionAmount debe ser mayor a 0 en modo SUBSCRIPCION con billing FIXED' });
-        }
-      }
-    }
-
-    if (subscriptionBillingMode && !['FIXED', 'PROPORTIONAL'].includes(subscriptionBillingMode)) {
-      return res.status(400).json({ error: 'subscriptionBillingMode debe ser FIXED o PROPORTIONAL' });
-    }
-
-    if (subscriptionDayOfMonth !== undefined && (subscriptionDayOfMonth < 1 || subscriptionDayOfMonth > 28)) {
-      return res.status(400).json({ error: 'subscriptionDayOfMonth debe estar entre 1 y 28' });
+    // Solo GRATUITO permitido
+    if (financingMode !== undefined && financingMode !== 'GRATUITO') {
+      return res.status(400).json({ error: 'Solo el modo GRATUITO está disponible' });
     }
 
     const beforeJson = {
       financingMode: tree.financingMode,
-      subscriptionAmount: tree.subscriptionAmount,
-      subscriptionCurrency: tree.subscriptionCurrency,
-      subscriptionDayOfMonth: tree.subscriptionDayOfMonth,
-      subscriptionBillingMode: tree.subscriptionBillingMode,
     };
 
     const updateData: any = {};
     if (financingMode !== undefined) updateData.financingMode = financingMode;
-    if (subscriptionAmount !== undefined) updateData.subscriptionAmount = subscriptionAmount;
-    if (subscriptionCurrency !== undefined) updateData.subscriptionCurrency = subscriptionCurrency;
-    if (subscriptionDayOfMonth !== undefined) updateData.subscriptionDayOfMonth = subscriptionDayOfMonth;
-    if (subscriptionBillingMode !== undefined) updateData.subscriptionBillingMode = subscriptionBillingMode;
 
     const updated = await prisma.tree.update({
       where: { id: treeId },
@@ -94,10 +70,6 @@ export const updateFinancingConfig = async (req: any, res: Response) => {
         id: true,
         name: true,
         financingMode: true,
-        subscriptionAmount: true,
-        subscriptionCurrency: true,
-        subscriptionDayOfMonth: true,
-        subscriptionBillingMode: true,
       },
     });
 
@@ -111,10 +83,6 @@ export const updateFinancingConfig = async (req: any, res: Response) => {
       beforeJson,
       afterJson: {
         financingMode: updated.financingMode,
-        subscriptionAmount: updated.subscriptionAmount,
-        subscriptionCurrency: updated.subscriptionCurrency,
-        subscriptionDayOfMonth: updated.subscriptionDayOfMonth,
-        subscriptionBillingMode: updated.subscriptionBillingMode,
       },
       metadataJson: getRequestMetadata(req, { result: 'success' }),
       source: 'USER',
@@ -279,28 +247,6 @@ export const updateExpense = async (req: any, res: Response) => {
     res.json(updated);
   } catch (error) {
     res.status(500).json({ error: 'Failed to update expense' });
-  }
-};
-
-// ── Maturity Gates ──────────────────────────────────────────────────────────
-
-export const getMaturityGates = async (req: any, res: Response) => {
-  try {
-    const treeId = req.params.id;
-    const { getMaturityGateStatus, getProportionalGateDetails } = await import('../services/maturityGates');
-
-    const tree = await prisma.tree.findUnique({ where: { id: treeId }, select: { id: true } });
-    if (!tree) return res.status(404).json({ error: 'Tree not found' });
-
-    const status = await getMaturityGateStatus(treeId);
-    const proportional = await getProportionalGateDetails(treeId);
-
-    res.json({
-      ...status,
-      proportionalBilling: proportional,
-    });
-  } catch (error) {
-    res.status(500).json({ error: 'Failed to get maturity gates' });
   }
 };
 

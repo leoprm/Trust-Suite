@@ -21,7 +21,7 @@ export const BLOCKED_EXTENSIONS = new Set([
   '.exe', '.sh', '.bat', '.cmd', '.js', '.ts', '.html', '.htm', '.svg', '.php', '.jar', '.zip',
 ]);
 
-export type EvidenceVisibility = 'PRIVATE' | 'TASK_PARTICIPANTS' | 'TREE_ONLY' | 'TRUST_NETWORK' | 'PUBLIC_METADATA' | 'PUBLIC';
+export type EvidenceVisibility = 'TREE_ONLY' | 'PUBLIC';
 
 export function ensureUploadRoot() {
   fs.mkdirSync(UPLOAD_ROOT, { recursive: true });
@@ -99,7 +99,6 @@ export async function canAccessEvidenceFile(file: any, req: Request): Promise<bo
   if (viewerRole === 'ADMINISTRATOR') return true;
   if (file.status !== 'ACTIVE') return false;
   if (file.visibility === 'PUBLIC') return true;
-  if (file.visibility === 'TRUST_NETWORK') return Boolean(viewerId);
   if (!viewerId) return false;
   if (file.uploaderId === viewerId) return true;
 
@@ -125,9 +124,6 @@ export async function canAccessEvidenceFile(file: any, req: Request): Promise<bo
     if (membership && file.visibility === 'TREE_ONLY') return true;
   }
 
-  if (file.visibility === 'TASK_PARTICIPANTS') return false;
-  if (file.visibility === 'PUBLIC_METADATA') return false;
-  if (file.visibility === 'PRIVATE') return false;
   return false;
 }
 

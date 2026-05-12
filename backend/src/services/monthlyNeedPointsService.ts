@@ -31,7 +31,7 @@ export async function renewAllNeedPoints(): Promise<{ renewed: number }> {
       where: {
         userId: m.userId,
         treeId: m.treeId,
-        need: { status: { in: ['ACTIVE', 'IN_PROGRESS', 'SEDIMENTED'] } },
+        need: { status: { in: ['OPEN', 'IN_PROGRESS'] } },
       },
       select: { points: true },
     });

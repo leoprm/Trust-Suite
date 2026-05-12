@@ -20,7 +20,6 @@ interface AuthState {
   login: (user: User, token: string) => void;
   logout: () => void;
   fetchUser: () => Promise<void>;
-  crossLogin: (crossToken: string) => Promise<boolean>;
   setInstallPromptVisible: (visible: boolean) => void;
 }
 
@@ -59,19 +58,6 @@ export const useAuthStore = create<AuthState>((set) => {
         set({ user: null, token: null, isAuthenticated: false, isInitialLoading: false });
       }
     },
-
-    crossLogin: async (crossToken: string) => {
-    try {
-      const { data } = await api.post('/auth/cross-login', { crossToken });
-      const { token, user } = data;
-      localStorage.setItem('token', token);
-      localStorage.setItem('user', JSON.stringify(user));
-      set({ user, token, isAuthenticated: true, isInitialLoading: false });
-      return true;
-    } catch {
-      return false;
-    }
-  },
 
   setInstallPromptVisible: (visible: boolean) => {
       set({ isInstallPromptVisible: visible });

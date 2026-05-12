@@ -1,4 +1,4 @@
-const CACHE_NAME = 'trust-lite-v2';
+const CACHE_NAME = 'trust-maker-v1';
 const ASSETS_TO_CACHE = [
   '/',
   '/index.html',
@@ -32,9 +32,8 @@ self.addEventListener('activate', (event) => {
 });
 
 self.addEventListener('fetch', (event) => {
-  // Only cache GET requests for our base assets
   if (event.request.method !== 'GET') return;
-  
+
   event.respondWith(
     caches.match(event.request).then((response) => {
       return response || fetch(event.request);

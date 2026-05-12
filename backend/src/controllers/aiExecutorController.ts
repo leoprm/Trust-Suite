@@ -102,10 +102,10 @@ export async function webhookDelivery(req: Request, res: Response) {
       }
     });
 
-    // Reset fail count
+    // Reset quota on success
     await prisma.aIMemberConfig.update({
       where: { treeMemberId: execution.aiMemberId },
-      data: { aiFailCount: 0, aiLastFailedAt: null },
+      data: { quotaUsed: 0 },
     }).catch(() => {}); // Config might not exist
 
     // Log

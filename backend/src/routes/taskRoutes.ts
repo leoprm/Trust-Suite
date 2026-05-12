@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { createTask, assignTask, completeTask, getPendingTasks, approveTaskEvidence, createExpressTask, checkEliteForTask } from '../controllers/taskController';
+import { createTask, assignTask, completeTask, getPendingTasks, approveTaskEvidence, createExpressTask } from '../controllers/taskController';
 import { authenticateJWT } from '../middleware/authMiddleware';
 import { upload } from '../middleware/upload';
 import { uploadTaskEvidence } from '../controllers/uploadController';
@@ -20,15 +20,7 @@ router.post('/:id/evidence',
   uploadTaskEvidence
 );
 router.post('/:id/assign', assignTask);
-router.get('/:id/elite-check', checkEliteForTask);
 router.post('/:id/complete', completeTask);
 router.put('/:id/approve-evidence', approveTaskEvidence);
-
-// Difficulty voting
-import { submitDifficultyVote, toggleDifficultyVoteLike, submitAudit, submitCivicAudit } from '../controllers/taskController';
-router.post('/:id/difficulty-vote', submitDifficultyVote);
-router.post('/difficulty-votes/:voteId/like', toggleDifficultyVoteLike);
-router.post('/:id/audit', submitAudit);
-router.post('/:id/civic-audit', submitCivicAudit);
 
 export default router;

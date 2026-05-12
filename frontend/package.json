@@ -1,20 +1,11 @@
 {
-  "name": "trust-lite",
+  "name": "trust-maker",
   "private": true,
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "vite --host --mode trust-lite",
-    "dev:trust": "vite --host --mode trust-lite",
-    "dev:branch": "vite --host --mode branch-os",
-    "dev:trace": "vite --host --mode trace-lite",
-    "dev:insight": "vite --host --mode trust-insight",
-    "build": "npm run build:trust",
-    "build:trust": "vite build --mode trust-lite",
-    "build:branch": "vite build --mode branch-os",
-    "build:trace": "vite build --mode trace-lite",
-    "build:insight": "vite build --mode trust-insight",
-    "build:all": "npm run build:trust && npm run build:branch && npm run build:trace && npm run build:insight",
+    "dev": "vite --host",
+    "build": "vite build",
     "typecheck": "tsc -b",
     "lint": "eslint .",
     "preview": "vite preview"

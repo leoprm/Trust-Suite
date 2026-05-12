@@ -1,6 +1,28 @@
 import { Request, Response } from 'express';
 import { prisma } from '../index';
-import { calculateConsensusValue } from '../utils/consensusEngine';
+// Inlined from deleted consensusEngine.ts
+interface ConsensusResult {
+  quorumReached: boolean;
+  requiredVotes: number;
+  newValue: number | null;
+}
+function calculateConsensusValue(totalTreeUsers: number, votes: number[]): ConsensusResult {
+  if (totalTreeUsers <= 0) return { quorumReached: false, requiredVotes: 0, newValue: null };
+  let requiredPercentage = 0;
+  if (totalTreeUsers <= 25) requiredPercentage = 33;
+  else if (totalTreeUsers < 100) requiredPercentage = 33 - ((33 - 10) / (100 - 25)) * (totalTreeUsers - 25);
+  else requiredPercentage = 10;
+  let requiredVotes = Math.ceil(totalTreeUsers * (requiredPercentage / 100));
+  if (totalTreeUsers > 2 && requiredVotes < 2) requiredVotes = 2;
+  else if (totalTreeUsers <= 2) requiredVotes = totalTreeUsers;
+  const quorumReached = votes.length >= requiredVotes;
+  if (!quorumReached || votes.length === 0) return { quorumReached, requiredVotes, newValue: null };
+  let calculableVotes = [...votes];
+  if (calculableVotes.length >= 5) { calculableVotes.sort((a, b) => a - b); calculableVotes.shift(); calculableVotes.pop(); }
+  const sum = calculableVotes.reduce((acc, curr) => acc + curr, 0);
+  const newValue = Math.round((sum / calculableVotes.length) * 10) / 10;
+  return { quorumReached, requiredVotes, newValue };
+}
 import { redistributeTreeBudget } from '../utils/economicEngine';
 import { syncBerriesBalance } from '../utils/berriesEngine';
 import { canViewUserPrivacyLevel, redactTaskEvidenceFields, withDefaultPrivacySettings } from '../utils/privacy';
@@ -290,11 +312,10 @@ export const createHashtagBranch = async (req: any, res: Response) => {
       });
 
       if (!need) return res.status(404).json({ error: 'Source Need not found' });
-      if (need.auditStatus !== 'APPROVED') return res.status(400).json({ error: 'Source Need must be APPROVED before creating a hashtag branch from it' });
+      // v2: no auditStatus field — any need can be source
 
-      // Verify need belongs to this tree
-      const linked = need.treeLinks.some((tl: any) => tl.treeId === treeId);
-      if (!linked) return res.status(400).json({ error: 'Source Need is not linked to this tree' });
+      // Verify need belongs to this tree (v2: direct treeId)
+      if (need.treeId !== treeId) return res.status(400).json({ error: 'Source Need is not linked to this tree' });
 
       // Auto-generate name from Need title if no name provided
       if (!name) {
@@ -308,11 +329,8 @@ export const createHashtagBranch = async (req: any, res: Response) => {
         branchName = `#${slug}`;
       }
 
-      // Build description from Need
-      const refsText = need.externalReferences && Array.isArray(need.externalReferences)
-        ? '\n\nReferencias:\n' + (need.externalReferences as any[]).map((r: any) => `- ${r.title}: ${r.url}`).join('\n')
-        : '';
-      branchDescription = `${need.description}${refsText}`;
+      // Build description from Need (v2: no externalReferences)
+      branchDescription = need.description;
 
       linkedNeedId = sourceNeedId;
     }

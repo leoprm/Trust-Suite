@@ -1,12 +1,11 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { Users, Wallet, Activity, GitBranch, LogOut, ArrowLeft, X, UserPlus, PlusCircle, Link, Copy, Check, AlertTriangle, Download, BriefcaseBusiness, UserCheck, FileDown, Loader2, DollarSign } from 'lucide-react';
+import { Users, Wallet, Activity, GitBranch, LogOut, ArrowLeft, X, UserPlus, PlusCircle, Link, Copy, Check, AlertTriangle, Download, BriefcaseBusiness, FileDown, Loader2, DollarSign } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useTranslation } from 'react-i18next';
 import { useAuthStore } from '../store/authStore';
 import { useTreeStore } from '../store/treeStore';
 import api from '../lib/api';
-import FinancialDashboard from '../components/FinancialDashboard';
 import ExternalNeedsPanel from '../components/ExternalNeedsPanel';
 import AutosustentoPanel from '../components/AutosustentoPanel';
 import Feed from '../components/Feed';
@@ -15,16 +14,10 @@ import InvitationModal from '../components/InvitationModal';
 import PendingEvidenceList from '../components/PendingEvidenceList';
 import ExpressTaskModal from '../components/ExpressTaskModal';
 import HashtagGovernanceModal from '../components/HashtagGovernanceModal';
-import { Zap, Hash, Droplets, Telescope } from 'lucide-react';
+import { Zap, Hash, Droplets } from 'lucide-react';
 import { downloadJsonExport, downloadPdfExport } from '../lib/downloadExport';
 import BerryWalletPanel from '../components/BerryWalletPanel';
-import InsightPanel from '../components/InsightPanel';
-import ExternalCandidatePanel from '../components/ExternalCandidatePanel';
-import FinancingSettingsPanel from '../components/FinancingSettingsPanel';
-import TreeExpenseList from '../components/TreeExpenseList';
-import MaturityGatesCard from '../components/MaturityGatesCard';
 import MemberPaymentDashboard from '../components/MemberPaymentDashboard';
-import TrustCoreSettingsPanel from '../components/TrustCoreSettingsPanel';
 
 export default function TreeDetail() {
   const { id } = useParams();
@@ -38,7 +31,7 @@ export default function TreeDetail() {
   const isMember = !!membership;
   const isVerified = membership?.status === 'VERIFIED';
   const isTreeAdmin = isMember && ((membership as any)?.role === 'ADMIN' || tree?.creatorId === currentUser?.id);
-  const [activeTab, setActiveTab] = useState<'DASHBOARD' | 'FINANCES' | 'AUTOSUSTENTO' | 'EXTERNAL_NEEDS' | 'MEMBERS' | 'BERRIES' | 'INSIGHT' | 'CANDIDATES' | 'FINANCING'>('DASHBOARD');
+  const [activeTab, setActiveTab] = useState<'DASHBOARD' | 'AUTOSUSTENTO' | 'EXTERNAL_NEEDS' | 'MEMBERS' | 'BERRIES'>('DASHBOARD');
   const [loading, setLoading] = useState(true);
   const [members, setMembers] = useState<any[]>([]);
   const [loadingMembers, setLoadingMembers] = useState(false);
@@ -487,20 +480,6 @@ export default function TreeDetail() {
         >
           <Activity size={18} /> Resumen
         </button>
-        {settings.modules.fiat.enabled && isMember && (
-          <button 
-            onClick={() => setActiveTab('FINANCES')}
-            className="btn"
-            style={{ 
-              background: 'none', border: 'none', 
-              borderBottom: activeTab === 'FINANCES' ? '2px solid var(--accent-primary)' : '2px solid transparent',
-              color: activeTab === 'FINANCES' ? 'var(--text-primary)' : 'var(--text-secondary)',
-              borderRadius: 0, padding: '1rem 0.5rem'
-            }}
-          >
-            <Wallet size={18} /> Finanzas
-          </button>
-        )}
         {isMember && (
           <button
             onClick={() => setActiveTab('AUTOSUSTENTO')}
@@ -529,34 +508,6 @@ export default function TreeDetail() {
             <BriefcaseBusiness size={18} /> Externas
           </button>
         )}
-        {isTreeAdmin && (
-          <button
-            onClick={() => setActiveTab('CANDIDATES')}
-            className="btn"
-            style={{
-              background: 'none', border: 'none',
-              borderBottom: activeTab === 'CANDIDATES' ? '2px solid var(--accent-primary)' : '2px solid transparent',
-              color: activeTab === 'CANDIDATES' ? 'var(--text-primary)' : 'var(--text-secondary)',
-              borderRadius: 0, padding: '1rem 0.5rem'
-            }}
-          >
-            <UserCheck size={18} /> Candidatos
-          </button>
-        )}
-        {isTreeAdmin && (
-          <button
-            onClick={() => setActiveTab('FINANCING')}
-            className="btn"
-            style={{
-              background: 'none', border: 'none',
-              borderBottom: activeTab === 'FINANCING' ? '2px solid var(--accent-primary)' : '2px solid transparent',
-              color: activeTab === 'FINANCING' ? 'var(--text-primary)' : 'var(--text-secondary)',
-              borderRadius: 0, padding: '1rem 0.5rem'
-            }}
-          >
-            <DollarSign size={18} /> Financiamiento
-          </button>
-        )}
         <button 
           onClick={() => setActiveTab('MEMBERS')}
           className="btn"
@@ -581,20 +532,6 @@ export default function TreeDetail() {
             }}
           >
             <Droplets size={18} /> Berries
-          </button>
-        )}
-        {isMember && (
-          <button
-            onClick={() => setActiveTab('INSIGHT')}
-            className="btn"
-            style={{
-              background: 'none', border: 'none',
-              borderBottom: activeTab === 'INSIGHT' ? '2px solid var(--accent-primary)' : '2px solid transparent',
-              color: activeTab === 'INSIGHT' ? 'var(--text-primary)' : 'var(--text-secondary)',
-              borderRadius: 0, padding: '1rem 0.5rem'
-            }}
-          >
-            <Telescope size={18} /> Insight
           </button>
         )}
       </div>
@@ -679,10 +616,6 @@ export default function TreeDetail() {
         </div>
       )}
 
-      {activeTab === 'FINANCES' && (
-        <FinancialDashboard treeId={id!} isTreeAdmin={isTreeAdmin} />
-      )}
-
       {activeTab === 'AUTOSUSTENTO' && (
         <AutosustentoPanel treeId={id!} isTreeAdmin={isTreeAdmin} />
       )}
@@ -693,33 +626,8 @@ export default function TreeDetail() {
         </div>
       )}
 
-      {activeTab === 'INSIGHT' && (
-        <div className="glass-panel" style={{ padding: '1.5rem' }}>
-          <InsightPanel treeId={id!} isAdmin={isTreeAdmin} />
-        </div>
-      )}
-
-      {activeTab === 'CANDIDATES' && (
-        <div className="glass-panel" style={{ padding: '1.5rem' }}>
-          <ExternalCandidatePanel treeId={id!} />
-        </div>
-      )}
-
       {activeTab === 'EXTERNAL_NEEDS' && (
         <ExternalNeedsPanel treeId={id!} isTreeAdmin={isTreeAdmin} />
-      )}
-
-      {activeTab === 'FINANCING' && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
-          <section className="glass-panel" style={{ padding: '1.5rem' }}>
-            <MaturityGatesCard tree={tree} />
-          </section>
-          <FinancingSettingsPanel treeId={id!} />
-          <TrustCoreSettingsPanel treeId={id!} tree={tree} isTreeAdmin={isTreeAdmin} />
-          <section className="glass-panel" style={{ padding: '1.5rem' }}>
-            <TreeExpenseList treeId={id!} />
-          </section>
-        </div>
       )}
 
       {activeTab === 'MEMBERS' && (

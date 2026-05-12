@@ -4,8 +4,8 @@ import {
   TreePine, BarChart3, HandCoins,
   ArrowRight, Loader2,
 } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../store/authStore';
-import { getTrustLiteUrl } from '../config/appConfig';
 import api from '../lib/api';
 
 /* ------------------------------------------------------------------ */
@@ -137,6 +137,7 @@ function HowStep({ icon: Icon, step, title, desc }: { icon: React.ElementType; s
 /* ------------------------------------------------------------------ */
 export default function LandingPage() {
   const isAuthenticated = useAuthStore((s: any) => s.isAuthenticated);
+  const navigate = useNavigate();
   const [metrics, setMetrics] = useState<PublicMetrics | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
@@ -223,23 +224,23 @@ export default function LandingPage() {
             </div>
             <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center' }}>
               {isAuthenticated ? (
-                <a
-                  href={getTrustLiteUrl()}
+                <button
+                  onClick={() => navigate('/')}
                   className="btn btn-primary"
-                  style={{ padding: '0.5rem 1.25rem', fontSize: '0.85rem', textDecoration: 'none' }}
+                  style={{ padding: '0.5rem 1.25rem', fontSize: '0.85rem' }}
                 >
                   Ir al Dashboard
                   <ArrowRight size={16} />
-                </a>
+                </button>
               ) : (
                 <>
-                  <a href={`${getTrustLiteUrl()}/login`} className="btn btn-outline" style={{ padding: '0.5rem 1.25rem', fontSize: '0.85rem', textDecoration: 'none' }}>
+                  <button onClick={() => navigate('/login')} className="btn btn-outline" style={{ padding: '0.5rem 1.25rem', fontSize: '0.85rem' }}>
                     Iniciar sesión
-                  </a>
-                  <a href={`${getTrustLiteUrl()}/login`} className="btn btn-primary" style={{ padding: '0.5rem 1.25rem', fontSize: '0.85rem', textDecoration: 'none' }}>
+                  </button>
+                  <button onClick={() => navigate('/login')} className="btn btn-primary" style={{ padding: '0.5rem 1.25rem', fontSize: '0.85rem' }}>
                     Comenzar
                     <ArrowRight size={16} />
-                  </a>
+                  </button>
                 </>
               )}
             </div>
@@ -268,19 +269,19 @@ export default function LandingPage() {
               </p>
               <div style={{ display: 'flex', gap: '1rem', justifyContent: 'center', flexWrap: 'wrap' }}>
                 {isAuthenticated ? (
-                  <a href={getTrustLiteUrl()} className="btn btn-primary" style={{ padding: '0.85rem 2rem', fontSize: '1rem', textDecoration: 'none' }}>
+                  <button onClick={() => navigate('/')} className="btn btn-primary" style={{ padding: '0.85rem 2rem', fontSize: '1rem' }}>
                     Ir al Dashboard
                     <ArrowRight size={18} />
-                  </a>
+                  </button>
                 ) : (
                   <>
-                    <a href={`${getTrustLiteUrl()}/login`} className="btn btn-primary" style={{ padding: '0.85rem 2rem', fontSize: '1rem', textDecoration: 'none' }}>
+                    <button onClick={() => navigate('/login')} className="btn btn-primary" style={{ padding: '0.85rem 2rem', fontSize: '1rem' }}>
                       Comenzar
                       <ArrowRight size={18} />
-                    </a>
-                    <a href={`${getTrustLiteUrl()}/login`} className="btn btn-outline" style={{ padding: '0.85rem 2rem', fontSize: '1rem', textDecoration: 'none' }}>
+                    </button>
+                    <button onClick={() => navigate('/login')} className="btn btn-outline" style={{ padding: '0.85rem 2rem', fontSize: '1rem' }}>
                       Crear cuenta gratis
-                    </a>
+                    </button>
                   </>
                 )}
               </div>
@@ -423,10 +424,10 @@ export default function LandingPage() {
                 <p style={{ color: 'var(--text-secondary)', fontSize: '1rem', maxWidth: 500, margin: '0 auto 2rem', lineHeight: 1.7 }}>
                   Únete al ecosistema de confianza descentralizada. Comienza gratis, sin compromiso.
                 </p>
-                <a href={`${getTrustLiteUrl()}/login`} className="btn btn-primary" style={{ padding: '0.9rem 2.25rem', fontSize: '1.05rem', textDecoration: 'none' }}>
+                <button onClick={() => navigate('/login')} className="btn btn-primary" style={{ padding: '0.9rem 2.25rem', fontSize: '1.05rem' }}>
                   Comenzar ahora
                   <ArrowRight size={18} />
-                </a>
+                </button>
               </div>
             </section>
           )}
@@ -443,8 +444,8 @@ export default function LandingPage() {
             </div>
             <p>Trust © 2026 — Tecnología para la economía del cuidado</p>
             <div style={{ display: 'flex', gap: '1.5rem', justifyContent: 'center', marginTop: '0.75rem' }}>
-              <a href={`${getTrustLiteUrl()}/login`} style={{ color: 'var(--text-secondary)', textDecoration: 'none' }}>Iniciar sesión</a>
-              <a href={`${getTrustLiteUrl()}/login`} style={{ color: 'var(--text-secondary)', textDecoration: 'none' }}>Registrarse</a>
+              <button onClick={() => navigate('/login')} style={{ color: 'var(--text-secondary)', background: 'none', border: 'none', cursor: 'pointer', fontSize: '0.8rem', fontFamily: 'inherit' }}>Iniciar sesión</button>
+              <button onClick={() => navigate('/login')} style={{ color: 'var(--text-secondary)', background: 'none', border: 'none', cursor: 'pointer', fontSize: '0.8rem', fontFamily: 'inherit' }}>Registrarse</button>
             </div>
           </footer>
         </div>

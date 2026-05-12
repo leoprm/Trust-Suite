@@ -7,6 +7,10 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+enum FinancingMode {
+  GRATUITO
+}
+
 model User {
   id           String   @id @default(uuid())
   username     String   @unique
@@ -36,6 +40,7 @@ model User {
   createdTokens       TokenInvitacion[]
 
   sharingCode                      String                       @unique @default(uuid()) // fallback to uuid if dbgenerated fails in some environments
+  subscriptionActive               Boolean                      @default(false) // suscripción a nivel plataforma
   profilePic                       String? // URL to uploaded profile photo
   publicProfileEnabled             Boolean                      @default(false)
   publicShowLevels                 Boolean                      @default(true)
@@ -74,6 +79,7 @@ model User {
   resolvedEndorsements             ExpertEndorsement[]          @relation("EndorsementResolver")
   assignedCandidates               ExternalCandidate[]          @relation("CandidateAssigner")
   ownedAIs                         TreeMember[]                 @relation("AIOwner")
+  expenses                         TreeExpense[]                @relation("ExpenseAdder")
 }
 
 model UserContact {
@@ -154,9 +160,7 @@ enum Visibility {
 }
 
 enum VisibilityLevel {
-  PRIVATE
   TREE_ONLY
-  TRUST_NETWORK
   PUBLIC
 }
 
@@ -174,11 +178,7 @@ enum EventSource {
 }
 
 enum EvidenceVisibility {
-  PRIVATE
-  TASK_PARTICIPANTS
   TREE_ONLY
-  TRUST_NETWORK
-  PUBLIC_METADATA
   PUBLIC
 }
 
@@ -193,8 +193,8 @@ model PrivacySettings {
   userId                 String          @unique
   user                   User            @relation(fields: [userId], references: [id], onDelete: Cascade)
   traceProfileVisibility VisibilityLevel @default(TREE_ONLY)
-  taskHistoryVisibility  VisibilityLevel @default(PRIVATE)
-  evidenceVisibility     VisibilityLevel @default(PRIVATE)
+  taskHistoryVisibility  VisibilityLevel @default(TREE_ONLY)
+  evidenceVisibility     VisibilityLevel @default(TREE_ONLY)
   showInTalentSearch     Boolean         @default(false)
   allowAggregatedMetrics Boolean         @default(true)
   createdAt              DateTime        @default(now())
@@ -285,6 +285,9 @@ model Tree {
   creacionRamaDirecta     Boolean @default(false)
   creacionRamaComunitaria Boolean @default(true)
 
+  // Financing
+  financingMode FinancingMode @default(GRATUITO)
+
 
   // AI Council
   treeType             TreeType  @default(NORMAL)
@@ -317,8 +320,39 @@ model Tree {
   expertEndorsements        ExpertEndorsement[]
   externalCandidates        ExternalCandidate[]
   skillInfluences           SkillInfluence[]
+  expenses                  TreeExpense[]
+  needs                     Need[]                   @relation("TreeNeeds")
 
   @@index([country, city, sector])
+}
+
+enum ExpenseCategory {
+  OTHER
+  INFRASTRUCTURE
+  SERVICES
+  TOOLS
+  EVENTS
+  LEGAL
+  MARKETING
+}
+
+model TreeExpense {
+  id            String          @id @default(uuid())
+  treeId        String
+  tree          Tree            @relation(fields: [treeId], references: [id], onDelete: Cascade)
+  description   String
+  amount        Float
+  currency      String          @default("CLP")
+  category      ExpenseCategory @default(OTHER)
+  isRecurring   Boolean         @default(false)
+  dueDayOfMonth Int?
+  month         String // "2026-05"
+  addedById     String
+  addedBy       User            @relation("ExpenseAdder", fields: [addedById], references: [id], onDelete: Cascade)
+  createdAt     DateTime        @default(now())
+
+  @@index([treeId])
+  @@index([treeId, month])
 }
 
 model ExternalNeed {
@@ -555,7 +589,7 @@ model EvidenceFile {
   mimeType       String
   extension      String
   sizeBytes      Int
-  visibility     EvidenceVisibility @default(TASK_PARTICIPANTS)
+  visibility     EvidenceVisibility @default(TREE_ONLY)
   status         EvidenceFileStatus @default(ACTIVE)
   checksumSha256 String?
   createdAt      DateTime           @default(now())
@@ -619,24 +653,16 @@ enum AIMemberStatus {
   SUSPENDED
 }
 
-enum AutonomyLevel {
-  L1 // requiere aprobación humana para reclamar Tasks
-  L2 // auto-claim habilitado, deliverables requieren review
-  L3 // completamente autónomo: claim + deliver + release automático
-}
-
 model AIMemberConfig {
-  id                 String        @id @default(uuid())
-  treeMemberId       String        @unique
-  maxConcurrentTasks Int           @default(1)
-  autoClaimEnabled   Boolean       @default(true)
+  id                 String   @id @default(uuid())
+  treeMemberId       String   @unique
+  maxConcurrentTasks Int      @default(1)
+  autoClaimEnabled   Boolean  @default(true)
   allowedPhases      Json? // fases en las que puede trabajar ["DEVELOPMENT", "TESTING"]
   skillOverrides     Json? // skills adicionales que el AI reporta
-  autonomyLevel      AutonomyLevel @default(L1)
-  aiFailCount        Int           @default(0)
-  aiLastFailedAt     DateTime?
-  aiRateLimitedUntil DateTime?
-  createdAt          DateTime      @default(now())
+  quotaUsed          Int      @default(0)
+  quotaLimit         Int      @default(100)
+  createdAt          DateTime @default(now())
 
   treeMember TreeMember @relation(fields: [treeMemberId], references: [id], onDelete: Cascade)
 }
@@ -664,38 +690,19 @@ model AiExecution {
 model Need {
   id                  String     @id @default(uuid())
   creatorId           String
+  treeId              String?    // v2: una necesidad pertenece a UN árbol (nullable for migration)
   title               String
   description         String     @db.Text
   totalPointsAssigned Int        @default(0)
-  pointsAllocated     Int        @default(0) // points currently locked by funders (released on close)
+  pointsAllocated     Int        @default(0)
   failedAttempts      Int        @default(0)
   createdAt           DateTime   @default(now())
-  status              NeedStatus @default(ACTIVE)
+  status              NeedStatus @default(OPEN)
   taskId              String?
   proposesHashtag     Boolean    @default(false)
 
-  // Pipeline thresholds
-  relevanceThresholdMet Boolean   @default(false)
-  relevanceMetAt        DateTime? // when threshold was first met (for timeout tracking)
-  quorumMet             Boolean   @default(false)
-  totalPeopleEquivalent Int       @default(0) // persons * concentration multiplier
-
-  // Base Need (sedimentación a 12 meses)
-  isBase            Boolean   @default(false)
-  sedimentedAt      DateTime?
-  baselineUserCount Int?
-  // Ciclos de revisión trimestral (para decay)
-  lastReviewCycle1  DateTime?
-  lastReviewCycle2  DateTime?
-  userCountCycle1   Int?
-  userCountCycle2   Int?
-
-  // AI Council
-  importanceScore    Float           @default(0)
-  externalReferences Json?
-  auditStatus        NeedAuditStatus @default(PENDING)
-
   creator         User                 @relation("NeedCreator", fields: [creatorId], references: [id])
+  tree            Tree?                @relation("TreeNeeds", fields: [treeId], references: [id])
   task            Task?                @relation(fields: [taskId], references: [id])
   treeLinks       NeedTree[]
   fundings        NeedFunding[]
@@ -704,10 +711,9 @@ model Need {
 }
 
 enum NeedStatus {
-  ACTIVE
+  OPEN
   IN_PROGRESS
-  SEDIMENTED
-  RESOLVED
+  COMPLETED
 }
 
 model NeedTree {

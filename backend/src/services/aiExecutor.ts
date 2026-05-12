@@ -127,59 +127,27 @@ function pollKanbanTask(kanbanTaskId: string): {
 async function handleAIFailure(aiMemberId: string): Promise<void> {
   const config = await prisma.aIMemberConfig.findUnique({
     where: { treeMemberId: aiMemberId },
-    select: { aiFailCount: true },
+    select: { quotaUsed: true, quotaLimit: true },
   });
 
-  const failCount = (config?.aiFailCount ?? 0) + 1;
-
-  if (failCount >= MAX_FAIL_COUNT) {
-    // Rate-limit for 1 hour
-    return;
-  }
+  const quotaUsed = (config?.quotaUsed ?? 0) + 1;
+  const quotaLimit = config?.quotaLimit ?? 100;
 
   try {
-    await prisma.$transaction(async (tx) => {
-      await tx.aIMemberConfig.update({
-        where: { treeMemberId: aiMemberId },
-        data: {
-          aiFailCount: failCount,
-          aiLastFailedAt: new Date(),
-          ...(failCount >= MAX_FAIL_COUNT
-            ? { aiRateLimitedUntil: new Date(Date.now() + RATE_LIMIT_DURATION_MS) }
-            : {}),
-        },
-      });
-
-      if (failCount >= MAX_FAIL_COUNT) {
-        await tx.treeMember.update({
-          where: { id: aiMemberId },
-          data: { aiStatus: 'RATE_LIMITED' },
-        });
-      }
+    await prisma.aIMemberConfig.update({
+      where: { treeMemberId: aiMemberId },
+      data: { quotaUsed },
     });
-
-    if (failCount >= MAX_FAIL_COUNT) {
-      console.log(`[AIExecutor] AI ${aiMemberId} rate-limited after ${failCount} failures`);
-      void logEvent({
-        actorId: null,
-        action: 'AI_RATE_LIMITED',
-        entityType: 'TreeMember',
-        entityId: aiMemberId,
-        metadataJson: { failCount, reason: '3 consecutive failures', until: new Date(Date.now() + RATE_LIMIT_DURATION_MS).toISOString() },
-        severity: 'WARNING',
-        source: 'AUTOMATION',
-      });
-    }
   } catch (err: any) {
     console.error(`[AIExecutor] handleAIFailure error:`, err.message);
   }
 }
 
-async function resetAIFailCount(aiMemberId: string): Promise<void> {
+async function resetAIQuota(aiMemberId: string): Promise<void> {
   try {
     await prisma.aIMemberConfig.update({
       where: { treeMemberId: aiMemberId },
-      data: { aiFailCount: 0, aiLastFailedAt: null, aiRateLimitedUntil: null },
+      data: { quotaUsed: 0 },
     });
   } catch (err: any) {
     // Config might not exist — ignore
@@ -240,8 +208,8 @@ async function handleDelivery(
       }
     });
 
-    // Reset fail count on success
-    await resetAIFailCount(aiMemberId);
+    // Reset quota on success
+    await resetAIQuota(aiMemberId);
 
     // ── AI Reputation: award XP + update skill XP ─────────────────────
     try {

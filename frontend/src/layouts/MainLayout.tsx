@@ -4,10 +4,9 @@ import { useEffect, useState } from 'react';
 import TreeSidebar from '../components/TreeSidebar';
 import PWAInstallPrompt from '../components/PWAInstallPrompt';
 import RegistroInvitadoModal from '../components/RegistroInvitadoModal';
-import AppSwitcher from '../components/AppSwitcher';
 import { useAuthStore } from '../store/authStore';
 import { useTranslation } from 'react-i18next';
-import { appConfig, isTrustLanding } from '../config/appConfig';
+import { appConfig } from '../config/appConfig';
 
 export default function MainLayout() {
   const user = useAuthStore((state: any) => state.user);
@@ -136,8 +135,6 @@ export default function MainLayout() {
                   <Eye size={18} />
                 </button>
 
-                {!isTrustLanding && <AppSwitcher isMobile={isMobile} />}
-                
                 <button onClick={handleLogout} className="btn btn-outline" style={{ padding: '0.4rem', width: '36px', height: '36px' }} title={t('nav.logout')}>
                   <LogOut size={18} />
                 </button>

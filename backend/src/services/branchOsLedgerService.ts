@@ -416,7 +416,7 @@ export async function attachReceiptUpload(
   const validation = validateUploadFile(file);
   if (!validation.ok) throw new Error(`Arquivo rejeitado: ${validation.reason}`);
 
-  const allowedVisibilities = new Set(['PRIVATE', 'TREE_ONLY', 'TRUST_NETWORK', 'TASK_PARTICIPANTS', 'PUBLIC_METADATA', 'PUBLIC']);
+  const allowedVisibilities = new Set(['TREE_ONLY', 'PUBLIC']);
   const vis = visibility && allowedVisibilities.has(visibility) ? visibility : 'TREE_ONLY';
 
   ensureUploadRoot();

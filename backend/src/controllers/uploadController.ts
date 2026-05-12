@@ -16,11 +16,7 @@ import {
 import { getRequestContext, getRequestMetadata, logEvent } from '../services/eventLogService';
 
 const ALLOWED_VISIBILITIES = new Set<EvidenceVisibility>([
-  'PRIVATE',
-  'TASK_PARTICIPANTS',
   'TREE_ONLY',
-  'TRUST_NETWORK',
-  'PUBLIC_METADATA',
   'PUBLIC',
 ]);
 

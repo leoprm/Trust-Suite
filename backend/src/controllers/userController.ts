@@ -6,7 +6,10 @@ import fs from 'fs';
 import crypto from 'crypto';
 import { prisma } from '../index';
 import { computeSkillTier } from '../utils/eliteCalculator';
-import { parseTicketMap } from '../utils/goldenTicketEngine';
+// Inlined from deleted goldenTicketEngine.ts
+function parseTicketMap(raw: string | null | undefined): Record<string, { tickets: number; usedOnCritical: string[]; streakTaskIds: string[] }> {
+  try { return JSON.parse(raw || '{}'); } catch { return {}; }
+}
 import {
   canViewUserPrivacyLevel,
   DEFAULT_PRIVACY_SETTINGS,
@@ -452,7 +455,7 @@ export const updatePublicProfile = async (req: any, res: Response) => {
       privacySync.traceProfileVisibility = publicProfileEnabled ? 'PUBLIC' : 'TREE_ONLY';
     }
     if (typeof publicShowTaskHistory === 'boolean') {
-      privacySync.taskHistoryVisibility = publicShowTaskHistory ? 'PUBLIC' : 'PRIVATE';
+      privacySync.taskHistoryVisibility = publicShowTaskHistory ? 'PUBLIC' : 'TREE_ONLY';
     }
     if (typeof visibleForRecruitment === 'boolean') {
       privacySync.showInTalentSearch = visibleForRecruitment;

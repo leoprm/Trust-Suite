@@ -11,7 +11,6 @@ import ProfilePage from './ProfilePage';
 import MisPersonas from './MisPersonas';
 import PrivacySettingsPanel from './PrivacySettingsPanel';
 import { appConfig, type DrawerPanelKey } from '../config/appConfig';
-import AppSwitcher from './AppSwitcher';
 const OptimizedText = ({ text, style }: { text: string; style?: React.CSSProperties }) => (
   <span style={style}>{text}</span>
 );
@@ -320,11 +319,6 @@ export default function UtilityDrawer({ open, onClose }: UtilityDrawerProps) {
                 <span>{colorMode === 'modern' ? 'ON' : 'OFF'}</span>
               </button>
 
-
-              {/* App Switcher — acceso rápido a otras apps con SSO */}
-              <div style={{ padding: '0.5rem 0' }}>
-                <AppSwitcher isMobile={true} />
-              </div>
 
               <button
                 onClick={toggleLanguage}

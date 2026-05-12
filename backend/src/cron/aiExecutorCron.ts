@@ -57,10 +57,10 @@ export async function runAIExecutor() {
     let totalErrors = 0;
 
     for (const ai of workingAIs) {
-      // Check if this AI is rate-limited
-      const rateLimitedUntil = ai.aiConfig?.aiRateLimitedUntil;
-      if (rateLimitedUntil && new Date(rateLimitedUntil) > new Date()) {
-        console.log(`[AIExecutor] AI ${ai.aiProfile || ai.id} is RATE_LIMITED until ${rateLimitedUntil}`);
+      // Check if this AI has exceeded quota
+      const quotaExceeded = (ai.aiConfig?.quotaUsed ?? 0) >= (ai.aiConfig?.quotaLimit ?? 100);
+      if (quotaExceeded) {
+        console.log(`[AIExecutor] AI ${ai.aiProfile || ai.id} has exceeded quota (${ai.aiConfig?.quotaUsed}/${ai.aiConfig?.quotaLimit})`);
         continue;
       }
 
@@ -122,20 +122,14 @@ export async function runAIExecutor() {
 }
 
 /**
- * Releases RATE_LIMITED AIs whose rate-limit duration has expired,
- * resetting them to IDLE.
+ * Releases RATE_LIMITED AIs, resetting their quota and status to IDLE.
  */
 async function releaseExpiredRateLimits() {
   try {
-    const now = new Date();
-
     const expiredAIs = await prisma.treeMember.findMany({
       where: {
         isAI: true,
         aiStatus: 'RATE_LIMITED',
-        aiConfig: {
-          aiRateLimitedUntil: { lte: now },
-        },
       },
       select: { id: true, aiProfile: true },
     });
@@ -145,9 +139,7 @@ async function releaseExpiredRateLimits() {
         await tx.aIMemberConfig.update({
           where: { treeMemberId: ai.id },
           data: {
-            aiFailCount: 0,
-            aiLastFailedAt: null,
-            aiRateLimitedUntil: null,
+            quotaUsed: 0,
           },
         });
         await tx.treeMember.update({
@@ -163,7 +155,7 @@ async function releaseExpiredRateLimits() {
         action: 'AI_RATE_LIMIT_EXPIRED',
         entityType: 'TreeMember',
         entityId: ai.id,
-        metadataJson: { reason: 'cooldown expired' },
+        metadataJson: { reason: 'quota reset' },
         severity: 'INFO',
         source: 'AUTOMATION',
       });

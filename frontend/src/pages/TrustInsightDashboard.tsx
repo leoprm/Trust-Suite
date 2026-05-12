@@ -11,7 +11,6 @@ import {
   LineChart, Line, Legend,
 } from 'recharts';
 import api from '../lib/api';
-import InsightPanel from '../components/InsightPanel';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Types
@@ -684,7 +683,7 @@ export default function TrustInsightDashboard() {
     return relations;
   }, [trees]);
 
-  // ── Drilled into a specific tree (InsightPanel) ──
+  // ── Drilled into a specific tree (placeholder) ──
   if (selectedTreeId && selectedTree) {
     return (
       <div style={{ maxWidth: 960, margin: '0 auto', padding: '1rem 1.25rem' }}>
@@ -698,10 +697,13 @@ export default function TrustInsightDashboard() {
         >
           ← Volver al dashboard
         </button>
-        <InsightPanel
-          treeId={selectedTreeId}
-          isAdmin={selectedTree?.role === 'ADMIN' || selectedTree?.role === 'CREATOR'}
-        />
+        <div className="glass-panel" style={{ padding: '2rem', textAlign: 'center' }}>
+          <Telescope size={48} style={{ color: 'var(--text-secondary)', marginBottom: '1rem' }} />
+          <h3 style={{ margin: '0 0 0.5rem', color: 'var(--text-primary)' }}>{selectedTree.name}</h3>
+          <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem' }}>
+            Panel de análisis detallado próximamente
+          </p>
+        </div>
       </div>
     );
   }

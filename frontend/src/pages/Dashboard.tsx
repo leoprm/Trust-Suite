@@ -5,8 +5,6 @@ import { useSearchParams } from 'react-router-dom';
 import { Plus, TreePine, Activity, GitBranch } from 'lucide-react';
 import Feed from '../components/Feed';
 import BranchFeed from '../components/BranchFeed';
-import FinancialDashboard from '../components/FinancialDashboard';
-import EvaluatorDashboard from '../components/EvaluatorDashboard';
 import TreePaymentSummary from '../components/TreePaymentSummary';
 import { useTranslation } from 'react-i18next';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -135,15 +133,7 @@ export default function Dashboard() {
           </div>
         </header>
 
-        <section>
-          <FinancialDashboard isGlobal={true} />
-        </section>
-
         <TreePaymentSummary />
-
-        <section className="glass-panel" style={{ padding: '1.5rem' }}>
-          <EvaluatorDashboard />
-        </section>
 
         <section className="glass-panel" style={{ padding: '1.5rem' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1rem' }}>
