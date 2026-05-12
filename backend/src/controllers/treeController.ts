@@ -738,7 +738,7 @@ export const getTreeMembers = async (req: any, res: Response) => {
       level: m.level,
       xp: m.xp,
       status: m.status,
-      weeklyNeedPoints: m.weeklyNeedPoints,
+      availableNeedPoints: m.availableNeedPoints,
       invitedById: m.invitedById,
       invitedByUsername: m.invitedBy?.username || null,
       joinedAt: m.joinedAt,
@@ -890,7 +890,7 @@ export const updateMemberPower = async (req: any, res: Response) => {
 
     const membership = await prisma.treeMember.update({
       where: { userId_treeId: { userId, treeId: id } },
-      data: { weeklyNeedPoints: Number(points) }
+      data: { availableNeedPoints: Number(points) }
     });
 
     void logEvent({
@@ -899,8 +899,8 @@ export const updateMemberPower = async (req: any, res: Response) => {
       action: 'TREE_MEMBER_ROLE_CHANGED',
       entityType: 'TreeMember',
       entityId: membership.id,
-      afterJson: { userId, weeklyNeedPoints: membership.weeklyNeedPoints },
-      metadataJson: getRequestMetadata(req, { changedField: 'weeklyNeedPoints', result: 'success' }),
+      afterJson: { userId, availableNeedPoints: membership.availableNeedPoints },
+      metadataJson: getRequestMetadata(req, { changedField: 'availableNeedPoints', result: 'success' }),
       source: 'ADMIN',
     });
 

@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuthStore } from '../store/authStore';
 import { useTranslation } from 'react-i18next';
-import { Wallet, Coins, Sprout, Receipt, ExternalLink, Loader2, AlertCircle } from 'lucide-react';
+import { ArrowLeft, Wallet, Coins, Sprout, Receipt, ExternalLink, Loader2, AlertCircle } from 'lucide-react';
 import api from '../lib/api';
 
 interface FiatTree {
@@ -36,7 +36,7 @@ interface Transaction {
 interface WalletData {
   fiatBalance: { total: number; byTree: FiatTree[] };
   berriesBalance: { total: number; byTree: BerriesTree[] };
-  subscriptions: { isPayingMember: boolean; trees: SubscriptionTree[] };
+  subscriptions: SubscriptionTree[];
   recentTransactions: Transaction[];
 }
 
@@ -67,7 +67,7 @@ export default function WalletPage() {
     setLoading(true);
     setError(null);
 
-    api.get('/api/wallet/me')
+    api.get('/wallet/me')
       .then((res) => {
         if (!cancelled) setData(res.data);
       })
@@ -110,13 +110,13 @@ export default function WalletPage() {
     ? data.berriesBalance.byTree.filter(t => t.treeId === filterTreeId)
     : data.berriesBalance.byTree;
   const filteredSubscriptions = filterTreeId
-    ? data.subscriptions.trees.filter(s => s.treeId === filterTreeId)
-    : data.subscriptions.trees;
+    ? data.subscriptions.filter(s => s.treeId === filterTreeId)
+    : data.subscriptions;
   // For transactions we filter by treeName matching the filtered tree
   const filteredTreeName = filterTreeId
     ? (data.fiatBalance.byTree.find(t => t.treeId === filterTreeId)?.treeName
        || data.berriesBalance.byTree.find(t => t.treeId === filterTreeId)?.treeName
-       || data.subscriptions.trees.find(s => s.treeId === filterTreeId)?.treeName)
+       || data.subscriptions.find(s => s.treeId === filterTreeId)?.treeName)
     : null;
   const filteredTransactions = filterTreeId && filteredTreeName
     ? data.recentTransactions.filter(tx => tx.treeName === filteredTreeName)
@@ -145,6 +145,14 @@ export default function WalletPage() {
     return `${Math.floor(hours / 24)}d`;
   };
 
+  const navigateToTree = (treeId: string) => {
+    if (isMobile) {
+      navigate(`/?treeId=${treeId}&tab=medir`);
+    } else {
+      navigate(`/trees/${treeId}`);
+    }
+  };
+
   return (
     <div style={{
       padding: isMobile ? '1rem' : '2rem',
@@ -158,6 +166,32 @@ export default function WalletPage() {
     }}>
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '0.25rem' }}>
+        <button
+          onClick={() => navigate(-1)}
+          aria-label="Volver"
+          style={{
+            background: 'none',
+            border: 'none',
+            color: 'var(--text-secondary)',
+            cursor: 'pointer',
+            padding: '0.25rem',
+            borderRadius: '8px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            transition: 'color 0.2s, background 0.2s',
+          }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.color = 'var(--text-primary)';
+            e.currentTarget.style.background = 'rgba(255,255,255,0.06)';
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.color = 'var(--text-secondary)';
+            e.currentTarget.style.background = 'none';
+          }}
+        >
+          <ArrowLeft size={isMobile ? 20 : 22} />
+        </button>
         <Wallet size={isMobile ? 24 : 28} style={{ color: 'var(--accent-primary)' }} />
         <h1 style={{ margin: 0, fontSize: isMobile ? '1.25rem' : '1.5rem', fontWeight: 700, color: 'var(--text-primary)' }}>
           Wallet
@@ -206,7 +240,13 @@ export default function WalletPage() {
           {filteredFiatByTree.length > 0 && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem', marginTop: '0.75rem', paddingTop: '0.75rem', borderTop: '1px solid var(--border-color)' }}>
               {filteredFiatByTree.map((t) => (
-                <div key={t.treeId} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div
+                  key={t.treeId}
+                  onClick={() => navigateToTree(t.treeId)}
+                  style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer', padding: '0.2rem 0.3rem', borderRadius: '6px', transition: 'background 0.15s' }}
+                  onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.04)'}
+                  onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                >
                   <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>{t.treeName}</span>
                   <span style={{ fontSize: '0.85rem', fontWeight: 600, color: t.balance >= 0 ? 'var(--accent-success)' : 'var(--accent-danger)' }}>
                     {formatFiat(t.balance)}
@@ -231,7 +271,13 @@ export default function WalletPage() {
           {filteredBerriesByTree.length > 0 && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem', marginTop: '0.75rem', paddingTop: '0.75rem', borderTop: '1px solid var(--border-color)' }}>
               {filteredBerriesByTree.map((t) => (
-                <div key={t.treeId} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div
+                  key={t.treeId}
+                  onClick={() => navigateToTree(t.treeId)}
+                  style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer', padding: '0.2rem 0.3rem', borderRadius: '6px', transition: 'background 0.15s' }}
+                  onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.04)'}
+                  onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                >
                   <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>{t.treeName}</span>
                   <span style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-primary)' }}>
                     {formatBerries(t.balance)} 🫐
@@ -256,7 +302,7 @@ export default function WalletPage() {
             {filteredSubscriptions.map((sub) => (
               <div
                 key={sub.treeId}
-                onClick={() => navigate(`/trees/${sub.treeId}`)}
+                onClick={() => navigateToTree(sub.treeId)}
                 style={{
                   display: 'flex',
                   justifyContent: 'space-between',

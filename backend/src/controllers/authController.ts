@@ -18,14 +18,14 @@ async function getUserWithPoints(userId: string) {
         sharingCode: true,
         is_guest: true,
         memberships: {
-          select: { id: true, treeId: true, weeklyNeedPoints: true, status: true, xp: true, level: true, role: true }
+          select: { id: true, treeId: true, availableNeedPoints: true, status: true, xp: true, level: true, role: true }
         }
       }
     });
 
     if (!user) return null;
 
-    const totalWeeklyPoints = (user as any).memberships.reduce((sum: number, membership: any) => sum + membership.weeklyNeedPoints, 0);
+    const totalWeeklyPoints = (user as any).memberships.reduce((sum: number, membership: any) => sum + membership.availableNeedPoints, 0);
     return { ...user, totalWeeklyPoints };
   } catch (error) {
     console.error('getUserWithPoints error:', error);

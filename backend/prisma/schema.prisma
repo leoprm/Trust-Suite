@@ -77,7 +77,7 @@ model User {
   insightOpeningsCreated      InsightExternalOpening[]    @relation("OpeningCreator")
   resolvedEndorsements         ExpertEndorsement[]          @relation("EndorsementResolver")
   assignedCandidates           ExternalCandidate[]          @relation("CandidateAssigner")
-  treeExpensesAdded            TreeExpense[]                @relation("UserExpenses")
+  treeExpensesAdded          TreeExpense[]                @relation("UserExpenses")
   ownedAIs                     TreeMember[]                 @relation("AIOwner")
 }
 
@@ -140,6 +140,17 @@ enum TreeEconomyMode {
   BERRIES_LATENT
   BERRIES_ACTIVE
   TRUST_FULL
+}
+
+enum TreeType {
+  NORMAL
+  AI_COUNCIL
+}
+
+enum NeedAuditStatus {
+  PENDING
+  APPROVED
+  REJECTED_BY_CREATOR
 }
 
 enum Visibility {
@@ -286,6 +297,11 @@ model Tree {
   subscriptionDayOfMonth   Int?                   @default(1)
   subscriptionBillingMode  String?                @default("FIXED") // FIXED | PROPORTIONAL
 
+  // AI Council
+  treeType                TreeType               @default(NORMAL)
+  lastAuditGeneratedAt    DateTime?
+  auditReportJson         Json?
+
   // Escrow & Multi-sig
   satisfactionTiers Json?
   multiSigThreshold Int     @default(2)
@@ -323,6 +339,7 @@ model Tree {
   externalCandidates     ExternalCandidate[]
   skillInfluences        SkillInfluence[]
   treasury               TreeTreasury?
+  needImportanceVotes    NeedImportanceVote[]
 
   @@index([country, city, sector])
 }
@@ -599,7 +616,8 @@ model TreeMember {
   userId           String
   treeId           String
   invitedById      String?
-  weeklyNeedPoints Int            @default(100)
+  needPointsPool   Int            @default(1000)
+  availableNeedPoints Int         @default(1000)
   bayasBalance     Float          @default(0)
   lastBerriesUpdate DateTime      @default(now())
   lastCycleKey      String?
@@ -691,6 +709,7 @@ model Need {
   title               String
   description         String     @db.Text
   totalPointsAssigned Int        @default(0)
+  pointsAllocated     Int        @default(0)  // points currently locked by funders (released on close)
   failedAttempts      Int        @default(0)
   createdAt           DateTime   @default(now())
   status              NeedStatus @default(ACTIVE)
@@ -723,6 +742,7 @@ model Need {
 enum NeedStatus {
   ACTIVE
   IN_PROGRESS
+  SEDIMENTED
   RESOLVED
 }
 

@@ -12,7 +12,7 @@ import { reviewBaseNeeds } from '../services/baseNeedService';
  * Lógica de degradación:
  *   - Cuenta usuarios VERIFIED actuales por árbol
  *   - Compara con threshold = 66% × baselineUserCount
- *   - Si 2 ciclos consecutivos por debajo → degrada a ACTIVE
+ *   - Si 1 ciclo por debajo → degrada a ACTIVE (3 meses)
  */
 export async function runBaseNeedReview() {
   console.log('[BaseNeedReview] Starting quarterly review...');

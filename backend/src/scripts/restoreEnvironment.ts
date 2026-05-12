@@ -48,7 +48,7 @@ async function main() {
         treeId: tree.id,
         role: 'ADMIN',
         status: 'VERIFIED',
-        weeklyNeedPoints: 100,
+        availableNeedPoints: 100,
         skills: JSON.stringify(['Gestión', 'Liderazgo', 'Organización'])
       }
     });

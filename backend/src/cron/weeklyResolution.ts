@@ -3,15 +3,11 @@ import { prisma } from '../index';
 
 export const startCronJobs = () => {
   // Weekly Job: Every Sunday at Midnight
+  // (Note: point renewal is now monthly — see monthlyNeedPointsCron)
   cron.schedule('0 0 * * 0', async () => {
     console.log('Running Weekly Loop...');
     try {
-      // 1. Reset all Weekly Need Points to 100
-      await prisma.treeMember.updateMany({
-        data: { weeklyNeedPoints: 100 }
-      });
-
-      // 2. Resolve active needs
+      // Resolve active needs (exclude SEDIMENTED — handled by monthly sedimentation)
       const activeNeeds = await prisma.need.findMany({
         where: { status: 'ACTIVE' },
         include: {
@@ -68,10 +64,10 @@ export const startCronJobs = () => {
           });
         }
 
-        // Mark Need as resolved
+        // Mark Need as resolved — releases points via pointsAllocated reset
         await prisma.need.update({
           where: { id: need.id },
-          data: { status: 'RESOLVED' }
+          data: { status: 'RESOLVED', pointsAllocated: 0 }
         });
       }
 

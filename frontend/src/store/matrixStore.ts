@@ -60,6 +60,7 @@ interface MatrixState {
   linajeActivo: { id: string; entidad: Entidad }[];
   utilityPanel: UtilityPanel;
   notificationCount: number;
+  focusTreeId: string | null;
   ciclarEntidad: () => void;
   setEntidad: (e: Entidad) => void;
   setAccion: (a: Accion) => void;
@@ -69,6 +70,7 @@ interface MatrixState {
   clearFilter: () => void;
   setUtilityPanel: (panel: UtilityPanel) => void;
   setNotificationCount: (n: number) => void;
+  setFocusTreeId: (id: string | null) => void;
 }
 
 // ── Persist last page to localStorage ─────────────────────────────────────────
@@ -117,6 +119,7 @@ export const useMatrixStore = create<MatrixState>((set, get) => ({
   linajeActivo: [],
   utilityPanel: null,
   notificationCount: 0,
+  focusTreeId: null,
 
   ciclarEntidad: () => {
     const current = get().entidadActiva;
@@ -163,4 +166,5 @@ export const useMatrixStore = create<MatrixState>((set, get) => ({
 
   setUtilityPanel: (panel) => set({ utilityPanel: panel }),
   setNotificationCount: (n) => set({ notificationCount: n }),
+  setFocusTreeId: (id) => set({ focusTreeId: id }),
 }));

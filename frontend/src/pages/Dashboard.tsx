@@ -23,7 +23,7 @@ export default function Dashboard() {
   const { t } = useTranslation();
   const [isMobile, setIsMobile] = useState(window.innerWidth <= 768);
   const [, setRefreshKey] = useState(0);
-  const { accionActiva, entidadActiva } = useMatrixStore();
+  const { accionActiva, entidadActiva, setEntidad, setAccion, setFocusTreeId } = useMatrixStore();
   const { highlightCreateNeed, dismiss } = useOnboardingTooltips();
   const [searchParams] = useSearchParams();
 
@@ -49,6 +49,19 @@ export default function Dashboard() {
   useEffect(() => {
     if (!isInitialLoading && !user) navigate('/login');
   }, [user, isInitialLoading, navigate]);
+
+  // Pre-select tree + tab from query params (used by Wallet mobile navigation)
+  useEffect(() => {
+    const treeId = searchParams.get('treeId');
+    const tab = searchParams.get('tab');
+    if (treeId && tab) {
+      setEntidad('arbol');
+      if (tab === 'crear' || tab === 'hacer' || tab === 'medir') {
+        setAccion(tab);
+      }
+      setFocusTreeId(treeId);
+    }
+  }, [searchParams, setEntidad, setAccion, setFocusTreeId]);
 
   if (isInitialLoading) return <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-secondary)' }}>{t('dashboard.loading')}</div>;
   if (!user) return null;

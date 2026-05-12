@@ -104,10 +104,10 @@ export const auditPromotion = async (req: any, res: Response) => {
     const treeMembersForPoints = treeIds.length > 0
       ? await prisma.treeMember.findMany({
           where: { treeId: { in: treeIds }, status: 'VERIFIED' },
-          select: { weeklyNeedPoints: true, treeId: true },
+          select: { availableNeedPoints: true, treeId: true },
         })
       : [];
-    const totalTreeWeeklyPoints = treeMembersForPoints.reduce((s, m) => s + m.weeklyNeedPoints, 0);
+    const totalTreeWeeklyPoints = treeMembersForPoints.reduce((s, m) => s + m.availableNeedPoints, 0);
     const tenPercentOfTree = Math.ceil(totalTreeWeeklyPoints * 0.1);
 
     const relevance = {

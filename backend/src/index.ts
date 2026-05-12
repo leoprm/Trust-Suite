@@ -70,6 +70,7 @@ import { startReleaseCron } from './cron/releaseCron';
 import { startTaskMatcherCron } from './cron/taskMatcherCron';
 import { startAIExecutorCron } from './cron/aiExecutorCron';
 import { startBaseNeedReviewCron } from './cron/baseNeedReviewCron';
+import { startMonthlyNeedPointsCron } from './cron/monthlyNeedPointsCron';
 import { getInfluenceWeight, getTreeInfluences } from './services/skillInfluenceService';
 import aiTaskRoutes from './routes/aiTaskRoutes';
 import aiExecutorRoutes from './routes/aiExecutorRoutes';
@@ -293,6 +294,7 @@ startReleaseCron();
 startTaskMatcherCron();
 startAIExecutorCron();
 startBaseNeedReviewCron();
+startMonthlyNeedPointsCron();
 
 // Bootstrap database schema, then start server
 bootstrapDatabase().then(() => {

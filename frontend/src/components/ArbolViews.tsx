@@ -587,7 +587,7 @@ export function ArbolHacer() {
 export function ArbolMedir() {
   const { t } = useTranslation();
   const { trees, loadingTrees: loading, fetchTrees } = useTreeStore();
-  const { isFilterModeActive, linajeActivo, toggleLinaje, toggleFilterMode } = useMatrixStore();
+  const { isFilterModeActive, linajeActivo, toggleLinaje, toggleFilterMode, focusTreeId, setFocusTreeId } = useMatrixStore();
   const [globalTrees, setGlobalTrees] = useState<any[]>([]);
   const [timeRange, setTimeRange]     = useState('1M');
   const [expandedTreeId, setExpandedTreeId] = useState<string | null>(null);
@@ -633,6 +633,14 @@ export function ArbolMedir() {
     fetchTrees();
     api.get('/trees/global').then(({ data }) => setGlobalTrees(data)).catch(() => {});
   }, [fetchTrees]);
+
+  // Auto-expand tree when navigated from Wallet with ?treeId=X&tab=medir
+  useEffect(() => {
+    if (focusTreeId) {
+      setExpandedTreeId(focusTreeId);
+      setFocusTreeId(null); // consume so it doesn't re-trigger
+    }
+  }, [focusTreeId, setFocusTreeId]);
 
   const toggleTree = (id: string, e: React.MouseEvent) => {
     if ((e.target as HTMLElement).closest('button') || (e.target as HTMLElement).closest('.metric-toggle')) return;

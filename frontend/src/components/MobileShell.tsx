@@ -7,7 +7,7 @@ import {
   MODERN_ACTION_COLORS,
 } from '../store/matrixStore';
 import type { Accion } from '../store/matrixStore';
-import { Filter, Menu, Wallet } from 'lucide-react';
+import { Filter, Menu } from 'lucide-react';
 import MetaballsBackground from './MetaballsBackground';
 import UtilityDrawer from './UtilityDrawer';
 import api from '../lib/api';
@@ -272,22 +272,6 @@ export default function MobileShell({ children, modifiers }: MobileShellProps) {
             </button>
           );
         })}
-        {/* Wallet */}
-        <button
-          onClick={() => navigate('/wallet')}
-          style={{
-            flex: 1,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            border: 'none',
-            cursor: 'pointer',
-            background: 'transparent',
-            transition: 'background 0.15s',
-          }}
-        >
-          <Wallet size={20} style={{ color: 'var(--accent-primary)' }} />
-        </button>
       </nav>
       </div>
 

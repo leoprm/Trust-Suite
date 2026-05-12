@@ -8,7 +8,7 @@
  *
  * Ciclo de vida:
  *   ACTIVE ──(12 meses + relevanceThresholdMet)──► BASE
- *   BASE ──(2 ciclos consecutivos < 66% baseline)──► ACTIVE (degradada)
+ *   BASE ──(1 ciclo trimestral < 66% baseline)──► ACTIVE (degradada)
  */
 
 import { prisma } from '../index';
@@ -150,8 +150,8 @@ export async function reviewBaseNeeds(): Promise<{ reviewed: number; degraded: n
       cycleUpdates.userCountCycle2 = need.userCountCycle1;
     }
 
-    if (belowThreshold && need.userCountCycle1 !== null && need.userCountCycle1 < threshold) {
-      // 2 ciclos consecutivos debajo del threshold → DEGRADAR
+    if (belowThreshold) {
+      // 1 ciclo debajo del threshold → DEGRADAR
       await degradeBaseNeed(need.id, currentUserCount, need.baselineUserCount || 0);
       degraded++;
     } else {

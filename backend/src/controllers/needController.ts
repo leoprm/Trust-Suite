@@ -156,14 +156,14 @@ export const assignPointsToNeed = async (req: any, res: Response) => {
       return res.status(403).json({ error: 'Debes ser un ciudadano Verificado para asignar puntos' });
     }
 
-    if (membership.weeklyNeedPoints < points) {
-      return res.status(400).json({ error: 'Not enough points available this week' });
+    if (membership.availableNeedPoints < points) {
+      return res.status(400).json({ error: 'Not enough points available this month' });
     }
 
     // Deduct points from user's tree membership
     await prisma.treeMember.update({
       where: { id: membership.id },
-      data: { weeklyNeedPoints: membership.weeklyNeedPoints - points }
+      data: { availableNeedPoints: membership.availableNeedPoints - points }
     });
 
     // Record the funding
@@ -179,7 +179,10 @@ export const assignPointsToNeed = async (req: any, res: Response) => {
     // Add points to Need
     const updatedNeed = await (prisma as any).need.update({
       where: { id },
-      data: { totalPointsAssigned: { increment: points } }
+      data: { 
+        totalPointsAssigned: { increment: points },
+        pointsAllocated: { increment: points }
+      }
     });
 
     // ── Pipeline thresholds ──────────────────────────────────────────────
@@ -193,7 +196,7 @@ export const assignPointsToNeed = async (req: any, res: Response) => {
     let pointsInThisNeed = 0;
     for (const f of allUserFundings) {
       totalUserPointsInTree += f.points;
-      if (f.needId === id && f.need.status === 'ACTIVE') {
+      if (f.needId === id && ['ACTIVE', 'IN_PROGRESS', 'SEDIMENTED'].includes(f.need.status)) {
         pointsInThisNeed += f.points;
       }
     }
@@ -218,13 +221,13 @@ export const assignPointsToNeed = async (req: any, res: Response) => {
 
     // Check relevance threshold: 10% of tree points OR 200 people equivalent
     if (!finalNeed.relevanceThresholdMet) {
-      // Get total weekly points across all members in this tree
+      // Get total available points across all members in this tree
       const treeMembers = await prisma.treeMember.findMany({
         where: { treeId, status: 'VERIFIED' },
-        select: { weeklyNeedPoints: true },
+        select: { availableNeedPoints: true },
       });
-      const totalTreeWeeklyPoints = treeMembers.reduce((sum, m) => sum + m.weeklyNeedPoints, 0);
-      const tenPercentOfTree = Math.ceil(totalTreeWeeklyPoints * 0.1);
+      const totalTreeAvailablePoints = treeMembers.reduce((sum, m) => sum + m.availableNeedPoints, 0);
+      const tenPercentOfTree = Math.ceil(totalTreeAvailablePoints * 0.1);
 
       if (finalNeed.totalPeopleEquivalent >= 200 || finalNeed.totalPointsAssigned >= tenPercentOfTree) {
         await (prisma as any).need.update({
@@ -351,7 +354,7 @@ export const deleteNeed = async (req: any, res: Response) => {
       if (targetTreeId) {
         await prisma.treeMember.update({
           where: { userId_treeId: { userId: funding.userId, treeId: targetTreeId } },
-          data: { weeklyNeedPoints: { increment: funding.points } }
+          data: { availableNeedPoints: { increment: funding.points } }
         }).catch(err => console.error(`Failed to refund points to user ${funding.userId} in tree ${targetTreeId}:`, err));
       }
     }

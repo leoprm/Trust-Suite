@@ -33,7 +33,7 @@ export const getProfile = async (req: any, res: Response) => {
         visibleForRecruitment: true, seekingWork: true,
         memberships: {
           select: {
-            id: true, treeId: true, weeklyNeedPoints: true, status: true,
+            id: true, treeId: true, availableNeedPoints: true, status: true,
             xp: true, level: true, role: true, skills: true, bayasBalance: true, goldenTickets: true,
             bonoMentoriaActivo: true, bonoMentoriaExpira: true, avalBanHasta: true,
             tree: { select: { id: true, name: true, icono: true } },

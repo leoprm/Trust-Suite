@@ -11,7 +11,7 @@ export async function calculateBranchPointsForUser(userId: string, branchId: str
   });
   if (!membership) return 0;
   
-  const totalUserPoints = membership.weeklyNeedPoints;
+  const totalUserPoints = membership.availableNeedPoints;
 
   // 2. Get all 1-10 votes this user gave to branches in this tree
   const userVotesInTree = await prisma.branchNeedVote.findMany({
