@@ -25,6 +25,7 @@ import WithdrawPage from './pages/WithdrawPage';
 import WalletTransactions from './pages/WalletTransactions';
 import TransferPage from './pages/TransferPage';
 import TrustCoreAdminDashboard from './pages/TrustCoreAdminDashboard';
+import CareerPath from './pages/CareerPath';
 
 import MainLayout from './layouts/MainLayout';
 import ConciergeChat from './components/ConciergeChat';
@@ -143,6 +144,7 @@ function App() {
                 <Route path="/admin/trustcore" element={<TrustCoreAdminDashboard />} />
                 <Route path="/privacy" element={<PrivacyPage />} />
                 <Route path="/wallet" element={<WalletPage />} />
+                <Route path="/career-path/:treeId" element={<CareerPath />} />
               </Route>
 
               <Route element={<MainLayout />}>
@@ -166,6 +168,7 @@ function App() {
                 <Route path="/" element={<Navigate to="/profile" />} />
                 <Route path="/profile" element={<TraceProfile />} />
                 <Route path="/talent" element={<TalentHunter />} />
+                <Route path="/career-path/:treeId" element={<CareerPath />} />
                 <Route path="/privacy" element={<PrivacyPage />} />
                 <Route path="/wallet" element={<WalletPage />} />
               </Route>
