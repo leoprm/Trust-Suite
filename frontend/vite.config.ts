@@ -7,6 +7,16 @@ const PORTS: Record<string, number> = {
   'trace-lite': 5175,
   'trust-insight': 5176,
   'trust-landing': 5177,
+  'trust-wallet': 5178,
+};
+
+const PREVIEW_PORTS: Record<string, number> = {
+  'trust-lite': 4173,
+  'branch-os': 4174,
+  'trace-lite': 4175,
+  'trust-insight': 4176,
+  'trust-landing': 4177,
+  'trust-wallet': 4178,
 };
 
 export default defineConfig(({ mode }) => {
@@ -35,6 +45,7 @@ export default defineConfig(({ mode }) => {
     },
     preview: {
       host: '0.0.0.0',
+      port: PREVIEW_PORTS[flavor] || 4173,
       allowedHosts: ['.trycloudflare.com', 'localhost', '.local'],
       proxy: {
         '/api': {

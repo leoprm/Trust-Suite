@@ -1,4 +1,4 @@
-export type AppFlavor = 'trust-lite' | 'branch-os' | 'trace-lite' | 'trust-insight' | 'trust-landing';
+export type AppFlavor = 'trust-lite' | 'branch-os' | 'trace-lite' | 'trust-insight' | 'trust-landing' | 'trust-wallet';
 export type MatrixEntity = 'arbol' | 'necesidad' | 'rama' | 'tarea';
 export type DrawerPanelKey = 'notifications' | 'profile' | 'privacy' | 'directory';
 
@@ -132,10 +132,31 @@ const APP_CONFIGS: Record<AppFlavor, AppConfig> = {
     },
     serviceWorker: '/sw.js',
   },
+  'trust-wallet': {
+    id: 'trust-wallet',
+    name: 'Trust Wallet',
+    shortName: 'Wallet',
+    description: 'Billetera unificada de confianza: fiat, berries y transacciones.',
+    defaultPath: '/',
+    defaultEntity: 'arbol',
+    matrixEntities: [],
+    drawerPanels: ['notifications', 'privacy'],
+    features: {
+      admin: false,
+      citizenProfile: false,
+      directory: false,
+      needs: false,
+      people: false,
+      talentSearch: false,
+      treeList: false,
+      treeNetwork: false,
+    },
+    serviceWorker: '/sw-trust-wallet.js',
+  },
 };
 
 function normalizeFlavor(value: string | undefined): AppFlavor {
-  if (value === 'branch-os' || value === 'trace-lite' || value === 'trust-lite' || value === 'trust-insight' || value === 'trust-landing') {
+  if (value === 'branch-os' || value === 'trace-lite' || value === 'trust-lite' || value === 'trust-insight' || value === 'trust-landing' || value === 'trust-wallet') {
     return value;
   }
 
@@ -149,6 +170,7 @@ export const isBranchOS = activeAppFlavor === 'branch-os';
 export const isTraceLite = activeAppFlavor === 'trace-lite';
 export const isTrustInsight = activeAppFlavor === 'trust-insight';
 export const isTrustLanding = activeAppFlavor === 'trust-landing';
+export const isTrustWallet = activeAppFlavor === 'trust-wallet';
 
 /** URL del PWA Trust Lite según entorno: localhost → :5173, túnel → variable VITE_TRUST_LITE_URL */
 export function getTrustLiteUrl(): string {
@@ -170,6 +192,7 @@ export function getAppUrl(flavor: string): string {
     'branch-os': import.meta.env.VITE_BRANCH_OS_URL,
     'trace-lite': import.meta.env.VITE_TRACE_LITE_URL,
     'trust-insight': import.meta.env.VITE_TRUST_INSIGHT_URL,
+    'trust-wallet': import.meta.env.VITE_TRUST_WALLET_URL,
   };
   const envUrl = envMap[flavor];
   if (envUrl) return envUrl;
@@ -179,6 +202,7 @@ export function getAppUrl(flavor: string): string {
     'branch-os': 5174,
     'trace-lite': 5175,
     'trust-insight': 5176,
+    'trust-wallet': 5178,
   };
   const host = window.location.hostname;
   const protocol = window.location.protocol;

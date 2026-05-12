@@ -88,6 +88,70 @@ export const requireAdmin = (req: Request, res: Response, next: NextFunction) =>
  * Requires authenticateJWT to run first (sets req.user).
  * Requires req.params to contain a tree identifier (:id, :treeId, or :tree_id).
  */
+/**
+ * Middleware that checks if the authenticated user is a server admin.
+ * Server admins are defined in GlobalFeeConfig.serverAdminIds (JSON array of user IDs).
+ */
+export const requireServerAdmin = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({ error: 'Authentication required' });
+    }
+
+    const config = await prisma.globalFeeConfig.findUnique({
+      where: { id: 'default' },
+      select: { serverAdminIds: true },
+    });
+
+    if (!config) {
+      return res.status(500).json({ error: 'GlobalFeeConfig not initialized' });
+    }
+
+    const adminIds: string[] = (config.serverAdminIds as string[]) || [];
+    if (!adminIds.includes(userId)) {
+      return res.status(403).json({ error: 'Server admin privileges required' });
+    }
+
+    next();
+  } catch (err) {
+    console.error('[requireServerAdmin] Error:', err);
+    res.status(500).json({ error: 'Failed to verify server admin status' });
+  }
+};
+
+/**
+ * Middleware that checks if the authenticated user is a member of the tree
+ * referenced in the request params (:id, :treeId, or :tree_id).
+ */
+export const requireTreeMember = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({ error: 'Authentication required' });
+    }
+
+    const treeId = req.params.id || req.params.treeId || req.params.tree_id;
+    if (!treeId) {
+      return res.status(400).json({ error: 'Tree context required' });
+    }
+
+    const member = await prisma.treeMember.findUnique({
+      where: { userId_treeId: { userId, treeId: treeId as string } },
+      select: { status: true },
+    });
+
+    if (!member) {
+      return res.status(403).json({ error: 'Tree membership required' });
+    }
+
+    next();
+  } catch (err) {
+    console.error('[requireTreeMember] Error:', err);
+    res.status(500).json({ error: 'Failed to verify tree membership' });
+  }
+};
+
 export const isPayingMemberRequired = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const userId = req.user?.id;

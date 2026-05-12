@@ -427,7 +427,173 @@ export async function updateGlobalConfig(req: Request, res: Response) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// 7. withdraw — Tree admin withdraws funds from trustCoreBalanceClp
+// 7. getTreeStats — Tree member view: per-tree TrustCore dashboard
+// ═══════════════════════════════════════════════════════════════════════════
+
+export async function getTreeStats(req: Request, res: Response) {
+  try {
+    const treeId = req.params.id as string;
+
+    const tree = await prisma.tree.findUnique({
+      where: { id: treeId },
+      select: {
+        id: true, name: true, isTrustCore: true, trustCoreBalanceClp: true,
+        trustCoreConfig: {
+          select: {
+            isActive: true, maintenanceShare: true, growthShare: true,
+            monthlyMaintenanceCost: true, totalFeesCollected: true,
+            totalFeesDistributed: true,
+          },
+        },
+      },
+    });
+
+    if (!tree) {
+      return res.status(404).json({ error: 'Tree not found' });
+    }
+
+    if (!tree.isTrustCore || !tree.trustCoreConfig) {
+      return res.status(400).json({ error: 'Tree is not TrustCore' });
+    }
+
+    // Fees this month
+    const monthStart = new Date();
+    monthStart.setDate(1);
+    monthStart.setHours(0, 0, 0, 0);
+
+    const feesThisMonth = await prisma.feeDistribution.aggregate({
+      _sum: { amount: true },
+      where: {
+        trustCoreTreeId: treeId,
+        createdAt: { gte: monthStart },
+      },
+    });
+
+    // Distribution count
+    const distributionCount = await prisma.feeDistribution.count({
+      where: { trustCoreTreeId: treeId },
+    });
+
+    // Recent distributions
+    const recentDistributions = await prisma.feeDistribution.findMany({
+      where: { trustCoreTreeId: treeId },
+      orderBy: { createdAt: 'desc' },
+      take: 10,
+      select: {
+        amount: true,
+        createdAt: true,
+        walletTransactionId: true,
+      },
+    });
+
+    const cfg = tree.trustCoreConfig;
+
+    return res.json({
+      treeId: tree.id,
+      treeName: tree.name,
+      isActive: cfg.isActive,
+      trustCoreBalanceClp: tree.trustCoreBalanceClp,
+      totalFeesCollected: cfg.totalFeesCollected,
+      totalFeesDistributed: cfg.totalFeesDistributed,
+      maintenanceShare: cfg.maintenanceShare,
+      growthShare: cfg.growthShare,
+      monthlyMaintenanceCost: cfg.monthlyMaintenanceCost,
+      feesThisMonth: Math.round((feesThisMonth._sum.amount || 0) * 100) / 100,
+      distributionCount,
+      recentDistributions,
+    });
+  } catch (error: any) {
+    console.error('[TrustCore getTreeStats] Error:', error);
+    return res.status(500).json({ error: 'Failed to fetch TrustCore stats' });
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 8. getAdminDashboard — Server admin: global TrustCore dashboard
+// ═══════════════════════════════════════════════════════════════════════════
+
+export async function getAdminDashboard(req: Request, res: Response) {
+  try {
+    const globalConfig = await getOrCreateGlobalConfig();
+
+    const monthStart = new Date();
+    monthStart.setDate(1);
+    monthStart.setHours(0, 0, 0, 0);
+
+    // All-time fees collected (sum of all FeeDistributions)
+    const allTimeResult = await prisma.feeDistribution.aggregate({
+      _sum: { amount: true },
+    });
+    const totalFeesCollectedAllTime = Math.round((allTimeResult._sum.amount || 0) * 100) / 100;
+
+    // This month fees
+    const thisMonthResult = await prisma.feeDistribution.aggregate({
+      _sum: { amount: true },
+      where: { createdAt: { gte: monthStart } },
+    });
+    const totalFeesThisMonth = Math.round((thisMonthResult._sum.amount || 0) * 100) / 100;
+
+    // Active TrustCore trees
+    const activeTrustCoreTrees = await prisma.tree.count({
+      where: {
+        isTrustCore: true,
+        trustCoreConfig: { isActive: true },
+      },
+    });
+
+    // Total transactions with fee
+    const totalTransactionsWithFee = await prisma.walletTransaction.count({
+      where: { type: 'FEE' as any },
+    });
+
+    // Per-tree breakdown
+    const trustCoreTrees = await prisma.tree.findMany({
+      where: {
+        isTrustCore: true,
+        trustCoreConfig: { isActive: true },
+      },
+      select: {
+        id: true,
+        name: true,
+        trustCoreBalanceClp: true,
+      },
+    });
+
+    // Calculate total balance across all TrustCore trees
+    const totalTrustCoreBalance = trustCoreTrees.reduce(
+      (sum, t) => sum + t.trustCoreBalanceClp, 0,
+    );
+
+    const trees = trustCoreTrees.map((t) => ({
+      treeId: t.id,
+      name: t.name,
+      balanceClp: t.trustCoreBalanceClp,
+      share: totalTrustCoreBalance > 0
+        ? Math.round((t.trustCoreBalanceClp / totalTrustCoreBalance) * 10000) / 10000
+        : 0,
+    }));
+
+    return res.json({
+      currentFeePercent: globalConfig.currentFeePercent,
+      totalFeesCollectedAllTime,
+      totalFeesThisMonth,
+      activeTrustCoreTrees,
+      totalTransactionsWithFee,
+      systemMetrics: {
+        totalActiveUsers: globalConfig.totalActiveUsers,
+        monthlyVolumeClp: globalConfig.totalMonthlyVolumeClp,
+        activeTrees: globalConfig.totalActiveTrees,
+      },
+      trees,
+    });
+  } catch (error: any) {
+    console.error('[TrustCore getAdminDashboard] Error:', error);
+    return res.status(500).json({ error: 'Failed to fetch admin dashboard' });
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 9. withdraw — Tree admin withdraws funds from trustCoreBalanceClp
 // ═══════════════════════════════════════════════════════════════════════════
 
 export async function withdraw(req: Request, res: Response) {

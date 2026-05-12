@@ -19,12 +19,18 @@ import PrivacyPage from './pages/PrivacyPage';
 import TrustInsightDashboard from './pages/TrustInsightDashboard';
 import LandingPage from './pages/LandingPage';
 import WalletPage from './pages/Wallet';
+import WalletDashboard from './pages/WalletDashboard';
+import DepositPage from './pages/DepositPage';
+import WithdrawPage from './pages/WithdrawPage';
+import WalletTransactions from './pages/WalletTransactions';
+import TransferPage from './pages/TransferPage';
+import TrustCoreAdminDashboard from './pages/TrustCoreAdminDashboard';
 
 import MainLayout from './layouts/MainLayout';
 import ConciergeChat from './components/ConciergeChat';
 import type { AutoOpenContext } from './components/ConciergeChat';
 import { useEffect, useState } from 'react';
-import { appConfig, isBranchOS, isTraceLite, isTrustLite, isTrustInsight, isTrustLanding } from './config/appConfig';
+import { appConfig, isBranchOS, isTraceLite, isTrustLite, isTrustInsight, isTrustLanding, isTrustWallet } from './config/appConfig';
 
 function App() {
   const isAuthenticated = useAuthStore((state: any) => state.isAuthenticated);
@@ -134,6 +140,7 @@ function App() {
                 <Route path="/trees/list" element={<MyTreesList />} />
                 <Route path="/needs/new" element={<NewNeed />} />
                 <Route path="/admin" element={<AdminDashboard />} />
+                <Route path="/admin/trustcore" element={<TrustCoreAdminDashboard />} />
                 <Route path="/privacy" element={<PrivacyPage />} />
                 <Route path="/wallet" element={<WalletPage />} />
               </Route>
@@ -181,6 +188,17 @@ function App() {
               {/* landing no maneja auth — redirige a Trust Lite */}
               <Route path="*" element={<Navigate to="/" />} />
             </>
+          )}
+
+          {isTrustWallet && (
+            <Route element={isAuthenticated ? <MainLayout /> : <Navigate to="/login" />}>
+              <Route path="/" element={<WalletDashboard />} />
+              <Route path="/transactions" element={<WalletTransactions />} />
+              <Route path="/deposit" element={<DepositPage />} />
+              <Route path="/withdraw" element={<WithdrawPage />} />
+              <Route path="/transfer" element={<TransferPage />} />
+              <Route path="/privacy" element={<PrivacyPage />} />
+            </Route>
           )}
 
           <Route path="/join/:token" element={<GuestJoin />} />

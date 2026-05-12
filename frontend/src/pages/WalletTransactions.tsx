@@ -7,14 +7,19 @@ import { useTreeStore } from '../store/treeStore';
 interface Transaction {
   id: string;
   treeId: string;
-  treeName: string;
-  kind: 'fiat' | 'berries';
+  treeName: string | null;
+  kind: 'fiat' | 'berries' | 'wallet';
   type: string;
   category?: string;
+  status?: string;
   amount: number;
   currency?: string;
   description?: string;
   createdAt: string;
+  fromUserId?: string | null;
+  toUserId?: string | null;
+  fromUsername?: string | null;
+  toUsername?: string | null;
 }
 
 interface TransactionsResponse {
@@ -36,6 +41,18 @@ const TYPE_LABELS: Record<string, { label: string; color: string; bg: string }> 
   BERRY_LEVEL_REWARD: { label: 'Recompensa nivel', color: '#fbbf24', bg: 'rgba(251,191,36,0.1)' },
   BERRY_P2P_TRANSFER_IN: { label: 'Transferencia recibida', color: '#60a5fa', bg: 'rgba(96,165,250,0.1)' },
   BERRY_P2P_TRANSFER_OUT: { label: 'Transferencia enviada', color: '#f87171', bg: 'rgba(248,113,113,0.1)' },
+  // Wallet types — verde=IN/DEPOSIT, rojo=OUT/WITHDRAWAL, azul=P2P
+  WALLET_DEPOSIT: { label: 'Depósito', color: '#22c55e', bg: 'rgba(34,197,94,0.1)' },
+  WALLET_WITHDRAWAL: { label: 'Retiro', color: '#ef4444', bg: 'rgba(239,68,68,0.1)' },
+  WALLET_P2P_TRANSFER_IN: { label: 'P2P Recibido', color: '#3b82f6', bg: 'rgba(59,130,246,0.1)' },
+  WALLET_P2P_TRANSFER_OUT: { label: 'P2P Enviado', color: '#f97316', bg: 'rgba(249,115,22,0.1)' },
+  WALLET_P2P_TRANSFER: { label: 'P2P Transfer', color: '#3b82f6', bg: 'rgba(59,130,246,0.1)' },
+  WALLET_FEE: { label: 'Comisión', color: '#ef4444', bg: 'rgba(239,68,68,0.1)' },
+  WALLET_TREE_PAYMENT: { label: 'Pago Árbol', color: '#8b5cf6', bg: 'rgba(139,92,246,0.1)' },
+  WALLET_MEMBER_REWARD: { label: 'Recompensa', color: '#22c55e', bg: 'rgba(34,197,94,0.1)' },
+  WALLET_REFUND: { label: 'Reembolso', color: '#22c55e', bg: 'rgba(34,197,94,0.1)' },
+  WALLET_LOCK: { label: 'Bloqueo', color: '#f59e0b', bg: 'rgba(245,158,11,0.1)' },
+  WALLET_UNLOCK: { label: 'Desbloqueo', color: '#22c55e', bg: 'rgba(34,197,94,0.1)' },
 };
 
 function getTypeInfo(type: string) {
@@ -56,6 +73,10 @@ function formatDate(iso: string) {
 function formatAmount(tx: Transaction) {
   if (tx.kind === 'fiat') {
     const sign = tx.type.includes('EXPENSE') || tx.type.includes('MATERIALS') ? '−' : '+';
+    return `${sign}${tx.amount.toLocaleString('es-CL')} ${tx.currency || 'CLP'}`;
+  }
+  if (tx.kind === 'wallet') {
+    const sign = tx.type.includes('WITHDRAWAL') || tx.type.includes('OUT') || tx.type.includes('FEE') ? '−' : '+';
     return `${sign}${tx.amount.toLocaleString('es-CL')} ${tx.currency || 'CLP'}`;
   }
   const sign = tx.type.includes('OUT') ? '−' : '+';
@@ -94,7 +115,13 @@ export default function WalletTransactions() {
       const params = new URLSearchParams();
       params.set('limit', '20');
       params.set('offset', String(currentOffset));
-      if (filterType) params.set('types', filterType);
+      // Map filterType: ''=all, 'fiat'/'berry'/'wallet' = kinds, 'fee' = wallet + type=FEE
+      if (filterType === 'fee') {
+        params.set('types', 'wallet');
+        params.set('walletType', 'FEE');
+      } else if (filterType) {
+        params.set('types', filterType);
+      }
       if (filterTreeId) params.set('treeId', filterTreeId);
 
       const { data } = await api.get<TransactionsResponse>(`/wallet/transactions?${params}`);
@@ -211,6 +238,8 @@ export default function WalletTransactions() {
                     { value: '', label: 'Todos' },
                     { value: 'fiat', label: 'Fiat' },
                     { value: 'berry', label: 'Berries' },
+                    { value: 'wallet', label: 'Wallet' },
+                    { value: 'fee', label: 'Comisiones' },
                   ].map((opt) => (
                     <button
                       key={opt.value}
@@ -391,7 +420,10 @@ export default function WalletTransactions() {
           <AnimatePresence>
             {txs.map((tx, i) => {
               const info = getTypeInfo(tx.type);
-              const isCredit = !tx.type.includes('EXPENSE') && !tx.type.includes('OUT') && tx.type !== 'FIAT_MATERIALS';
+              const isCredit =
+                tx.kind === 'wallet'
+                  ? !tx.type.includes('WITHDRAWAL') && !tx.type.includes('OUT') && !tx.type.includes('FEE')
+                  : !tx.type.includes('EXPENSE') && !tx.type.includes('OUT') && tx.type !== 'FIAT_MATERIALS';
 
               return (
                 <motion.div
@@ -488,6 +520,26 @@ export default function WalletTransactions() {
                         }}
                       >
                         {tx.description}
+                      </div>
+                    )}
+
+                    {/* P2P transfer — show counterparty */}
+                    {tx.kind === 'wallet' && (tx.fromUsername || tx.toUsername) && (
+                      <div
+                        style={{
+                          fontSize: '0.6rem',
+                          color: 'rgba(255,255,255,0.25)',
+                          marginTop: '0.25rem',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '0.3rem',
+                        }}
+                      >
+                        <span style={{ color: tx.type.includes('_IN') ? 'rgba(96,165,250,0.7)' : 'rgba(249,115,22,0.7)' }}>
+                          {tx.type.includes('_IN')
+                            ? `← ${tx.fromUsername || 'Anónimo'}`
+                            : `→ ${tx.toUsername || 'Anónimo'}`}
+                        </span>
                       </div>
                     )}
                   </div>

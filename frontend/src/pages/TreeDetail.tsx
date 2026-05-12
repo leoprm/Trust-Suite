@@ -24,6 +24,7 @@ import FinancingSettingsPanel from '../components/FinancingSettingsPanel';
 import TreeExpenseList from '../components/TreeExpenseList';
 import MaturityGatesCard from '../components/MaturityGatesCard';
 import MemberPaymentDashboard from '../components/MemberPaymentDashboard';
+import TrustCoreSettingsPanel from '../components/TrustCoreSettingsPanel';
 
 export default function TreeDetail() {
   const { id } = useParams();
@@ -714,6 +715,7 @@ export default function TreeDetail() {
             <MaturityGatesCard tree={tree} />
           </section>
           <FinancingSettingsPanel treeId={id!} />
+          <TrustCoreSettingsPanel treeId={id!} tree={tree} isTreeAdmin={isTreeAdmin} />
           <section className="glass-panel" style={{ padding: '1.5rem' }}>
             <TreeExpenseList treeId={id!} />
           </section>

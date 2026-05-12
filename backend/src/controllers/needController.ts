@@ -5,7 +5,7 @@ import { searchNeeds as searchNeedsService } from '../services/needSearchService
 
 export const createNeed = async (req: any, res: Response) => {
   try {
-    const { title, description, treeIds, proposesHashtag } = req.body;
+    const { title, description, treeIds, proposesHashtag, externalReferences } = req.body;
     
     if (treeIds && treeIds.length > 0) {
       const memberships = await prisma.treeMember.findMany({
@@ -17,9 +17,13 @@ export const createNeed = async (req: any, res: Response) => {
         return res.status(403).json({ error: 'Debes ser un miembro Verificado en todos los árboles seleccionados para poder crear necesidades' });
       }
 
-      // Protocolo Asimov: AI no crea Needs
-      if (memberships.some((m: any) => m.isAI)) {
-        return res.status(403).json({ error: 'Protocolo Asimov: Un AI no puede crear Needs. El punto de partida de la economía debe ser humano.' });
+      // Protocolo Asimov: AI no crea Needs, EXCEPTO en árboles AI_COUNCIL
+      const aiMemberships = memberships.filter((m: any) => m.isAI);
+      if (aiMemberships.length > 0) {
+        const nonAICouncilTrees = aiMemberships.filter((m: any) => m.tree.treeType !== 'AI_COUNCIL');
+        if (nonAICouncilTrees.length > 0) {
+          return res.status(403).json({ error: 'Protocolo Asimov: Un AI no puede crear Needs en árboles NORMAL. Solo en AI_COUNCIL.' });
+        }
       }
 
       for (const m of memberships) {
@@ -39,14 +43,22 @@ export const createNeed = async (req: any, res: Response) => {
     }
 
     // Create the Need
-    const need = await (prisma as any).need.create({
-      data: {
-        title,
-        description,
-        creatorId: req.user.id,
-        proposesHashtag: proposesHashtag || false,
+    const needData: any = {
+      title,
+      description,
+      creatorId: req.user.id,
+      proposesHashtag: proposesHashtag || false,
+    };
+
+    // Validate and include externalReferences if provided
+    if (externalReferences) {
+      if (!Array.isArray(externalReferences)) {
+        return res.status(400).json({ error: 'externalReferences must be a JSON array' });
       }
-    });
+      needData.externalReferences = externalReferences;
+    }
+
+    const need = await (prisma as any).need.create({ data: needData });
 
     // Link the Need to multiple Trees
     if (treeIds && treeIds.length > 0) {

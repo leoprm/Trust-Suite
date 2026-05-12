@@ -13,18 +13,14 @@ const uuid = () => crypto.randomUUID();
 const now = () => new Date();
 const daysAgo = (d: number) => new Date(Date.now() - d * 86400000);
 
-// ── Existing user IDs ──
-const LEO_ID    = '4b9a8ce2-76b0-42e9-be80-4b37059d30d5';
-const TEST1_ID  = '0a5d3289-cfdc-4cf9-aae7-c1f1c8e10671';
-const TEST2_ID  = '85970724-84f8-4434-a0be-24951d0a50e6';
-
+// ── All users created uniformly (self-contained) ──
 async function main() {
   console.log('🌱 Seeding demo data...\n');
 
+  // Clean everything when re-seeding
   const existingTrees = await prisma.tree.count();
   if (existingTrees > 0) {
     console.log(`🧹 Cleaning ${existingTrees} existing trees and related data...`);
-    // Delete in order: tasks → branch members → branches → tree members → needs → ideas → trees
     await prisma.task.deleteMany();
     await (prisma as any).memberPayment.deleteMany();
     await (prisma as any).treeExpense.deleteMany();
@@ -39,32 +35,38 @@ async function main() {
     await prisma.needTree.deleteMany();
     await prisma.idea.deleteMany();
     await prisma.need.deleteMany();
-    // External needs cascade: delete children first
     await (prisma as any).budgetLine.deleteMany();
     await (prisma as any).solutionProposal.deleteMany();
     await (prisma as any).scopePreference.deleteMany();
     await (prisma as any).externalAgent.deleteMany();
     await prisma.externalNeed.deleteMany();
     await prisma.tree.deleteMany();
-    // Delete demo users (keep originals: Leo, testuser123, usuariotest999)
-    await prisma.user.deleteMany({ where: { id: { notIn: [LEO_ID, TEST1_ID, TEST2_ID] } } });
+    await (prisma as any).walletTransaction.deleteMany();
+    await (prisma as any).userWallet.deleteMany();
+    // Delete ALL demo users by email pattern
+    await prisma.user.deleteMany({
+      where: { email: { contains: '@demo.com' } },
+    });
     console.log('   ✅ Cleaned. Starting fresh.\n');
   }
 
   // ══════════════════════════════════════════
-  // 1. USERS
+  // 1. USERS (10 total, all created dynamically)
   // ══════════════════════════════════════════
   console.log('📝 Creating users...');
   const hash = await bcrypt.hash('demo123', 10);
 
   const userDefs = [
-    { username: 'María García',   email: 'maria@demo.com',   role: 'PERSON' as const },
-    { username: 'Pedro Rodríguez', email: 'pedro@demo.com',   role: 'PERSON' as const },
-    { username: 'Ana Martínez',   email: 'ana@demo.com',     role: 'PERSON' as const },
-    { username: 'Carlos López',   email: 'carlos@demo.com',  role: 'PERSON' as const },
-    { username: 'Elena Vargas',   email: 'elena@demo.com',   role: 'PERSON' as const },
-    { username: 'Diego Morales',  email: 'diego@demo.com',   role: 'PERSON' as const },
-    { username: 'Valentina Ruiz', email: 'vale@demo.com',    role: 'PERSON' as const },
+    { username: 'Leo',             email: 'leo@demo.com',              role: 'PERSON' as const },
+    { username: 'María García',    email: 'maria@demo.com',            role: 'PERSON' as const },
+    { username: 'Pedro Rodríguez', email: 'pedro@demo.com',            role: 'PERSON' as const },
+    { username: 'Ana Martínez',    email: 'ana@demo.com',              role: 'PERSON' as const },
+    { username: 'Carlos López',    email: 'carlos@demo.com',           role: 'PERSON' as const },
+    { username: 'Elena Vargas',    email: 'elena@demo.com',            role: 'PERSON' as const },
+    { username: 'Diego Morales',   email: 'diego@demo.com',            role: 'PERSON' as const },
+    { username: 'Valentina Ruiz',  email: 'vale@demo.com',             role: 'PERSON' as const },
+    { username: 'testuser123',     email: 'testuser123@demo.com',      role: 'PERSON' as const },
+    { username: 'usuariotest999',  email: 'usuariotest999@demo.com',   role: 'PERSON' as const },
   ];
 
   const newUsers: Record<string, string> = {};
@@ -81,21 +83,44 @@ async function main() {
     newUsers[u.username] = user.id;
   }
 
-  // Use existing test users too
-  const allUserIds = [
-    { name: 'Leo',             id: LEO_ID },
-    { name: 'María García',   id: newUsers['María García'] },
-    { name: 'Pedro Rodríguez', id: newUsers['Pedro Rodríguez'] },
-    { name: 'Ana Martínez',   id: newUsers['Ana Martínez'] },
-    { name: 'Carlos López',   id: newUsers['Carlos López'] },
-    { name: 'Elena Vargas',   id: newUsers['Elena Vargas'] },
-    { name: 'Diego Morales',  id: newUsers['Diego Morales'] },
-    { name: 'Valentina Ruiz', id: newUsers['Valentina Ruiz'] },
-    { name: 'testuser123',    id: TEST1_ID },
-    { name: 'usuariotest999', id: TEST2_ID },
-  ];
+  const allUserIds = userDefs.map(u => ({ name: u.username, id: newUsers[u.username] }));
   const uid = (name: string) => allUserIds.find(u => u.name === name)!.id;
-  console.log(`   ✅ ${userDefs.length} users created (10 total with existing)`);
+  console.log(`   ✅ ${userDefs.length} users created`);
+
+  // ══════════════════════════════════════════
+  // 1.5. WALLETS — demo balances
+  // ══════════════════════════════════════════
+  console.log('💰 Creating wallets...');
+
+  const walletBalances: Record<string, { clp: number; berries: number }> = {
+    'Leo':             { clp: 500000, berries: 750 },
+    'María García':    { clp: 250000, berries: 120 },
+    'Pedro Rodríguez': { clp: 180000, berries: 45 },
+    'Ana Martínez':    { clp: 320000, berries: 60 },
+    'Carlos López':    { clp: 420000, berries: 90 },
+    'Elena Vargas':    { clp: 90000,  berries: 30 },
+    'Diego Morales':   { clp: 280000, berries: 55 },
+    'Valentina Ruiz':  { clp: 150000, berries: 25 },
+    'testuser123':     { clp: 100000, berries: 40 },
+    'usuariotest999':  { clp: 80000,  berries: 15 },
+  };
+
+  for (const u of allUserIds) {
+    const bal = walletBalances[u.name] || { clp: 100000, berries: 10 };
+    // Use upsert in case wallet already exists from a previous partial run
+    await (prisma as any).userWallet.upsert({
+      where: { userId: u.id },
+      update: { balanceClp: bal.clp, balanceBerries: bal.berries, lockedClp: 0 },
+      create: {
+        id: uuid(),
+        userId: u.id,
+        balanceClp: bal.clp,
+        lockedClp: 0,
+        balanceBerries: bal.berries,
+      },
+    });
+  }
+  console.log('   ✅ 10 wallets with demo balances');
 
   // ══════════════════════════════════════════
   // 2. TREES
@@ -111,7 +136,7 @@ async function main() {
         city: 'Santiago', sector: 'Centro', visibility: 'PUBLIC', admissionPolicy: 'OPEN',
         allowHashtags: true, allowTraditionalBranches: true, hashtagCreationPolicy: 'ADMIN_AND_USERS',
         economyMode: 'BERRIES_ACTIVE', presupuestoTotal: 500, modoGobierno: 'DEMOCRATICO',
-        creatorId: LEO_ID, capacidades: 'Agricultura urbana, Compostaje, Energía solar, Reciclaje, Educación ambiental',
+        creatorId: uid('Leo'), capacidades: 'Agricultura urbana, Compostaje, Energía solar, Reciclaje, Educación ambiental',
         description: 'Comunidad autosustentable enfocada en ecología urbana y producción local de alimentos',
         inviteCode: 'ECO-' + crypto.randomBytes(4).toString('hex').toUpperCase(),
         crisisSubjects: '',
@@ -121,7 +146,7 @@ async function main() {
         city: 'Valparaíso', sector: 'Cerro Alegre', visibility: 'PUBLIC', admissionPolicy: 'INVITE_ONLY',
         allowHashtags: true, allowTraditionalBranches: true, hashtagCreationPolicy: 'ADMIN_ONLY',
         economyMode: 'LEGACY_FIAT', presupuestoTotal: 1000, modoGobierno: 'DEMOCRATICO',
-        creatorId: LEO_ID, capacidades: 'Desarrollo web, Diseño UX/UI, DevOps, Data Science, Marketing digital',
+        creatorId: uid('Leo'), capacidades: 'Desarrollo web, Diseño UX/UI, DevOps, Data Science, Marketing digital',
         description: 'Cooperativa tecnológica para proyectos digitales con impacto social',
         inviteCode: 'TECH-' + crypto.randomBytes(4).toString('hex').toUpperCase(),
         crisisSubjects: '',
@@ -131,7 +156,7 @@ async function main() {
         city: 'Concepción', sector: 'Barrio Universitario', visibility: 'PRIVATE', admissionPolicy: 'OPEN',
         allowHashtags: false, allowTraditionalBranches: true,
         economyMode: 'NO_ECONOMY', presupuestoTotal: 200, modoGobierno: 'DEMOCRATICO',
-        creatorId: LEO_ID, capacidades: 'Voluntariado, Cocina comunitaria, Apoyo escolar, Huertos urbanos',
+        creatorId: uid('Leo'), capacidades: 'Voluntariado, Cocina comunitaria, Apoyo escolar, Huertos urbanos',
         description: 'Red de apoyo mutuo y voluntariado para la comunidad penquista',
         inviteCode: 'MANOS-' + crypto.randomBytes(4).toString('hex').toUpperCase(),
         crisisSubjects: '',
@@ -682,7 +707,7 @@ async function main() {
       economyMode: 'LEGACY_FIAT',
       presupuestoTotal: 1000,
       modoGobierno: 'DEMOCRATICO',
-      creatorId: LEO_ID,
+      creatorId: uid('Leo'),
       capacidades: 'Desarrollo software, Diseño, Marketing, Finanzas, Legal',
       description: 'Cooperativa digital con modelo de suscripción mensual proporcional a gastos',
       inviteCode: 'SUB-' + crypto.randomBytes(4).toString('hex').toUpperCase(),
@@ -747,7 +772,7 @@ async function main() {
         category: exp.category,
         isRecurring: exp.isRecurring,
         dueDayOfMonth: exp.dueDayOfMonth || null,
-        addedById: LEO_ID,
+        addedById: uid('Leo'),
         month: currentMonth,
       },
     });

@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { createTree, joinTree, getMyTrees, getGlobalTrees, getTreeMembers, getTree, leaveTree, inviteMember, removeMember, updateMemberPower, getNetworkGraph, getPendingEvidence, generateGuestToken, consumeGuestToken, toggleCrisisMode, broadcastCrisisSignal } from '../controllers/treeController';
+import { createTree, joinTree, getMyTrees, getGlobalTrees, getTreeMembers, getTree, leaveTree, inviteMember, removeMember, updateMemberPower, getNetworkGraph, getPendingEvidence, generateGuestToken, consumeGuestToken, toggleCrisisMode, broadcastCrisisSignal, updateTree, inviteAI } from '../controllers/treeController';
 import { addTransaction, getFiatLedgerSummaryController, getTransactions, updateEconomyMode } from '../controllers/fiatController';
 import { authenticateJWT, requireAdmin, optionalAuth } from '../middleware/authMiddleware';
 import { aiGate } from '../middleware/aiEthicsMiddleware';
@@ -37,5 +37,7 @@ router.post('/:id/crisis/broadcast', broadcastCrisisSignal);
 router.delete('/:treeId/members/:userId', removeMember);
 router.patch('/:id/members/:userId/power', updateMemberPower);
 router.delete('/:id/leave', leaveTree);
+router.put('/:id', updateTree);
+router.post('/:id/invite-ai', inviteAI);
 
 export default router;

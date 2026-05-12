@@ -292,11 +292,12 @@ export async function getWallet(req: Request, res: Response) {
 export async function getTransactions(req: Request, res: Response) {
   try {
     const userId = req.user!.id;
-    const { limit, offset, types, treeId } = req.query as {
+    const { limit, offset, types, treeId, walletType } = req.query as {
       limit?: string;
       offset?: string;
       types?: string;
       treeId?: string;
+      walletType?: string; // e.g. "FEE" to filter wallet txs by WalletTransactionType
     };
 
     const take = Math.min(Math.max(parseInt(limit || '20') || 20, 1), 100);
@@ -310,7 +311,13 @@ export async function getTransactions(req: Request, res: Response) {
     const treeFilter = treeId ? { treeId } : {};
 
     const wallet = await getOrCreateWallet(userId);
-    const walletFilter = wantedWallet ? { walletId: wallet.id, ...treeFilter } : null;
+    const walletBaseFilter = wantedWallet
+      ? { walletId: wallet.id, ...treeFilter, status: { not: 'REVERSED' as const } }
+      : null;
+    const walletTypeFilter = walletType ? { type: walletType.toUpperCase() as any } : {};
+    const walletFilter = walletBaseFilter
+      ? { ...walletBaseFilter, ...walletTypeFilter }
+      : null;
 
     const [totalFiat, totalBerry, totalWallet, fiatTxs, berryTxs, walletTxs] = await Promise.all([
       wantedFiat
@@ -323,9 +330,9 @@ export async function getTransactions(req: Request, res: Response) {
             where: { userId, ...treeFilter },
           })
         : Promise.resolve(0),
-      wantedWallet && walletFilter
+      walletFilter
         ? prisma.walletTransaction.count({
-            where: { ...walletFilter, status: { not: 'REVERSED' } },
+            where: walletFilter,
           })
         : Promise.resolve(0),
       wantedFiat
@@ -360,9 +367,9 @@ export async function getTransactions(req: Request, res: Response) {
             },
           })
         : Promise.resolve([]),
-      wantedWallet && walletFilter
+      walletFilter
         ? prisma.walletTransaction.findMany({
-            where: { ...walletFilter, status: { not: 'REVERSED' } },
+            where: walletFilter,
             orderBy: { createdAt: 'desc' },
             select: {
               id: true,
@@ -446,6 +453,7 @@ export async function getTransactions(req: Request, res: Response) {
         offset: skip,
         types: types || 'all',
         treeId: treeId || 'all',
+        walletType: walletType || null,
         resultsReturned: unified.length,
       }),
     });

@@ -178,3 +178,40 @@ export const getPublicMetrics = async (req: Request, res: Response) => {
     res.status(500).json({ error: 'Failed to fetch public metrics' });
   }
 };
+
+// ── Public Fee Stats Handler ───────────────────────────────────────────────
+
+export const getPublicFeeStats = async (_req: Request, res: Response) => {
+  try {
+    const globalConfig = await prisma.globalFeeConfig.findUnique({
+      where: { id: 'default' },
+      select: {
+        currentFeePercent: true,
+        lastRecalculatedAt: true,
+      },
+    });
+
+    // All-time fees collected
+    const allTimeResult = await prisma.feeDistribution.aggregate({
+      _sum: { amount: true },
+    });
+
+    // Active TrustCore trees
+    const activeTrustCoreTrees = await prisma.tree.count({
+      where: {
+        isTrustCore: true,
+        trustCoreConfig: { isActive: true },
+      },
+    });
+
+    return res.json({
+      currentFeePercent: globalConfig?.currentFeePercent ?? 0.5,
+      totalFeesCollectedAllTime: Math.round((allTimeResult._sum.amount || 0) * 100) / 100,
+      activeTrustCoreTrees,
+      lastRecalculatedAt: globalConfig?.lastRecalculatedAt ?? null,
+    });
+  } catch (error) {
+    console.error('[PublicFeeStats] Error:', error);
+    res.status(500).json({ error: 'Failed to fetch fee stats' });
+  }
+};

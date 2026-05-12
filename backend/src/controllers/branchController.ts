@@ -263,7 +263,7 @@ export const getBranchTasks = async (req: any, res: Response) => {
 // POST /api/branches/hashtag — Admin creates a hashtag branch directly (no Need->Idea flow)
 export const createHashtagBranch = async (req: any, res: Response) => {
   try {
-    const { treeId, name } = req.body;
+    const { treeId, name, sourceNeedId } = req.body;
 
     // Only tree creator or admin can create hashtag branches directly
     const tree = await prisma.tree.findUnique({ where: { id: treeId } });
@@ -278,15 +278,56 @@ export const createHashtagBranch = async (req: any, res: Response) => {
       return res.status(403).json({ error: 'Solo el creador del árbol puede crear hashtags directamente.' });
     }
 
+    let branchName = `#${name}`;
+    let branchDescription: string | undefined;
+    let linkedNeedId: string | undefined;
+
+    // If sourceNeedId is provided, validate and auto-populate from approved Need
+    if (sourceNeedId) {
+      const need = await prisma.need.findUnique({
+        where: { id: sourceNeedId },
+        include: { treeLinks: true },
+      });
+
+      if (!need) return res.status(404).json({ error: 'Source Need not found' });
+      if (need.auditStatus !== 'APPROVED') return res.status(400).json({ error: 'Source Need must be APPROVED before creating a hashtag branch from it' });
+
+      // Verify need belongs to this tree
+      const linked = need.treeLinks.some((tl: any) => tl.treeId === treeId);
+      if (!linked) return res.status(400).json({ error: 'Source Need is not linked to this tree' });
+
+      // Auto-generate name from Need title if no name provided
+      if (!name) {
+        const slug = need.title
+          .toLowerCase()
+          .replace(/[^a-z0-9áéíóúñü\s-]/g, '')
+          .replace(/\s+/g, '-')
+          .replace(/-+/g, '-')
+          .replace(/^-|-$/g, '')
+          .substring(0, 80);
+        branchName = `#${slug}`;
+      }
+
+      // Build description from Need
+      const refsText = need.externalReferences && Array.isArray(need.externalReferences)
+        ? '\n\nReferencias:\n' + (need.externalReferences as any[]).map((r: any) => `- ${r.title}: ${r.url}`).join('\n')
+        : '';
+      branchDescription = `${need.description}${refsText}`;
+
+      linkedNeedId = sourceNeedId;
+    }
+
     // Hashtag branches are now created directly without an associated Need/Idea
     const branch = await (prisma as any).branch.create({
       data: {
         treeId,
-        name: `#${name}`,
+        name: branchName,
+        description: branchDescription,
         isHashtag: true,
         type: 'HASHTAG',
         phase: 'DEVELOPMENT',
         activePhasesJson: '["DEVELOPMENT"]',
+        sourceNeedId: linkedNeedId,
       }
     });
 

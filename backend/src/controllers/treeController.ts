@@ -7,24 +7,59 @@ import { getRequestContext, getRequestMetadata, logEvent } from '../services/eve
 // Re-usable helper to get users
 export const createTree = async (req: any, res: Response) => {
   try {
-    const { name, icono, description, inviteUserIds, settings, visibility, admissionPolicy, allowHashtags, allowTraditionalBranches, hashtagCreationPolicy, modoGobierno, creacionRamaDirecta, creacionRamaComunitaria, capacidades } = req.body;
+    const { name, icono, description, inviteUserIds, settings, visibility, admissionPolicy, allowHashtags, allowTraditionalBranches, hashtagCreationPolicy, modoGobierno, creacionRamaDirecta, creacionRamaComunitaria, capacidades, treeType } = req.body;
     
-    if (allowHashtags === false && allowTraditionalBranches === false) {
+    const isAICouncil = treeType === 'AI_COUNCIL';
+
+    if (allowHashtags === false && allowTraditionalBranches === false && !isAICouncil) {
       return res.status(400).json({ error: 'Un árbol debe permitir al menos un tipo de rama (Hashtags o Tradicionales).' });
     }
 
     const inviteCode = randomBytes(4).toString('hex');
     const creatorId = req.user.id;
-    let economyMode = req.body.economyMode || 'NO_ECONOMY';
-    try {
-      const parsedSettings = typeof settings === 'string' ? JSON.parse(settings) : settings;
-      if (!req.body.economyMode && parsedSettings?.modules?.fiat?.enabled) {
-        economyMode = 'LEGACY_FIAT';
-      }
-    } catch {}
+
+    // Enforce forced settings for AI_COUNCIL trees
+    let economyMode: string;
+    let forcedVisibility = visibility;
+    let forcedAdmissionPolicy = admissionPolicy;
+    let forcedHashtagPolicy = hashtagCreationPolicy;
+    let forcedCreacionRamaComunitaria = creacionRamaComunitaria;
+    let forcedAllowTraditionalBranches = allowTraditionalBranches;
+    let forcedAllowHashtags = allowHashtags;
+
+    if (isAICouncil) {
+      forcedVisibility = 'PUBLIC';
+      forcedAdmissionPolicy = 'INVITE_ONLY';
+      forcedHashtagPolicy = 'ADMIN_ONLY';
+      economyMode = 'NO_ECONOMY';
+      forcedCreacionRamaComunitaria = false;
+      forcedAllowTraditionalBranches = false;
+      forcedAllowHashtags = true;
+    } else {
+      let econ = req.body.economyMode || 'NO_ECONOMY';
+      try {
+        const parsedSettings = typeof settings === 'string' ? JSON.parse(settings) : settings;
+        if (!req.body.economyMode && parsedSettings?.modules?.fiat?.enabled) {
+          econ = 'LEGACY_FIAT';
+        }
+      } catch {}
+      economyMode = econ;
+    }
     
     const tree = await (prisma as any).tree.create({
-      data: { name, icono, description, inviteCode, creatorId, settings, visibility, admissionPolicy, allowHashtags, allowTraditionalBranches, hashtagCreationPolicy, modoGobierno, creacionRamaDirecta, creacionRamaComunitaria, capacidades, economyMode }
+      data: { name, icono, description, inviteCode, creatorId, settings,
+        visibility: forcedVisibility,
+        admissionPolicy: forcedAdmissionPolicy,
+        allowHashtags: forcedAllowHashtags,
+        allowTraditionalBranches: forcedAllowTraditionalBranches,
+        hashtagCreationPolicy: forcedHashtagPolicy,
+        modoGobierno,
+        creacionRamaDirecta,
+        creacionRamaComunitaria: forcedCreacionRamaComunitaria,
+        capacidades,
+        economyMode,
+        treeType: isAICouncil ? 'AI_COUNCIL' : 'NORMAL',
+      }
     });
 
     // Protocolo Asimov: tree creator must be human. Check if user is AI in any other tree.
@@ -1134,5 +1169,94 @@ export const broadcastCrisisSignal = async (req: Request, res: Response) => {
     res.json({ message: 'Zonal Broadcast successful.', alerta });
   } catch (err) {
     res.status(500).json({ error: 'Failed to broadcast crisis' });
+  }
+};
+
+// ── AI Council: updateTree ────────────────────────────────────────────
+
+export const updateTree = async (req: any, res: Response) => {
+  try {
+    const tree = await prisma.tree.findUnique({ where: { id: req.params.id } });
+    if (!tree) return res.status(404).json({ error: 'Tree not found' });
+    if (tree.creatorId !== req.user.id) return res.status(403).json({ error: 'Only tree creator can update' });
+
+    if (tree.treeType === 'AI_COUNCIL') {
+      const blockedFields = [
+        'visibility', 'admissionPolicy', 'hashtagCreationPolicy',
+        'economyMode', 'creacionRamaComunitaria', 'allowTraditionalBranches',
+        'allowHashtags', 'treeType',
+      ];
+      const attempted = Object.keys(req.body).filter(k => blockedFields.includes(k));
+      if (attempted.length > 0) {
+        return res.status(403).json({
+          error: `AI Council trees cannot modify: ${attempted.join(', ')}`,
+          blockedFields: attempted,
+        });
+      }
+    }
+
+    const allowed = ['name', 'icono', 'description'];
+    const data: any = {};
+    for (const k of Object.keys(req.body)) {
+      if (allowed.includes(k)) data[k] = req.body[k];
+    }
+
+    const updated = await prisma.tree.update({ where: { id: req.params.id }, data });
+    res.json(updated);
+  } catch (error: any) {
+    console.error('[updateTree] ERROR:', error?.message || error);
+    res.status(500).json({ error: 'Failed to update tree', detail: error?.message || String(error) });
+  }
+};
+
+// ── AI Council: inviteAI ──────────────────────────────────────────────
+
+export const inviteAI = async (req: any, res: Response) => {
+  try {
+    const treeId = req.params.id;
+    const { userId } = req.body;
+
+    const tree = await prisma.tree.findUnique({ where: { id: treeId } });
+    if (!tree) return res.status(404).json({ error: 'Tree not found' });
+    if (tree.treeType !== 'AI_COUNCIL') return res.status(400).json({ error: 'Only AI_COUNCIL trees can invite AI members' });
+    if (tree.creatorId !== req.user.id) return res.status(403).json({ error: 'Only tree creator can invite AI members' });
+
+    // Verify target user exists and has AIMemberConfig
+    const targetUser = await prisma.user.findUnique({ where: { id: userId } });
+    if (!targetUser) return res.status(404).json({ error: 'Target user not found' });
+
+    // Check not already a member
+    const existing = await prisma.treeMember.findUnique({
+      where: { userId_treeId: { userId, treeId } },
+    });
+    if (existing) return res.status(409).json({ error: 'User is already a member of this tree' });
+
+    // Create AI member — AIMemberConfig will be created separately
+    const member = await prisma.treeMember.create({
+      data: {
+        userId,
+        treeId,
+        isAI: true,
+        invitedById: req.user.id,
+        weeklyNeedPoints: 1000,
+        status: 'VERIFIED',
+      },
+    });
+
+    void logEvent({
+      ...getRequestContext(req),
+      treeId,
+      action: 'AI_MEMBER_INVITED',
+      entityType: 'TreeMember',
+      entityId: member.id,
+      afterJson: { userId, treeId, isAI: true },
+      metadataJson: getRequestMetadata(req, { result: 'success' }),
+      source: 'USER',
+    });
+
+    res.status(201).json(member);
+  } catch (error: any) {
+    console.error('[inviteAI] ERROR:', error?.message || error);
+    res.status(500).json({ error: 'Failed to invite AI member', detail: error?.message || String(error) });
   }
 };
