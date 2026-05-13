@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { authenticateJWT, requireAdmin } from '../middleware/authMiddleware';
 import {
+  getAdminStats,
   createUser, getUsers, updateUser, deleteUser,
   createTree, getTrees, updateTree, deleteTree,
   createNeed, getNeeds, updateNeed, deleteNeed,
@@ -13,6 +14,9 @@ const router = Router();
 // Secure all admin routes
 router.use(authenticateJWT);
 router.use(requireAdmin);
+
+// Stats (dashboard)
+router.get('/stats', getAdminStats);
 
 // Users
 router.get('/users', getUsers);

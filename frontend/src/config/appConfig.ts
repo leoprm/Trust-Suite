@@ -3,6 +3,7 @@ export type DrawerPanelKey = 'notifications' | 'profile' | 'privacy' | 'director
 
 interface AppFeatureFlags {
   admin: boolean;
+  billing: boolean;
   citizenProfile: boolean;
   directory: boolean;
   needs: boolean;
@@ -36,6 +37,7 @@ export const appConfig: AppConfig = {
   drawerPanels: ['notifications', 'profile', 'privacy', 'directory'],
   features: {
     admin: true,
+    billing: true,
     citizenProfile: true,
     directory: true,
     needs: true,

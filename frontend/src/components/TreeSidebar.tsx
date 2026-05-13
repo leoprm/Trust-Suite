@@ -13,6 +13,9 @@ import {
   UserRound,
   ListTodo,
   LockKeyhole,
+  CreditCard,
+  Brain,
+  Wrench,
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -47,6 +50,9 @@ const TreeSidebar = ({ isMobile }: { isMobile?: boolean }) => {
     appConfig.drawerPanels.includes('privacy') ? { icon: LockKeyhole, label: 'Privacidad', path: '/privacy' } : null,
     appConfig.features.admin && user?.role === 'ADMINISTRATOR' ? { icon: ShieldCheck, label: 'Admin', path: '/admin' } : null,
     appConfig.features.talentSearch ? { icon: Crosshair, label: 'Buscar Talento', path: '/talent' } : null,
+    appConfig.features.billing ? { icon: CreditCard, label: 'Facturación', path: '/billing' } : null,
+    { icon: Brain, label: 'Modelos', path: '/models' },
+    { icon: Wrench, label: 'Fine-tune', path: '/finetune' },
   ].filter((item): item is { icon: typeof LayoutDashboard; label: string; path: string } => Boolean(item));
 
   const NavItem = ({ icon: Icon, label, path, active }: any) => {

@@ -34,6 +34,7 @@ CREATE TABLE IF NOT EXISTS `User` (
     `publicShowTaskHistory`   BOOLEAN NOT NULL DEFAULT true,
     `visibleForRecruitment`   BOOLEAN NOT NULL DEFAULT false,
     `seekingWork`             BOOLEAN NOT NULL DEFAULT false,
+    `subscriptionActive`     BOOLEAN NOT NULL DEFAULT false,
 
     UNIQUE INDEX `User_username_key`(`username`),
     UNIQUE INDEX `User_email_key`(`email`),
@@ -974,6 +975,60 @@ CREATE TABLE IF NOT EXISTS `InterviewInvitation` (
     PRIMARY KEY (`id`)
 ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
+-- ─────────────────────────────────────────────────────────────────────────────
+-- 14. STRIPE CONNECT (BYO AI payouts)
+-- ─────────────────────────────────────────────────────────────────────────────
+
+CREATE TABLE IF NOT EXISTS `StripeConnectAccount` (
+    `id`              VARCHAR(191) NOT NULL,
+    `userId`          VARCHAR(191) NOT NULL,
+    `stripeAccountId` VARCHAR(191) NOT NULL,
+    `chargesEnabled`  BOOLEAN NOT NULL DEFAULT false,
+    `payoutsEnabled`  BOOLEAN NOT NULL DEFAULT false,
+    `createdAt`       DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    `updatedAt`       DATETIME(3) NOT NULL,
+
+    UNIQUE INDEX `StripeConnectAccount_userId_key`(`userId`),
+    UNIQUE INDEX `StripeConnectAccount_stripeAccountId_key`(`stripeAccountId`),
+    INDEX `StripeConnectAccount_userId_idx`(`userId`),
+    INDEX `StripeConnectAccount_stripeAccountId_idx`(`stripeAccountId`),
+    PRIMARY KEY (`id`)
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
+-- ── SubscriptionPlan (Trust Maker billing) ─────────────────────────────────
+
+CREATE TABLE IF NOT EXISTS `SubscriptionPlan` (
+    `id`                 VARCHAR(191) NOT NULL,
+    `name`               VARCHAR(191) NOT NULL,
+    `currentMonthlyCost` DOUBLE NOT NULL DEFAULT 0,
+    `costBreakdown`      JSON NOT NULL,
+    `calculatedAt`       DATETIME(3) NOT NULL,
+    `createdAt`          DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+
+    PRIMARY KEY (`id`)
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
+-- ── UserSubscription (Paddle) ──────────────────────────────────────────────
+
+CREATE TABLE IF NOT EXISTS `UserSubscription` (
+    `id`                   VARCHAR(191) NOT NULL,
+    `userId`               VARCHAR(191) NOT NULL,
+    `paddleSubscriptionId` VARCHAR(191) NOT NULL,
+    `status`               ENUM('ACTIVE','PAST_DUE','CANCELED') NOT NULL DEFAULT 'ACTIVE',
+    `planId`               VARCHAR(191) NULL,
+    `currentPeriodStart`   DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    `currentPeriodEnd`     DATETIME(3) NOT NULL,
+    `canceledAt`           DATETIME(3) NULL,
+    `monthlyCost`          DOUBLE NULL,
+    `createdAt`            DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    `updatedAt`            DATETIME(3) NOT NULL,
+
+    UNIQUE INDEX `UserSubscription_paddleSubscriptionId_key`(`paddleSubscriptionId`),
+    INDEX `UserSubscription_userId_idx`(`userId`),
+    INDEX `UserSubscription_status_idx`(`status`),
+    PRIMARY KEY (`id`)
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- FOREIGN KEYS
 -- Each statement is executed individually by the bootstrap function.
@@ -1165,6 +1220,12 @@ ALTER TABLE `SearchPass` ADD CONSTRAINT `SearchPass_userId_fkey` FOREIGN KEY (`u
 -- InterviewInvitation
 ALTER TABLE `InterviewInvitation` ADD CONSTRAINT `InterviewInvitation_senderId_fkey` FOREIGN KEY (`senderId`) REFERENCES `User`(`id`) ON DELETE CASCADE ON UPDATE CASCADE;
 ALTER TABLE `InterviewInvitation` ADD CONSTRAINT `InterviewInvitation_recipientId_fkey` FOREIGN KEY (`recipientId`) REFERENCES `User`(`id`) ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- StripeConnectAccount
+ALTER TABLE `StripeConnectAccount` ADD CONSTRAINT `StripeConnectAccount_userId_fkey` FOREIGN KEY (`userId`) REFERENCES `User`(`id`) ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- Billing: SubscriptionPlan & UserSubscription
+ALTER TABLE `UserSubscription` ADD CONSTRAINT `UserSubscription_userId_fkey` FOREIGN KEY (`userId`) REFERENCES `User`(`id`) ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AIMemberConfig
 ALTER TABLE `AIMemberConfig` ADD CONSTRAINT `AIMemberConfig_treeMemberId_fkey` FOREIGN KEY (`treeMemberId`) REFERENCES `TreeMember`(`id`) ON DELETE CASCADE ON UPDATE CASCADE;

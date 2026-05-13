@@ -59,6 +59,7 @@ import { startTaskMatcherCron } from './cron/taskMatcherCron';
 import { startAIExecutorCron } from './cron/aiExecutorCron';
 import { startMonthlyNeedPointsCron } from './cron/monthlyNeedPointsCron';
 import { startCareerPathGraphCron } from './cron/careerPathGraphCron';
+import { startSubscriptionCron } from './cron/subscriptionCron';
 import aiTaskRoutes from './routes/aiTaskRoutes';
 import aiExecutorRoutes from './routes/aiExecutorRoutes';
 import aiReputationRoutes from './routes/aiReputationRoutes';
@@ -66,16 +67,18 @@ import { aiLeaderboard } from './controllers/aiReputationController';
 import conciergeRoutes from './routes/conciergeRoutes';
 import trustCoreRoutes from './routes/trustCoreRoutes';
 import careerPathRoutes from './routes/careerPathRoutes';
+import byoRoutes from './routes/byoRoutes';
+import billingRoutes from './routes/billingRoutes';
+import { stripeWebhook, paddleWebhook, createCheckout, cancelSubscription, currentCost, mySubscription } from './controllers/billingController';
+import modelRoutes from './routes/modelRoutes';
+import inferenceRoutes from './routes/inferenceRoutes';
+import finetuneRoutes from './routes/finetuneRoutes';
 
 const app = express();
 const port = process.env.PORT || 3000;
 export const prisma = new PrismaClient();
 
 // ── Database Bootstrap ────────────────────────────────────────────────────────
-// Reads ../database/init.sql and executes it against MySQL to ensure all tables
-// exist. Safe to run on every startup (uses CREATE TABLE IF NOT EXISTS).
-// In Docker, this file will be mounted as the MySQL init script instead.
-// ──────────────────────────────────────────────────────────────────────────────
 async function bootstrapDatabase(): Promise<void> {
   const sqlPath = path.resolve(__dirname, '../../database/init.sql');
   if (!fs.existsSync(sqlPath)) {
@@ -94,19 +97,15 @@ async function bootstrapDatabase(): Promise<void> {
     const conn = await mysql.createConnection(dbUrl + separator + 'multipleStatements=true');
     const fullSql = fs.readFileSync(sqlPath, 'utf-8');
 
-    // Split: CREATE TABLE section (safe as batch) vs ALTER TABLE FK section (run individually)
     const fkMarker = '-- FOREIGN KEYS';
     const markerIdx = fullSql.indexOf(fkMarker);
 
     if (markerIdx === -1) {
-      // No FK section — execute everything as one batch
       await conn.query(fullSql);
     } else {
-      // Execute CREATE TABLE batch
       const createSection = fullSql.substring(0, markerIdx);
       await conn.query(createSection);
 
-      // Execute FK ALTER TABLEs individually, ignoring "already exists" errors
       const fkSection = fullSql.substring(markerIdx);
       const fkStatements = fkSection
         .split(';')
@@ -117,7 +116,6 @@ async function bootstrapDatabase(): Promise<void> {
         try {
           await conn.query(stmt);
         } catch (fkErr: any) {
-          // errno 1005 = Can't create table (FK already exists), 1826 = Duplicate FK name — safe to ignore
           if (fkErr.errno !== 1826 && fkErr.errno !== 121 && fkErr.errno !== 1005) {
             console.warn('[DB Bootstrap] FK warning:', fkErr.message);
           }
@@ -128,30 +126,32 @@ async function bootstrapDatabase(): Promise<void> {
     await conn.end();
     console.log('[DB Bootstrap] init.sql executed successfully — schema verified.');
   } catch (err: any) {
-    // Non-fatal: Prisma may still work if tables already exist
     console.error('[DB Bootstrap] Warning:', err.message || err);
   }
 }
 
 logCorsConfiguration();
 
-// Production safety guard: refuse to start with empty CORS allowlist
 if (isProduction && allowedOrigins.length === 0 && !allowAllInDev) {
   console.error('[CORS] FATAL: production mode requires CORS_ALLOWED_ORIGINS to be set.');
   console.error('[CORS] Add CORS_ALLOWED_ORIGINS=https://your-domain.com to your .env file.');
   process.exit(1);
 }
 
-// Public routes BEFORE global CORS — permissive origins for standalone landing page
-// The public routes router has its own cors({ origin: true }) so any origin is allowed.
-// It must be mounted first so the response is sent before global corsOptions runs.
+// Public routes BEFORE global CORS
 app.use('/api/public', publicRoutes);
+
+// Stripe webhook: raw body BEFORE JSON parser (Stripe signature verification)
+app.post('/api/billing/stripe-webhook', express.raw({ type: 'application/json' }), stripeWebhook);
+
+// Paddle webhook: raw body BEFORE JSON parser (Paddle signature verification)
+app.post('/api/billing/webhook', express.raw({ type: 'application/json' }), paddleWebhook);
 
 app.use(cors(corsOptions));
 app.options(/.*/, cors(corsOptions));
 app.use(express.json());
 
-// Security headers (production-ready)
+// Security headers
 app.use((_req, res, next) => {
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('X-Frame-Options', 'DENY');
@@ -163,8 +163,7 @@ app.use((_req, res, next) => {
   next();
 });
 
-// Uploads are intentionally not served as public static files.
-// Evidence files must go through /api/files/:fileId for permission checks.
+// Uploads
 const uploadsDir = path.join(__dirname, '../uploads');
 if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
 app.use('/uploads', (_req, res) => {
@@ -216,6 +215,12 @@ app.use('/api/skills', skillRoutes);
 app.use('/api/recruitment', recruitmentRoutes);
 app.use('/api/privacy-settings', privacySettingsRoutes);
 app.use('/api/exports', exportRoutes);
+
+// ── Billing — mounted BEFORE /api catch-all routers ──
+app.use('/api/billing', billingRoutes);
+
+app.use('/api/ping', pingRoutes);
+
 app.use('/api', autosustentoBranchRoutes);
 app.use('/api', autosustentoIdeaRoutes);
 app.use('/api', sustainabilityCycleRoutes);
@@ -228,25 +233,18 @@ app.use('/api/payments', authenticateJWT, receiptRoutes);
 app.use('/api/ping', pingRoutes);
 app.get('/api/evaluations/mine', authenticateJWT, listMyEvaluations);
 app.use('/api', externalNeedRoutes);
-
-// AI Task matching routes (mount on /api/trees/:treeId to capture treeId param)
 app.use('/api/trees/:treeId', authenticateJWT, aiTaskRoutes);
-
-// AI Executor webhook (unauthenticated — called by Hermes Agent)
 app.use('/api/ai', aiExecutorRoutes);
-
-// AI Reputation — read-only endpoints
 app.use('/api/ai', authenticateJWT, aiReputationRoutes);
 app.get('/api/trees/:id/ai/leaderboard', authenticateJWT, aiLeaderboard);
-
-// Concierge — tree setup wizard
 app.use('/api/concierge', conciergeRoutes);
-
-// TrustCore Fee Protocol — tree opt-in, admin, config, withdrawal
 app.use('/api', trustCoreRoutes);
-
-// Career Path Network — skill graphs and path finding
 app.use('/api/career-path', careerPathRoutes);
+app.use('/api/byo', authenticateJWT, byoRoutes);
+
+app.use('/api/models', modelRoutes);
+app.use('/api/inference', inferenceRoutes);
+app.use('/api/finetune', authenticateJWT, finetuneRoutes);
 
 startCronJobs();
 startMonthlyJob();
@@ -258,8 +256,8 @@ startTaskMatcherCron();
 startAIExecutorCron();
 startMonthlyNeedPointsCron();
 startCareerPathGraphCron();
+startSubscriptionCron();
 
-// Bootstrap database schema, then start server
 bootstrapDatabase().then(() => {
   app.listen(Number(port), '0.0.0.0', () => {
     console.log(`Server is running on http://0.0.0.0:${port}`);

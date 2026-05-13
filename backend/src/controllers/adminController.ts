@@ -1,11 +1,100 @@
 import { Request, Response } from 'express';
 import { prisma } from '../index';
 import bcrypt from 'bcryptjs';
+import { getCurrentCost } from '../services/billingService';
 import { getRequestContext, getRequestMetadata, logEvent } from '../services/eventLogService';
 
 const handleAdminError = (res: Response, error: any) => {
   console.error('[Admin Error]', error);
   res.status(500).json({ error: 'Admin operation failed' });
+};
+
+// ========================
+// STATS
+// ========================
+export const getAdminStats = async (req: Request, res: Response) => {
+  try {
+    // Active users (VERIFIED members)
+    const sixtyDaysAgo = new Date(Date.now() - 60 * 86400000);
+    const activeMemberRows: any[] = await prisma.$queryRawUnsafe(
+      `SELECT DISTINCT userId FROM TreeMember WHERE status = 'VERIFIED' AND (joinedAt >= ? OR xp > 0)`,
+      sixtyDaysAgo
+    );
+    const activeUsers = (activeMemberRows as any[]).length;
+
+    // Registered IAs
+    const registeredIAs = (await prisma.userAI.count()) + (await prisma.modelRegistry.count());
+
+    // Monthly cost
+    let monthlyCost = 0;
+    try {
+      const costResult = await getCurrentCost();
+      monthlyCost = costResult?.monthlyCost ?? 0;
+    } catch (e) { /* ignore cost errors */ }
+
+    // Completed tasks
+    const completedTasks = await prisma.task.count({
+      where: { status: 'COMPLETED' },
+    });
+
+    // Total users (all roles)
+    const totalUsers = await prisma.user.count();
+
+    // Users with subscription details
+    const users = await prisma.user.findMany({
+      select: {
+        id: true,
+        username: true,
+        email: true,
+        role: true,
+        subscriptionActive: true,
+        createdAt: true,
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+    const userSubscriptions = await prisma.userSubscription.findMany({
+      select: { userId: true, status: true, monthlyCost: true, currentPeriodEnd: true },
+    });
+    const subMap = new Map(userSubscriptions.map(s => [s.userId, s]));
+
+    const usersWithSub = users.map(u => ({
+      ...u,
+      subscription: subMap.has(u.id) ? subMap.get(u.id) : null,
+    }));
+
+    // Monthly task completion trend (last 6 months)
+    const sixMonthsAgo = new Date(Date.now() - 180 * 86400000);
+    const completedInLast6m = await prisma.task.findMany({
+      where: { status: 'COMPLETED', completedAt: { gte: sixMonthsAgo } },
+      select: { completedAt: true },
+    });
+    const monthMap: Record<string, number> = {};
+    for (let i = 5; i >= 0; i--) {
+      const d = new Date(Date.now() - i * 30 * 86400000);
+      const key = d.toLocaleString('es-CL', { month: 'short', year: '2-digit' });
+      monthMap[key] = 0;
+    }
+    for (const t of completedInLast6m) {
+      if (!t.completedAt) continue;
+      const d = new Date(t.completedAt);
+      const key = d.toLocaleString('es-CL', { month: 'short', year: '2-digit' });
+      if (monthMap[key] !== undefined) monthMap[key]++;
+    }
+    const monthlyTasks = Object.entries(monthMap).map(([name, count]) => ({ name, count }));
+
+    res.json({
+      activeUsers,
+      registeredIAs,
+      monthlyCost,
+      completedTasks,
+      totalUsers,
+      users: usersWithSub,
+      monthlyTasks,
+    });
+  } catch (error) {
+    console.error('[Admin Stats Error]', error);
+    res.status(500).json({ error: 'Failed to fetch admin stats' });
+  }
 };
 
 // ========================

@@ -42,8 +42,8 @@ export const register = async (req: Request, res: Response) => {
     if (existingUser) return res.status(400).json({ error: 'Username or email already in use' });
 
     const hashedPassword = await bcrypt.hash(password, 10);
-    const count = await prisma.user.count();
-    const role = count === 0 ? 'ADMINISTRATOR' : 'PERSON';
+    const adminCount = await prisma.user.count({ where: { role: 'ADMINISTRATOR' } });
+    const role = adminCount === 0 ? 'ADMINISTRATOR' : 'PERSON';
 
     const user = await prisma.user.create({
       data: { username, email, password: hashedPassword, role }
@@ -189,7 +189,10 @@ export const guestJoin = async (req: Request, res: Response) => {
         userId: user.id,
         treeId: tokenRecord.arbolId,
         invitedById: tokenRecord.creadorId,
-        status: 'VERIFIED' // Los invitados entran directamente verificados
+        status: 'VERIFIED', // Los invitados entran directamente verificados
+        strikesEconomicos: '[]',
+        skills: '[]',
+        goldenTickets: '{}',
       }
     });
 

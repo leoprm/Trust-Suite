@@ -80,6 +80,8 @@ model User {
   assignedCandidates               ExternalCandidate[]          @relation("CandidateAssigner")
   ownedAIs                         TreeMember[]                 @relation("AIOwner")
   expenses                         TreeExpense[]                @relation("ExpenseAdder")
+  finetuneJobs                     FineTuneJob[]
+  userAIs                          UserAI[]
 }
 
 model UserContact {
@@ -248,7 +250,7 @@ model Tree {
   createdAt   DateTime @default(now())
 
   // Territorial & Geographic Discovery
-  capacidades String  @default("[]") @db.Text
+  capacidades String  @db.Text
   country     String?
   city        String?
   sector      String?
@@ -271,7 +273,7 @@ model Tree {
   allowTraditionalBranches Boolean               @default(true)
   hashtagCreationPolicy    HashtagCreationPolicy @default(ADMIN_AND_USERS)
   modoCrisis               Boolean               @default(false)
-  crisisSubjects           String                @default("[]") @db.Text
+  crisisSubjects           String                @db.Text
   crisisExpiresAt          DateTime?
 
   // Economic Engine Settings
@@ -498,6 +500,7 @@ enum ExternalNeedStatus {
   CONVERTED_TO_TASKS
   CANCELLED
   COMPLETED
+
 }
 
 enum ExternalNeedVisibility {
@@ -619,13 +622,13 @@ model TreeMember {
   bayasBalance         Float                @default(0)
   lastBerriesUpdate    DateTime             @default(now())
   lastCycleKey         String?
-  strikesEconomicos    String               @default("[]") @db.Text
+  strikesEconomicos    String               @db.Text
   status               MemberStatus         @default(UNVERIFIED)
   aiStatus             AIMemberStatus       @default(IDLE)
   xp                   Float                @default(0)
   level                Int                  @default(1)
-  skills               String               @default("[]") @db.Text
-  goldenTickets        String               @default("{}") @db.Text // JSON: { "#Skill": { tickets: 3, usedOnCritical: [], streakTaskIds: [] } }
+  skills               String               @db.Text
+  goldenTickets        String               @db.Text // JSON: { "#Skill": { tickets: 3, usedOnCritical: [], streakTaskIds: [] } }
   role                 MembershipRole       @default(MEMBER)
   joinedAt             DateTime             @default(now())
   bonoMentoriaActivo   Boolean              @default(false)
@@ -875,7 +878,7 @@ model BranchMember {
   id           String   @id @default(uuid())
   userId       String
   branchId     String
-  joinedPhases String   @default("[]") @db.Text // JSON array of BranchPhase the user has joined
+  joinedPhases String   @db.Text // JSON array of BranchPhase the user has joined
   joinedAt     DateTime @default(now())
 
   branch Branch @relation(fields: [branchId], references: [id], onDelete: Cascade)
@@ -958,7 +961,7 @@ model TaskVote {
   task Task @relation(fields: [taskId], references: [id], onDelete: Cascade)
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  @@unique([taskId, userId])
+  @@unique([userId, taskId])
 }
 
 model TaskQuestion {
@@ -970,7 +973,7 @@ model TaskQuestion {
   task Task @relation(fields: [taskId], references: [id], onDelete: Cascade)
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  @@unique([taskId, userId])
+  @@unique([userId, taskId])
 }
 
 model AssetFund {
@@ -998,6 +1001,7 @@ enum BranchPhase {
 }
 
 enum BranchType {
+
   NORMAL
   HASHTAG
   AUTOSUSTENTO
@@ -1498,6 +1502,7 @@ enum SustainabilityCycleStatus {
   REVIEWED
   APPROVED
   LOCKED
+
 }
 
 enum SustainabilityAllocationType {
@@ -1998,6 +2003,7 @@ model ExpertEndorsement {
   id                    String                  @id @default(uuid())
   treeId                String
   tree                  Tree                    @relation(fields: [treeId], references: [id], onDelete: Cascade)
+
   endorserId            String
   endorser              TreeMember              @relation("EndorsementsGiven", fields: [endorserId], references: [id], onDelete: Cascade)
   endorsedId            String
@@ -2009,7 +2015,7 @@ model ExpertEndorsement {
   satisfactionThreshold Float                   @default(80)
   avgSatisfaction       Float?
   boostApplied          Boolean                 @default(true)
-  evidenceTaskIds       String                  @default("[]") @db.Text
+  evidenceTaskIds       String                  @db.Text
   createdAt             DateTime                @default(now())
   resolvedAt            DateTime?
   resolvedById          String?
@@ -2048,9 +2054,9 @@ model ExternalCandidate {
   status        ExternalCandidateStatus @default(APPLIED)
   reviewerNotes String?                 @db.Text
 
-  evaluatorIds   String  @default("[]") @db.Text
+  evaluatorIds   String  @db.Text
   evaluatorMode  String? // "exact" | "similar" | "adjacent" | "fallback"
-  evaluatorVotes String  @default("[]") @db.Text // [{evaluatorId, passed, notes, submittedAt}]
+  evaluatorVotes String  @db.Text // [{evaluatorId, passed, notes, submittedAt}]
 
   testDesign String?  @db.Text
   testResult String?  @db.Text
@@ -2078,6 +2084,57 @@ model ExternalCandidate {
   @@index([status])
 }
 
+// ── Model Registry + Inference Queue ──────────────────────────────────────
+
+enum ModelStatus {
+  DOWNLOADING
+  READY
+  ERROR
+}
+
+model ModelRegistry {
+  id           String      @id @default(uuid())
+  name         String
+  source       String      @default("huggingface")
+  hfRepo       String
+  filename     String
+  sizeBytes    BigInt?
+  status       ModelStatus @default(DOWNLOADING)
+  downloadedAt DateTime?
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+
+  jobs InferenceJob[]
+
+  @@index([status])
+  @@index([name])
+}
+
+enum InferenceJobStatus {
+  PENDING
+  RUNNING
+  COMPLETED
+  FAILED
+}
+
+model InferenceJob {
+  id        String             @id @default(uuid())
+  modelId   String
+  model     ModelRegistry      @relation(fields: [modelId], references: [id], onDelete: Cascade)
+  userId    String
+  input     String             @db.Text
+  output    String?            @db.Text
+  status    InferenceJobStatus @default(PENDING)
+  priority  Int                @default(0)
+  createdAt DateTime           @default(now())
+  updatedAt DateTime           @updatedAt
+
+  @@index([modelId])
+  @@index([userId])
+  @@index([status])
+  @@index([priority])
+}
+
 // ── Skill Influence (expert weight for idea voting) ──────────────────────
 
 model SkillInfluence {
@@ -2096,6 +2153,132 @@ model SkillInfluence {
   @@unique([treeId, skillTag])
   @@index([skillTag])
   @@index([calculatedAt])
+}
+
+
+
+
+// ── BYO AI — Bring Your Own AI ────────────────────────────────────────────
+
+enum UserAIProvider {
+  OPENAI
+  DEEPSEEK
+  ANTHROPIC
+  CUSTOM
+}
+
+enum UserAIStatus {
+  ACTIVE
+  ERROR
+  DISABLED
+}
+
+model UserAI {
+  id             String        @id @default(uuid())
+  userId         String
+  name           String
+  provider       UserAIProvider
+  apiKeyHash     String
+  endpoint       String?
+  status         UserAIStatus    @default(ACTIVE)
+  monthlySavings Float           @default(0)
+  totalPayout    Float           @default(0)
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([userId, provider])
+}
+
+
+
+// ── Fine-Tuning ──────────────────────────────────────────────────────────
+
+enum FineTuneStatus {
+  QUEUED
+  RUNNING
+  COMPLETED
+  FAILED
+}
+
+enum DatasetSource {
+  TASKS_EXPORT
+  MANUAL_UPLOAD
+}
+
+model FineTuneJob {
+  id            String         @id @default(uuid())
+  name          String
+  baseModel     String         // e.g. unsloth/Llama-3.2-3B
+  status        FineTuneStatus @default(QUEUED)
+  datasetSource DatasetSource  @default(TASKS_EXPORT)
+  taskFilter    Json?          // { treeId?, branchId?, skillTags?, minDifficulty?, maxDifficulty? }
+  outputModelPath String?
+  metricsJson   Json?
+  startedAt     DateTime?
+  completedAt   DateTime?
+  createdById   String
+  createdBy     User           @relation(fields: [createdById], references: [id], onDelete: Cascade)
+  createdAt     DateTime       @default(now())
+
+  @@index([createdById])
+  @@index([status])
+}
+
+
+
+
+// ── Stripe Connect (BYO AI payouts) ──────────────────────────────────────
+
+model StripeConnectAccount {
+  id              String   @id @default(uuid())
+  userId          String   @unique
+  stripeAccountId String   @unique
+  chargesEnabled  Boolean  @default(false)
+  payoutsEnabled  Boolean  @default(false)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([userId])
+  @@index([stripeAccountId])
+}
+
+// ── Subscription (Trust Maker dynamic engine) ───────────────────────────
+
+model SubscriptionPlan {
+  id                String   @id @default(uuid())
+  name              String
+  currentMonthlyCost Float
+  costBreakdown     Json
+  calculatedAt      DateTime
+  createdAt         DateTime @default(now())
+}
+
+// ── Subscription (Paddle) ────────────────────────────────────────────────
+
+enum SubscriptionStatus {
+  ACTIVE
+  PAST_DUE
+  CANCELED
+}
+
+model UserSubscription {
+  id                   String             @id @default(uuid())
+  userId               String
+  paddleSubscriptionId String             @unique
+  status               SubscriptionStatus @default(ACTIVE)
+  planId               String?
+  currentPeriodStart   DateTime           @default(now())
+  currentPeriodEnd     DateTime
+  canceledAt           DateTime?
+  monthlyCost          Float?
+  createdAt            DateTime           @default(now())
+  updatedAt            DateTime           @updatedAt
+
+  @@index([userId])
+  @@index([status])
 }
 
 

@@ -26,12 +26,25 @@ import WalletTransactions from './pages/WalletTransactions';
 import TransferPage from './pages/TransferPage';
 import TrustCoreAdminDashboard from './pages/TrustCoreAdminDashboard';
 import CareerPath from './pages/CareerPath';
+import ModelsPage from './pages/ModelsPage';
+import InferencePage from './pages/InferencePage';
+import FinetunePage from './pages/FinetunePage';
+import FinetuneDetail from './pages/FinetuneDetail';
+import SubscriptionPage from './pages/SubscriptionPage';
+import BillingPage from './pages/BillingPage';
+import BillingPayout from './pages/BillingPayout';
 
 import MainLayout from './layouts/MainLayout';
 import ConciergeChat from './components/ConciergeChat';
 import type { AutoOpenContext } from './components/ConciergeChat';
 import { useEffect, useState } from 'react';
 import { appConfig } from './config/appConfig';
+
+function AdminGuard({ children }: { children: React.ReactNode }) {
+  const user = useAuthStore((state: any) => state.user);
+  if (user?.role !== 'ADMINISTRATOR') return <Navigate to="/dashboard" replace />;
+  return <>{children}</>;
+}
 
 function App() {
   const isAuthenticated = useAuthStore((state: any) => state.isAuthenticated);
@@ -107,8 +120,8 @@ function App() {
             <Route path="/trees/new" element={<CreateTree />} />
             <Route path="/trees/list" element={<MyTreesList />} />
             <Route path="/needs/new" element={<NewNeed />} />
-            <Route path="/admin" element={<AdminDashboard />} />
-            <Route path="/admin/trustcore" element={<TrustCoreAdminDashboard />} />
+            <Route path="/admin" element={<AdminGuard><AdminDashboard /></AdminGuard>} />
+            <Route path="/admin/trustcore" element={<AdminGuard><TrustCoreAdminDashboard /></AdminGuard>} />
             <Route path="/privacy" element={<PrivacyPage />} />
             <Route path="/wallet" element={<WalletPage />} />
             <Route path="/career-path/:treeId" element={<CareerPath />} />
@@ -122,6 +135,13 @@ function App() {
             <Route path="/deposit" element={<DepositPage />} />
             <Route path="/withdraw" element={<WithdrawPage />} />
             <Route path="/transfer" element={<TransferPage />} />
+            <Route path="/models" element={<ModelsPage />} />
+            <Route path="/models/:id/inference" element={<InferencePage />} />
+            <Route path="/finetune" element={<FinetunePage />} />
+            <Route path="/finetune/:id" element={<FinetuneDetail />} />
+            <Route path="/subscription" element={<SubscriptionPage />} />
+            <Route path="/billing" element={<BillingPage />} />
+            <Route path="/billing/payout" element={<BillingPayout />} />
           </Route>
 
           {/* Tree detail — accessible with or without auth */}

@@ -70,12 +70,43 @@ Cuando sugieras crear algo (árbol, necesidad, rama hashtag), sé específico so
 
 Formato de respuesta: texto natural. NO uses markdown. Sé conversacional, como en Telegram.`;
 
+// ── Hermes connectivity cache ──────────────────────────────────────────────────
+
+const hermesCache = { alive: false, lastCheck: 0 };
+const CACHE_TTL_MS = 30_000;
+
+async function checkHermesAlive(): Promise<boolean> {
+  const now = Date.now();
+  if (hermesCache.lastCheck && now - hermesCache.lastCheck < CACHE_TTL_MS) {
+    return hermesCache.alive;
+  }
+  try {
+    const ctrl = new AbortController();
+    const t = setTimeout(() => ctrl.abort(), 3_000);
+    const res = await fetch('http://127.0.0.1:8642/health', { signal: ctrl.signal });
+    clearTimeout(t);
+    hermesCache.alive = res.ok;
+    hermesCache.lastCheck = now;
+    return hermesCache.alive;
+  } catch {
+    hermesCache.alive = false;
+    hermesCache.lastCheck = now;
+    return false;
+  }
+}
+
 // ── Hermes API call ─────────────────────────────────────────────────────────────
 
 async function callHermes(history: HermesMessage[]): Promise<string> {
+  // Quick health check (cached 30s) — skip API call if Hermes is down
+  const isAlive = await checkHermesAlive();
+  if (!isAlive) {
+    throw new Error('Hermes Agent no está disponible en este momento.');
+  }
+
   // Just forward messages directly — Hermes already knows who he is
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 90000);
+  const timeout = setTimeout(() => controller.abort(), 10_000);
 
   try {
     const response = await fetch(HERMES_API_URL, {
@@ -106,7 +137,7 @@ async function callHermes(history: HermesMessage[]): Promise<string> {
   } catch (err: any) {
     clearTimeout(timeout);
     if (err.name === 'AbortError') {
-      throw new Error('Hermes API timeout (90s)');
+      throw new Error('Hermes API timeout (10s)');
     }
     throw err;
   }
@@ -718,7 +749,7 @@ export async function processConcierge(
     return {
       action: 'clarify',
       matches: [],
-      suggestion: `Estoy teniendo problemas para conectarme con Hermes (${errorDetail}). ¿Puedes intentar de nuevo?`,
+      suggestion: `Estoy teniendo problemas de conexión con el asistente. Intenta de nuevo en unos segundos.`,
       nextSteps: ['Reintentar', 'Usar la interfaz normal de Trust Suite'],
     };
   }
