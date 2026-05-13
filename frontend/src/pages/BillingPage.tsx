@@ -43,7 +43,13 @@ type PageState = 'loading' | 'ready' | 'error';
 export default function BillingPage() {
   const navigate = useNavigate();
   const user = useAuthStore((state: any) => state.user);
-  const isMobile = typeof window !== 'undefined' && window.innerWidth <= 768;
+  const [isMobile, setIsMobile] = useState(window.innerWidth <= 768);
+
+  useEffect(() => {
+    const handleResize = () => setIsMobile(window.innerWidth <= 768);
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
   const [pageState, setPageState] = useState<PageState>('loading');
   const [error, setError] = useState('');
@@ -78,7 +84,7 @@ export default function BillingPage() {
     if (!user?.id) return;
     setActionLoading('subscribe');
     try {
-      const res = await api.post('/billing/create-checkout', { userId: user.id });
+      const res = await api.post('/billing/create-checkout', {});
       const { checkoutUrl } = res.data;
       if (checkoutUrl) {
         window.location.href = checkoutUrl;

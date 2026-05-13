@@ -1,4 +1,5 @@
 import { PieChart, TrendingUp, Users, Server, Sparkles, TreePine } from 'lucide-react';
+import { useState, useEffect } from 'react';
 
 interface CostBreakdownData {
   infraCost: number;
@@ -23,7 +24,13 @@ function formatCurrency(amount: number, currency: string): string {
 }
 
 export default function CostBreakdown({ data, monthlyCost, currency, rootTreeName }: Props) {
-  const isMobile = typeof window !== 'undefined' && window.innerWidth <= 768;
+  const [isMobile, setIsMobile] = useState(window.innerWidth <= 768);
+
+  useEffect(() => {
+    const handleResize = () => setIsMobile(window.innerWidth <= 768);
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
   if (!data) {
     return (

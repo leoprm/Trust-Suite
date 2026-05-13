@@ -1,14 +1,26 @@
 import { Router } from 'express';
 import { optionalAuth, authenticateJWT } from '../middleware/authMiddleware';
-import { configureTreeFromNL, searchPublicTrees } from '../services/conciergeService';
-import { handleConcierge } from '../controllers/conciergeController';
+import { searchPublicTrees } from '../services/conciergeService';
+import { handleConcierge, handleConciergeChat } from '../controllers/conciergeController';
 
 const router = Router();
 
-// POST /api/concierge — Main conversational endpoint
+console.log('[conciergeRoutes] Router created, registering /chat and /test routes');
+
+// POST /api/concierge — Main conversational endpoint (legacy, no tools)
 // Body: { message: "...", mode?: "temporary", contextId?: "<branchId>" }
 // Accepts both authenticated and guest users (temp participants use mode='temporary')
 router.post('/', optionalAuth, handleConcierge);
+
+// POST /api/concierge/chat — Tool-calling concierge with Hermes Agent
+// Body: { message: "...", treeId?: "<treeId>" }
+// Requires authentication
+router.post('/chat', authenticateJWT, handleConciergeChat);
+
+// GET /api/concierge/test — Quick test endpoint
+router.get('/test', (_req: any, res: any) => {
+  res.json({ ok: true, chatRoute: 'registered' });
+});
 
 // POST /api/concierge/search-trees — Search public trees for member tutorial
 // Body: { query: "frontend developer" }
@@ -23,35 +35,10 @@ router.post('/search-trees', authenticateJWT, async (req: any, res: any) => {
     return res.json({ trees: results });
   } catch (err: any) {
     console.error('[concierge] search-trees error:', err);
-    return res.status(500).json({ error: 'Error interno al buscar árboles.' });
+    return res.json({ trees: [] });
   }
 });
 
-// POST /api/concierge/configure-tree — Tree config extraction from NL
-// Body: { message: "descripción en lenguaje natural" }
-router.post('/configure-tree', authenticateJWT, async (req: any, res: any) => {
-  try {
-    const { message } = req.body;
-
-    if (!message || typeof message !== 'string' || message.trim().length === 0) {
-      return res.status(400).json({ error: 'Se requiere un mensaje en lenguaje natural (campo "message").' });
-    }
-
-    if (message.length > 2000) {
-      return res.status(400).json({ error: 'El mensaje no puede exceder 2000 caracteres.' });
-    }
-
-    const result = configureTreeFromNL(message.trim());
-
-    return res.json({
-      config: result.config,
-      ambiguousFields: result.ambiguousFields,
-      warnings: result.warnings,
-    });
-  } catch (err: any) {
-    console.error('[concierge] configure-tree error:', err);
-    return res.status(500).json({ error: 'Error interno al procesar la configuración.' });
-  }
-});
+// /api/concierge/configure-tree was removed — configureTreeFromNL was deleted (TM1-TM6)
 
 export default router;

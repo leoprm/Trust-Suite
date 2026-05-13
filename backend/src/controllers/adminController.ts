@@ -16,11 +16,18 @@ export const getAdminStats = async (req: Request, res: Response) => {
   try {
     // Active users (VERIFIED members)
     const sixtyDaysAgo = new Date(Date.now() - 60 * 86400000);
-    const activeMemberRows: any[] = await prisma.$queryRawUnsafe(
-      `SELECT DISTINCT userId FROM TreeMember WHERE status = 'VERIFIED' AND (joinedAt >= ? OR xp > 0)`,
-      sixtyDaysAgo
-    );
-    const activeUsers = (activeMemberRows as any[]).length;
+    const activeMemberRows = await prisma.treeMember.findMany({
+      where: {
+        status: 'VERIFIED',
+        OR: [
+          { joinedAt: { gte: sixtyDaysAgo } },
+          { xp: { gt: 0 } },
+        ],
+      },
+      select: { userId: true },
+      distinct: ['userId'],
+    });
+    const activeUsers = activeMemberRows.length;
 
     // Registered IAs
     const registeredIAs = (await prisma.userAI.count()) + (await prisma.modelRegistry.count());
@@ -169,7 +176,7 @@ export const deleteUser = async (req: Request, res: Response) => {
       actorId: req.user!.id,
       action: 'ADMIN_USER_DELETED',
       entityType: 'User',
-      entityId: req.params.id,
+      entityId: req.params.id as string,
       severity: 'CRITICAL',
       source: 'ADMIN',
     });
@@ -184,7 +191,7 @@ export const createTree = async (req: Request, res: Response) => {
     const { name, description } = req.body;
     const inviteCode = Math.random().toString(36).substring(2, 8).toUpperCase();
     const tree = await prisma.tree.create({
-      data: { name, description, inviteCode }
+      data: { name, description, inviteCode, capacidades: '', crisisSubjects: '' } as any
     });
     res.status(201).json(tree);
   } catch (error) { handleAdminError(res, error); }
@@ -224,7 +231,7 @@ export const deleteTree = async (req: Request, res: Response) => {
       actorId: req.user!.id,
       action: 'ADMIN_TREE_DELETED',
       entityType: 'Tree',
-      entityId: req.params.id,
+      entityId: req.params.id as string,
       severity: 'CRITICAL',
       source: 'ADMIN',
     });

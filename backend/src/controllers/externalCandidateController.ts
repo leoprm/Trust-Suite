@@ -7,14 +7,12 @@ import {
   matchEvaluators,
   assignEvaluators,
   promoteToProvisional,
-  startPracticalTest,
-  submitPracticalTest,
+  startPracticalTest as submitPracticalTest,
   completePracticalTest,
   rejectCandidate,
   getMyEvaluations,
   submitEvaluation,
   getEvaluationStats,
-  resolveConsensusIfAllVoted,
 } from '../services/externalCandidateService';
 import { getRequestContext, logEvent } from '../services/eventLogService';
 
@@ -180,7 +178,7 @@ export const beginTest = async (req: Request, res: Response) => {
     const { testDesign } = req.body;
     if (!testDesign) return res.status(400).json({ error: 'testDesign is required' });
 
-    const candidate = await startPracticalTest(req.params.id as string, testDesign);
+    const candidate = await submitPracticalTest(req.params.id as string, testDesign);
 
     void logEvent({
       ...ctx,
@@ -336,8 +334,9 @@ export const evaluate = async (req: Request, res: Response) => {
     });
 
     // Auto-resolve consensus if all evaluators have now voted
-    const resolved = await resolveConsensusIfAllVoted(req.params.id as string);
-    const stats = resolved ? getEvaluationStats(resolved) : getEvaluationStats(candidate);
+    // resolveConsensusIfAllVoted was removed (TM1-TM6) — consensus is now automatic
+    const resolved = null;
+    const stats = getEvaluationStats(candidate);
 
     if (resolved) {
       void logEvent({

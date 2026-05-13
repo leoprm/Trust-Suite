@@ -13,6 +13,7 @@
   "dependencies": {
     "@chenglou/pretext": "^0.0.4",
     "axios": "^1.13.6",
+    "dompurify": "^3.4.2",
     "framer-motion": "^12.35.2",
     "html5-qrcode": "^2.3.8",
     "i18next": "^25.8.17",
@@ -29,6 +30,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.39.1",
+    "@types/dompurify": "^3.0.5",
     "@types/node": "^24.10.1",
     "@types/react": "^19.2.7",
     "@types/react-dom": "^19.2.3",

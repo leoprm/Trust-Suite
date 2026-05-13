@@ -40,20 +40,15 @@ export async function generateTreePdf(treeId: string): Promise<{ buffer: Buffer;
   const sixMonthsAgo = new Date();
   sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
 
-  const [fiatTxns, tasks] = await Promise.all([
-    prisma.fiatTransaction.findMany({
-      where: { treeId, date: { gte: sixMonthsAgo } },
-      orderBy: { date: 'desc' },
-      include: { createdBy: { select: { username: true } } },
-    }),
-    prisma.task.findMany({
+  // fiatTransaction model was deleted (TM1-TM6 cleanup) — use empty array
+  const fiatTxns: any[] = [];
+  const tasks = await prisma.task.findMany({
       where: {
         branch: { treeId },
         status: { in: ['COMPLETED', 'OPEN', 'IN_PROGRESS'] as any },
       },
       include: { tags: { select: { skillName: true } } },
-    }),
-  ]);
+    });
 
   // Executive summary calcs
   const totalMembers = tree._count.members;

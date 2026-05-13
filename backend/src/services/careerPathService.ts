@@ -350,15 +350,14 @@ async function loadUserSkillXP(treeId: string): Promise<Map<string, number>> {
 async function loadAvgFiatAmount(treeId: string): Promise<Map<string, number>> {
   // Average fiat amount per skill via Task → TaskTag join
   // Use raw query for efficiency since we need to join across multiple tables
-  const records = await (prisma as any).$queryRawUnsafe(
-    `SELECT tt.skillName, AVG(ft.amount) as avgAmount
+  const records = await (prisma as any).$queryRaw<{ skillName: string; avgAmount: number }[]>`
+    SELECT tt.skillName, AVG(ft.amount) as avgAmount
      FROM FiatTransaction ft
      INNER JOIN \`Task\` t ON ft.taskId = t.id
      INNER JOIN TaskTag tt ON tt.taskId = t.id
-     WHERE ft.treeId = ?
-     GROUP BY tt.skillName`,
-    treeId,
-  ) as { skillName: string; avgAmount: number }[];
+     WHERE ft.treeId = ${treeId}
+     GROUP BY tt.skillName
+  `;
 
   const map = new Map<string, number>();
   for (const r of records) {

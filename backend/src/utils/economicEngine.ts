@@ -56,7 +56,7 @@ export async function redistributeTreeBudget(treeId: string): Promise<void> {
     if (branches.length === 0) return;
 
     // 3. Obtener niveles de los creadores
-    const creatorIds = [...new Set(branches.map((b: any) => b.createdById).filter(Boolean))];
+    const creatorIds = [...new Set(branches.map((b: any) => b.createdById).filter(Boolean))] as string[];
     const members = creatorIds.length > 0
       ? await prisma.treeMember.findMany({
           where: { treeId, userId: { in: creatorIds } },

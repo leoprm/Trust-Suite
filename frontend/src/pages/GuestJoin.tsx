@@ -59,7 +59,7 @@ export default function GuestJoin() {
       if (isLoginView) {
         // FLUJO 1: Iniciar sesión existente y consumir token
         const loginRes = await api.post('/auth/login', { email: email.trim(), password });
-        login(loginRes.data.user, loginRes.data.token);
+        login(loginRes.data.user, loginRes.data.accessToken, loginRes.data.refreshToken);
         
         // El useEffect de Auto-Join debería encargarse ahora, pero por si acaso, 
         // disparamos manualmente el consumo del token aquí para evitar race conditions antes del render:
@@ -80,7 +80,7 @@ export default function GuestJoin() {
           token,
           username: username.trim()
         });
-        login(data.user, data.token);
+        login(data.user, data.accessToken, data.refreshToken);
         setStatus('success');
         setTimeout(() => navigate('/'), 1000);
       }

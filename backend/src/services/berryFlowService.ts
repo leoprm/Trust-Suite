@@ -59,17 +59,15 @@ export async function getFederationMemberCount(treeId: string): Promise<{
   const federatedTreeIds = Array.from(federatedSet);
 
   // Contar miembros ÚNICOS de la federación (un usuario en varios trees cuenta 1 vez)
-  const localMembersResult = await (prisma as any).$queryRawUnsafe(
-    `SELECT COUNT(DISTINCT userId) as cnt FROM TreeMember WHERE treeId = ?`,
-    treeId,
-  );
-  const localMembers = Number((localMembersResult as any)[0]?.cnt ?? 0);
+  const localMembers = await (prisma as any).treeMember.count({
+    where: { treeId },
+    distinct: ['userId'],
+  });
 
-  const federationResult = await (prisma as any).$queryRawUnsafe(
-    `SELECT COUNT(DISTINCT userId) as cnt FROM TreeMember WHERE treeId IN (${federatedTreeIds.map(() => '?').join(',')})`,
-    ...federatedTreeIds,
-  );
-  const federationMembers = Number((federationResult as any)[0]?.cnt ?? 0);
+  const federationMembers = await (prisma as any).treeMember.count({
+    where: { treeId: { in: federatedTreeIds } },
+    distinct: ['userId'],
+  });
 
   return { totalMembers: federationMembers, federatedTreeIds, localMembers };
 }

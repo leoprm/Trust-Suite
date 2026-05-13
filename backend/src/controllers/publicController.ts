@@ -79,15 +79,7 @@ export const getPublicMetrics = async (req: Request, res: Response) => {
       },
     });
 
-    // Total fiat volume last 30 days across public trees
-    const fiatVolumeResult = await prisma.fiatTransaction.aggregate({
-      _sum: { amount: true },
-      where: {
-        tree: { visibility: 'PUBLIC' },
-        date: { gte: thirtyDaysAgo },
-      },
-    });
-
+    // fiatTransaction model was deleted (TM1-TM6) — fiat metrics are unavailable
     // Average satisfaction across all deliveries in public trees
     const satResult = await prisma.satisfactionRating.aggregate({
       _avg: { rating: true },
@@ -100,69 +92,63 @@ export const getPublicMetrics = async (req: Request, res: Response) => {
       },
     });
 
-    // Top 5 trees by monthly fiat profit (INCOME only, last 30 days)
-    const topTreesRaw = await prisma.fiatTransaction.groupBy({
-      by: ['treeId'],
-      _sum: { amount: true },
-      where: {
-        tree: { visibility: 'PUBLIC' },
-        type: 'INCOME',
-        date: { gte: thirtyDaysAgo },
-      },
-      orderBy: { _sum: { amount: 'desc' } },
-      take: 5,
-    });
+    // Top 5 trees by member count (fiatTransaction was deleted, no profit data available)
+    const topTrees: Array<{
+      name: string;
+      memberCount: number;
+      monthlyProfit: number;
+      sector: string | null;
+      capacidades: string;
+    }> = [];
 
-    // Enrich top trees: name, memberCount, sector, capacidades
-    const topTreeIds = topTreesRaw.map(t => t.treeId);
+    try {
+      const topTreeIds = await prisma.treeMember.groupBy({
+        by: ['treeId'],
+        _count: { id: true },
+        where: {
+          tree: { visibility: 'PUBLIC' },
+          status: 'VERIFIED',
+        },
+        orderBy: { _count: { id: 'desc' } },
+        take: 5,
+      });
 
-    // Fetch member counts in parallel (separate query avoids Prisma _count typing issues)
-    const memberCounts = topTreeIds.length > 0
-      ? await prisma.treeMember.groupBy({
-          by: ['treeId'],
-          _count: { id: true },
-          where: {
-            treeId: { in: topTreeIds },
-            status: 'VERIFIED',
-          },
-        })
-      : [];
+      const memberIds = topTreeIds.map(t => t.treeId);
 
-    const memberCountMap = new Map<string, number>();
-    for (const mc of memberCounts) {
-      memberCountMap.set(mc.treeId, mc._count.id);
+      const topTreesData = memberIds.length > 0
+        ? await prisma.tree.findMany({
+            where: { id: { in: memberIds } },
+            select: {
+              id: true,
+              name: true,
+              sector: true,
+              capacidades: true,
+            },
+          })
+        : [];
+
+      const memberCountMap = new Map<string, number>();
+      for (const mc of topTreeIds) {
+        memberCountMap.set(mc.treeId, mc._count.id);
+      }
+
+      for (const t of topTreesData) {
+        topTrees.push({
+          name: t.name,
+          memberCount: memberCountMap.get(t.id) || 0,
+          monthlyProfit: 0, // fiatTransaction model deleted
+          sector: t.sector || null,
+          capacidades: t.capacidades || '[]',
+        });
+      }
+    } catch {
+      // Leave topTrees empty if query fails
     }
-
-    const topTreesData = await prisma.tree.findMany({
-      where: { id: { in: topTreeIds } },
-      select: {
-        id: true,
-        name: true,
-        sector: true,
-        capacidades: true,
-      },
-    });
-
-    const profitMap = new Map<string, number>();
-    for (const t of topTreesRaw) {
-      profitMap.set(t.treeId, t._sum.amount || 0);
-    }
-
-    // Build top trees sorted by profit descending
-    const topTrees = topTreesData
-      .map(t => ({
-        name: t.name,
-        memberCount: memberCountMap.get(t.id) || 0,
-        monthlyProfit: profitMap.get(t.id) || 0,
-        sector: t.sector || null,
-        capacidades: t.capacidades || '[]',
-      }))
-      .sort((a, b) => b.fiatMonthlyProfit - a.fiatMonthlyProfit);
 
     const payload = {
       totalTrees,
       totalMembers: totalMembersResult,
-      totalFiatVolume: Math.round((fiatVolumeResult._sum.amount || 0) * 100) / 100,
+      totalFiatVolume: 0, // fiatTransaction model deleted
       avgSatisfaction: satResult._avg.rating
         ? Math.round(satResult._avg.rating * 100) / 100
         : 0,
@@ -180,35 +166,15 @@ export const getPublicMetrics = async (req: Request, res: Response) => {
 };
 
 // ── Public Fee Stats Handler ───────────────────────────────────────────────
+// NOTE: globalFeeConfig, feeDistribution, isTrustCore, trustCoreConfig were deleted (TM1-TM6)
 
 export const getPublicFeeStats = async (_req: Request, res: Response) => {
   try {
-    const globalConfig = await prisma.globalFeeConfig.findUnique({
-      where: { id: 'default' },
-      select: {
-        currentFeePercent: true,
-        lastRecalculatedAt: true,
-      },
-    });
-
-    // All-time fees collected
-    const allTimeResult = await prisma.feeDistribution.aggregate({
-      _sum: { amount: true },
-    });
-
-    // Active TrustCore trees
-    const activeTrustCoreTrees = await prisma.tree.count({
-      where: {
-        isTrustCore: true,
-        trustCoreConfig: { isActive: true },
-      },
-    });
-
     return res.json({
-      currentFeePercent: globalConfig?.currentFeePercent ?? 0.5,
-      totalFeesCollectedAllTime: Math.round((allTimeResult._sum.amount || 0) * 100) / 100,
-      activeTrustCoreTrees,
-      lastRecalculatedAt: globalConfig?.lastRecalculatedAt ?? null,
+      currentFeePercent: 0.5,
+      totalFeesCollectedAllTime: 0,
+      activeTrustCoreTrees: 0,
+      lastRecalculatedAt: null,
     });
   } catch (error) {
     console.error('[PublicFeeStats] Error:', error);

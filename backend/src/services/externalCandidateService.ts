@@ -125,8 +125,8 @@ export async function matchEvaluators(
 
   // ── Tier 3: Cross-tree (any verified member from any tree, random) ──────
   const crossTreePool = allMembers
-    .filter(m => !pickedIds.has(m.userId))
-    .map(m => ({ member: m, skill: candidateSkills[0] || 'general' }));
+    .filter((m: any) => !pickedIds.has(m.userId))
+    .map((m: any) => ({ member: m, skill: candidateSkills[0] || 'general' }));
 
   pickDiverse(crossTreePool, 'cross-tree', 5 - evaluators.length, evaluators, pickedIds, toMatch);
 

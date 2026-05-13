@@ -10,20 +10,18 @@ const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || '', {
 
 const BASE_URL = process.env.BASE_URL || 'http://localhost:3100';
 
-// ── Raw query helpers for StripeConnectAccount ──
+// ── StripeConnectAccount helpers (Prisma Client) ──
 
 async function findConnectAccount(userId: string) {
-  const rows: any[] = await prisma.$queryRawUnsafe(
-    `SELECT * FROM StripeConnectAccount WHERE userId = ?`, userId
-  );
-  return rows[0] || null;
+  return await (prisma as any).stripeConnectAccount.findFirst({
+    where: { userId },
+  });
 }
 
 async function findConnectAccountByStripeId(stripeAccountId: string) {
-  const rows: any[] = await prisma.$queryRawUnsafe(
-    `SELECT * FROM StripeConnectAccount WHERE stripeAccountId = ?`, stripeAccountId
-  );
-  return rows[0] || null;
+  return await (prisma as any).stripeConnectAccount.findFirst({
+    where: { stripeAccountId },
+  });
 }
 
 async function createConnectAccount(userId: string, stripeAccountId: string, chargesEnabled: boolean, payoutsEnabled: boolean) {
@@ -170,8 +168,8 @@ function mapPaddleStatus(s: string) {
 
 export const createCheckout = async (req: any, res: Response) => {
   try {
-    const { userId, priceId, successUrl } = req.body;
-    if (!userId) return res.status(400).json({ error: 'userId is required' });
+    const userId = req.user!.id;
+    const { priceId, successUrl } = req.body;
     const user = await prisma.user.findUnique({ where: { id: userId } });
     if (!user) return res.status(404).json({ error: 'User not found' });
     const effectivePriceId = priceId || process.env.PADDLE_DEFAULT_PRICE_ID || 'pri_01h7qj7xqj7xqj7xqj7xqj7x';

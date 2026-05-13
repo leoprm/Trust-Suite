@@ -82,6 +82,8 @@ model User {
   expenses                         TreeExpense[]                @relation("ExpenseAdder")
   finetuneJobs                     FineTuneJob[]
   userAIs                          UserAI[]
+  loginAttempts                    LoginAttempt[]
+  refreshTokens                    RefreshToken[]
 }
 
 model UserContact {
@@ -2281,4 +2283,25 @@ model UserSubscription {
   @@index([status])
 }
 
+model RefreshToken {
+  id        String    @id @default(uuid())
+  tokenHash String    @unique
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  revokedAt DateTime?
+  createdAt DateTime  @default(now())
 
+  @@index([userId])
+  @@index([tokenHash])
+}
+
+model LoginAttempt {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  ipAddress String?
+  createdAt DateTime @default(now())
+
+  @@index([userId, createdAt])
+}

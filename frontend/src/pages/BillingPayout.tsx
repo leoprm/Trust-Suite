@@ -24,7 +24,13 @@ type PageState = 'loading' | 'ready' | 'error' | 'not_connected';
 export default function BillingPayout() {
   const navigate = useNavigate();
   const user = useAuthStore((state: any) => state.user);
-  const isMobile = typeof window !== 'undefined' && window.innerWidth <= 768;
+  const [isMobile, setIsMobile] = useState(window.innerWidth <= 768);
+
+  useEffect(() => {
+    const handleResize = () => setIsMobile(window.innerWidth <= 768);
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
   const [pageState, setPageState] = useState<PageState>('loading');
   const [status, setStatus] = useState<ConnectStatus | null>(null);

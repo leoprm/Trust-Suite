@@ -206,7 +206,8 @@ export default function FinetunePage() {
       {/* Jobs table */}
       {!loading && !error && jobs.length > 0 && (
         <div className="glass-panel" style={{ padding: 0, overflow: 'hidden' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
+          <div style={{ overflowX: 'auto' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem', minWidth: isMobile ? '500px' : undefined }}>
             <thead>
               <tr style={{ borderBottom: '1px solid var(--border-color)' }}>
                 <th style={{ textAlign: 'left', padding: '0.75rem 1rem', color: 'var(--text-secondary)', fontWeight: 500, whiteSpace: 'nowrap' }}>Nombre</th>
@@ -263,8 +264,9 @@ export default function FinetunePage() {
                   </tr>
                 );
               })}
-            </tbody>
+              </tbody>
           </table>
+          </div>
         </div>
       )}
 

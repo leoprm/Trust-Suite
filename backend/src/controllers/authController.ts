@@ -1,10 +1,42 @@
 import { Request, Response } from 'express';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
+import crypto from 'crypto';
 import { prisma } from '../index';
 import { getRequestContext, getRequestMetadata, logEvent } from '../services/eventLogService';
 
-const JWT_SECRET = process.env.JWT_SECRET || 'fallback_secret';
+const JWT_SECRET = process.env.JWT_SECRET;
+if (!JWT_SECRET) {
+  console.error('[FATAL] JWT_SECRET environment variable is not set. Authentication will fail.');
+  throw new Error('JWT_SECRET is required');
+}
+
+const ACCESS_TOKEN_EXPIRY = '15m';
+const REFRESH_TOKEN_DAYS = 7;
+
+// ── Refresh Token Helpers ────────────────────────────────────────────────────
+
+function generateRefreshToken(): { raw: string; hash: string } {
+  const raw = crypto.randomBytes(48).toString('hex');
+  const hash = crypto.createHash('sha256').update(raw).digest('hex');
+  return { raw, hash };
+}
+
+async function storeRefreshToken(userId: string): Promise<string> {
+  const { raw, hash } = generateRefreshToken();
+  const expiresAt = new Date(Date.now() + REFRESH_TOKEN_DAYS * 24 * 60 * 60 * 1000);
+  await (prisma as any).refreshToken.create({
+    data: { tokenHash: hash, userId, expiresAt },
+  });
+  return raw;
+}
+
+async function revokeRefreshToken(tokenHash: string): Promise<void> {
+  await (prisma as any).refreshToken.updateMany({
+    where: { tokenHash, revokedAt: null },
+    data: { revokedAt: new Date() },
+  });
+}
 
 async function getUserWithPoints(userId: string) {
   try {
@@ -33,6 +65,8 @@ async function getUserWithPoints(userId: string) {
   }
 }
 
+// ── Auth Endpoints ───────────────────────────────────────────────────────────
+
 export const register = async (req: Request, res: Response) => {
   try {
     const { username, email, password } = req.body;
@@ -49,7 +83,8 @@ export const register = async (req: Request, res: Response) => {
       data: { username, email, password: hashedPassword, role }
     });
 
-    const token = jwt.sign({ id: user.id, role: user.role }, JWT_SECRET, { expiresIn: '7d' });
+    const accessToken = jwt.sign({ id: user.id, role: user.role }, JWT_SECRET, { expiresIn: ACCESS_TOKEN_EXPIRY });
+    const refreshToken = await storeRefreshToken(user.id);
     const fullUser = await getUserWithPoints(user.id);
     void logEvent({
       ...getRequestContext(req),
@@ -62,7 +97,7 @@ export const register = async (req: Request, res: Response) => {
       source: 'USER',
     });
     
-    res.status(201).json({ token, user: fullUser });
+    res.status(201).json({ accessToken, refreshToken, user: fullUser });
   } catch (error: any) {
     res.status(500).json({ error: 'Registration failed: ' + error.message });
   }
@@ -87,9 +122,41 @@ export const login = async (req: Request, res: Response) => {
       return res.status(404).json({ error: 'User not found' });
     }
     if (!user.password) return res.status(401).json({ error: 'Este usuario no tiene contraseña (cuenta de invitado).' });
+
+    // ── Account lockout: 5+ failed attempts in last 15 min = temporary block ──
+    const fifteenMinutesAgo = new Date(Date.now() - 15 * 60 * 1000);
+    const recentAttempts = await prisma.loginAttempt.count({
+      where: {
+        userId: user.id,
+        createdAt: { gte: fifteenMinutesAgo },
+      },
+    });
+
+    if (recentAttempts >= 5) {
+      void logEvent({
+        ...getRequestContext(req),
+        actorId: user.id,
+        action: 'USER_LOGIN_LOCKED',
+        entityType: 'User',
+        entityId: user.id,
+        metadataJson: getRequestMetadata(req, { reason: 'account_locked', recentAttempts }),
+        severity: 'WARNING',
+        source: 'USER',
+      });
+      return res.status(429).json({
+        error: 'Account temporarily locked due to too many failed attempts. Try again in 15 minutes.',
+      });
+    }
     
     const valid = await bcrypt.compare(password, user.password);
     if (!valid) {
+      // Record failed login attempt
+      await prisma.loginAttempt.create({
+        data: {
+          userId: user.id,
+          ipAddress: req.ip || req.socket.remoteAddress || null,
+        },
+      });
       void logEvent({
         ...getRequestContext(req),
         actorId: user.id,
@@ -103,7 +170,13 @@ export const login = async (req: Request, res: Response) => {
       return res.status(401).json({ error: 'Invalid password' });
     }
 
-    const token = jwt.sign({ id: user.id, role: user.role }, JWT_SECRET, { expiresIn: '7d' });
+    // Successful login — clear all previous failed attempts
+    await prisma.loginAttempt.deleteMany({
+      where: { userId: user.id },
+    });
+
+    const accessToken = jwt.sign({ id: user.id, role: user.role }, JWT_SECRET, { expiresIn: ACCESS_TOKEN_EXPIRY });
+    const refreshToken = await storeRefreshToken(user.id);
     const fullUser = await getUserWithPoints(user.id);
     void logEvent({
       ...getRequestContext(req),
@@ -115,7 +188,7 @@ export const login = async (req: Request, res: Response) => {
       source: 'USER',
     });
     
-    res.json({ token, user: fullUser });
+    res.json({ accessToken, refreshToken, user: fullUser });
   } catch (error) {
     console.error('Login error:', error);
     res.status(500).json({ error: 'Login failed' });
@@ -197,13 +270,87 @@ export const guestJoin = async (req: Request, res: Response) => {
     });
 
     // 5. Iniciar sesión automágica
-    const jwtToken = jwt.sign({ id: user.id, role: user.role, isGuest: true }, JWT_SECRET, { expiresIn: '7d' });
+    const accessToken = jwt.sign({ id: user.id, role: user.role, isGuest: true }, JWT_SECRET, { expiresIn: ACCESS_TOKEN_EXPIRY });
+    const refreshToken = await storeRefreshToken(user.id);
     const fullUser = await getUserWithPoints(user.id);
 
-    res.status(201).json({ token: jwtToken, user: fullUser });
+    res.status(201).json({ accessToken, refreshToken, user: fullUser });
   } catch (error: any) {
     console.error('Guest join error:', error);
     res.status(500).json({ error: 'No se pudo procesar tu invitación. Intenta de nuevo más tarde.' });
+  }
+};
+
+// ── Refresh Token Rotation ───────────────────────────────────────────────────
+
+export const refresh = async (req: Request, res: Response) => {
+  try {
+    const { refreshToken } = req.body;
+    if (!refreshToken) {
+      return res.status(400).json({ error: 'refreshToken is required' });
+    }
+
+    // Hash the incoming token to look it up
+    const tokenHash = crypto.createHash('sha256').update(refreshToken).digest('hex');
+
+    const stored = await (prisma as any).refreshToken.findUnique({
+      where: { tokenHash },
+    });
+
+    if (!stored) {
+      return res.status(401).json({ error: 'Invalid refresh token' });
+    }
+
+    if (stored.revokedAt) {
+      // Token reuse detected — revoke ALL refresh tokens for this user (breach mitigation)
+      await (prisma as any).refreshToken.updateMany({
+        where: { userId: stored.userId, revokedAt: null },
+        data: { revokedAt: new Date() },
+      });
+      void logEvent({
+        ...getRequestContext(req),
+        actorId: stored.userId,
+        action: 'REFRESH_TOKEN_REUSE_DETECTED',
+        entityType: 'User',
+        entityId: stored.userId,
+        metadataJson: getRequestMetadata(req, { tokenHash }),
+        severity: 'CRITICAL',
+        source: 'SYSTEM',
+      });
+      return res.status(401).json({ error: 'Refresh token already used — all sessions revoked' });
+    }
+
+    if (new Date() > new Date(stored.expiresAt)) {
+      return res.status(401).json({ error: 'Refresh token expired' });
+    }
+
+    // Revoke the old refresh token
+    await revokeRefreshToken(tokenHash);
+
+    // Fetch the user
+    const user = await prisma.user.findUnique({ where: { id: stored.userId } });
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    // Issue new pair (rotation)
+    const newAccessToken = jwt.sign({ id: user.id, role: user.role }, JWT_SECRET, { expiresIn: ACCESS_TOKEN_EXPIRY });
+    const newRefreshToken = await storeRefreshToken(user.id);
+
+    void logEvent({
+      ...getRequestContext(req),
+      actorId: user.id,
+      action: 'TOKEN_REFRESHED',
+      entityType: 'User',
+      entityId: user.id,
+      metadataJson: getRequestMetadata(req),
+      source: 'USER',
+    });
+
+    res.json({ accessToken: newAccessToken, refreshToken: newRefreshToken });
+  } catch (error: any) {
+    console.error('Refresh error:', error);
+    res.status(500).json({ error: 'Token refresh failed' });
   }
 };
 
@@ -255,7 +402,8 @@ export const crossLogin = async (req: Request, res: Response) => {
     const user = await getUserWithPoints(payload.id);
     if (!user) return res.status(404).json({ error: 'User not found' });
 
-    const token = jwt.sign({ id: user.id, role: user.role }, JWT_SECRET, { expiresIn: '7d' });
+    const accessToken = jwt.sign({ id: user.id, role: user.role }, JWT_SECRET, { expiresIn: ACCESS_TOKEN_EXPIRY });
+    const refreshToken = await storeRefreshToken(user.id);
 
     void logEvent({
       ...getRequestContext(req),
@@ -267,7 +415,7 @@ export const crossLogin = async (req: Request, res: Response) => {
       source: 'USER',
     });
 
-    res.json({ token, user });
+    res.json({ accessToken, refreshToken, user });
   } catch (error: any) {
     console.error('crossLogin error:', error);
     res.status(500).json({ error: 'Cross-login failed' });

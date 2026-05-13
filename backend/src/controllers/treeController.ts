@@ -83,7 +83,7 @@ export const createTree = async (req: any, res: Response) => {
         invitedById: null,
         status: 'VERIFIED'
       }
-    });
+    } as any);
 
     // Invited membership
     if (inviteUserIds && inviteUserIds.length > 0) {
@@ -95,7 +95,7 @@ export const createTree = async (req: any, res: Response) => {
           userId,
           treeId: tree.id,
           invitedById: creatorId
-        }))
+        })) as any
       });
     }
 
@@ -148,7 +148,7 @@ export const inviteMember = async (req: any, res: Response) => {
         treeId: id,
         invitedById: req.user.id
       }
-    });
+    } as any);
 
     // TRIGGER: Nuevo miembro puede afectar el presupuesto dinámico
     await redistributeTreeBudget(id);
@@ -250,9 +250,9 @@ export const consumeGuestToken = async (req: any, res: Response) => {
           treeId: tokenRecord.arbolId,
           invitedById: tokenRecord.creadorId,
           status: 'VERIFIED'
-        }
+        } as any
       })
-    ]);
+    ] as any);
 
     // TRIGGER: Nuevo miembro via token puede afectar el presupuesto
     await redistributeTreeBudget(tokenRecord.arbolId);
@@ -417,7 +417,7 @@ export const joinTree = async (req: any, res: Response) => {
         treeId: tree.id,
         invitedById: null // Joined via code
       }
-    });
+    } as any);
 
     void logEvent({
       ...getRequestContext(req),
@@ -476,16 +476,21 @@ const calculateTreeHistory = async (treeId: string, userId: string, range: strin
   }
 
   // Fetch all relevant data for the whole period at once to bucket it in memory
-  const transactions = await (prisma as any).fiatTransaction.findMany({
-    where: { treeId, date: { gte: startTime } },
-    orderBy: { date: 'asc' }
-  });
+  // --- $queryRaw: FiatTransaction table (model removed from Prisma schema, table persists in MySQL) ---
+  const transactions = await prisma.$queryRawUnsafe<any[]>(
+    `SELECT ft.date, ft.type, ft.amount FROM FiatTransaction ft WHERE ft.treeId = ? AND ft.date >= ? ORDER BY ft.date ASC`,
+    treeId, startTime
+  );
 
-  const ratings = await prisma.satisfactionRating.findMany({
-    where: { deliverable: { branch: { treeId } }, createdAt: { gte: startTime } },
-    select: { rating: true, createdAt: true },
-    orderBy: { createdAt: 'asc' }
-  });
+  // --- $queryRaw: SatisfactionRating + PhaseDeliverable + Branch join (models removed, tables persist) ---
+  const ratings = await prisma.$queryRawUnsafe<any[]>(
+    `SELECT sr.rating, sr.createdAt FROM SatisfactionRating sr
+     JOIN PhaseDeliverable pd ON sr.deliverableId = pd.id
+     JOIN Branch b ON pd.branchId = b.id
+     WHERE b.treeId = ? AND sr.createdAt >= ?
+     ORDER BY sr.createdAt ASC`,
+    treeId, startTime
+  );
 
   const history = [];
   for (let i = 0; i < points; i++) {
@@ -534,57 +539,72 @@ export const getMyTrees = async (req: any, res: Response) => {
       const lastMonth = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
 
       // --- GROUP HEALTH DATA (Current Month Summary — automatic transactions only) ---
-      const groupStats = await (prisma as any).fiatTransaction.groupBy({
-        by: ['type'],
-        where: { treeId: tree.id, date: { gte: lastMonth } },
-        _sum: { amount: true }
-      });
+      // $queryRaw: FiatTransaction groupBy (model removed)
+      const groupStats = await prisma.$queryRawUnsafe<any[]>(
+        `SELECT ft.type, SUM(ft.amount) as _sum FROM FiatTransaction ft
+         WHERE ft.treeId = ? AND ft.date >= ?
+         GROUP BY ft.type`,
+        tree.id, lastMonth
+      );
 
-      const groupIncome = groupStats.find((s: any) => s.type === 'INCOME')?._sum?.amount || 0;
-      const groupExpense = groupStats.find((s: any) => s.type === 'EXPENSE')?._sum?.amount || 0;
+      const groupIncome = Number(groupStats.find((s: any) => s.type === 'INCOME')?._sum) || 0;
+      const groupExpense = Number(groupStats.find((s: any) => s.type === 'EXPENSE')?._sum) || 0;
 
       // --- INVERSION %: Active FIAT promises / Total historical INCOME * 100 ---
+      // $queryRaw: PromiseP2P + Task + Branch join (model removed)
       const [activeFiatPromises, historicalIncomeStats] = await Promise.all([
-        (prisma as any).promiseP2P.aggregate({
-          where: {
-            currencyType: 'FIAT',
-            status: { in: ['PENDING', 'PAYMENT_SENT'] },
-            task: { branch: { treeId: tree.id } }
-          },
-          _sum: { amount: true }
-        }),
-        (prisma as any).fiatTransaction.aggregate({
-          where: { treeId: tree.id, type: 'INCOME' },
-          _sum: { amount: true }
-        })
+        prisma.$queryRawUnsafe<any[]>(
+          `SELECT SUM(pp.amount) as _sum FROM PromiseP2P pp
+           JOIN Task t ON pp.taskId = t.id
+           JOIN Branch b ON t.branchId = b.id
+           WHERE pp.currencyType = 'FIAT'
+             AND pp.status IN ('PENDING', 'PAYMENT_SENT')
+             AND b.treeId = ?`,
+          tree.id
+        ),
+        prisma.$queryRawUnsafe<any[]>(
+          `SELECT SUM(ft.amount) as _sum FROM FiatTransaction ft
+           WHERE ft.treeId = ? AND ft.type = 'INCOME'`,
+          tree.id
+        )
       ]);
-      const totalFiatPromises = activeFiatPromises._sum?.amount || 0;
-      const totalHistoricalCapital = historicalIncomeStats._sum?.amount || 0;
+      const totalFiatPromises = Number(activeFiatPromises[0]?._sum) || 0;
+      const totalHistoricalCapital = Number(historicalIncomeStats[0]?._sum) || 0;
       const inversionPct = totalHistoricalCapital > 0
         ? Math.min(100, (totalFiatPromises / totalHistoricalCapital) * 100)
         : 0;
 
-      const groupSatisfactions = await prisma.satisfactionRating.findMany({
-        where: { deliverable: { branch: { treeId: tree.id } } },
-        select: { rating: true }
-      });
+      // $queryRaw: SatisfactionRating + PhaseDeliverable + Branch join
+      const groupSatisfactions = await prisma.$queryRawUnsafe<any[]>(
+        `SELECT sr.rating FROM SatisfactionRating sr
+         JOIN PhaseDeliverable pd ON sr.deliverableId = pd.id
+         JOIN Branch b ON pd.branchId = b.id
+         WHERE b.treeId = ?`,
+        tree.id
+      );
       const groupSatisfactionAvg = groupSatisfactions.length > 0
         ? (groupSatisfactions.reduce((acc, r) => acc + r.rating, 0) / groupSatisfactions.length) / 20
         : null;
 
       // --- PERSONAL HEALTH DATA ---
-      const personalFiatStats = await (prisma as any).fiatTransaction.groupBy({
-        by: ['type'],
-        where: { treeId: tree.id, createdById: userId, date: { gte: lastMonth } },
-        _sum: { amount: true }
-      });
-      const personalIncome = personalFiatStats.find((s: any) => s.type === 'INCOME')?._sum?.amount || 0;
-      const personalExpense = personalFiatStats.find((s: any) => s.type === 'EXPENSE')?._sum?.amount || 0;
+      // $queryRaw: FiatTransaction groupBy personal (model removed)
+      const personalFiatStats = await prisma.$queryRawUnsafe<any[]>(
+        `SELECT ft.type, SUM(ft.amount) as _sum FROM FiatTransaction ft
+         WHERE ft.treeId = ? AND ft.createdById = ? AND ft.date >= ?
+         GROUP BY ft.type`,
+        tree.id, userId, lastMonth
+      );
+      const personalIncome = Number(personalFiatStats.find((s: any) => s.type === 'INCOME')?._sum) || 0;
+      const personalExpense = Number(personalFiatStats.find((s: any) => s.type === 'EXPENSE')?._sum) || 0;
 
-      const personalSatisfactions = await prisma.satisfactionRating.findMany({
-        where: { userId, deliverable: { branch: { treeId: tree.id } } },
-        select: { rating: true }
-      });
+      // $queryRaw: SatisfactionRating personal + PhaseDeliverable + Branch join
+      const personalSatisfactions = await prisma.$queryRawUnsafe<any[]>(
+        `SELECT sr.rating FROM SatisfactionRating sr
+         JOIN PhaseDeliverable pd ON sr.deliverableId = pd.id
+         JOIN Branch b ON pd.branchId = b.id
+         WHERE sr.userId = ? AND b.treeId = ?`,
+        userId, tree.id
+      );
       const personalSatisfactionAvg = personalSatisfactions.length > 0
         ? (personalSatisfactions.reduce((acc, r) => acc + r.rating, 0) / personalSatisfactions.length) / 20
         : null;
@@ -663,40 +683,48 @@ export const getGlobalTrees = async (req: any, res: Response) => {
     const enrichedGlobal = await Promise.all(globalTreesList.map(async (tree: any) => {
       const lastMonth = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
 
-      const groupStats = await (prisma as any).fiatTransaction.groupBy({
-        by: ['type'],
-        where: { treeId: tree.id, date: { gte: lastMonth } },
-        _sum: { amount: true }
-      });
+      const groupStats = await prisma.$queryRawUnsafe<any[]>(
+        `SELECT ft.type, SUM(ft.amount) as _sum FROM FiatTransaction ft
+         WHERE ft.treeId = ? AND ft.date >= ?
+         GROUP BY ft.type`,
+        tree.id, lastMonth
+      );
 
-      const groupIncome = groupStats.find((s: any) => s.type === 'INCOME')?._sum?.amount || 0;
-      const groupExpense = groupStats.find((s: any) => s.type === 'EXPENSE')?._sum?.amount || 0;
+      const groupIncome = Number(groupStats.find((s: any) => s.type === 'INCOME')?._sum) || 0;
+      const groupExpense = Number(groupStats.find((s: any) => s.type === 'EXPENSE')?._sum) || 0;
 
       // --- INVERSION %: Active FIAT promises / Total historical INCOME * 100 ---
+      // $queryRaw: PromiseP2P + Task + Branch join (model removed)
       const [activeFiatPromisesG, historicalIncomeStatsG] = await Promise.all([
-        (prisma as any).promiseP2P.aggregate({
-          where: {
-            currencyType: 'FIAT',
-            status: { in: ['PENDING', 'PAYMENT_SENT'] },
-            task: { branch: { treeId: tree.id } }
-          },
-          _sum: { amount: true }
-        }),
-        (prisma as any).fiatTransaction.aggregate({
-          where: { treeId: tree.id, type: 'INCOME' },
-          _sum: { amount: true }
-        })
+        prisma.$queryRawUnsafe<any[]>(
+          `SELECT SUM(pp.amount) as _sum FROM PromiseP2P pp
+           JOIN Task t ON pp.taskId = t.id
+           JOIN Branch b ON t.branchId = b.id
+           WHERE pp.currencyType = 'FIAT'
+             AND pp.status IN ('PENDING', 'PAYMENT_SENT')
+             AND b.treeId = ?`,
+          tree.id
+        ),
+        prisma.$queryRawUnsafe<any[]>(
+          `SELECT SUM(ft.amount) as _sum FROM FiatTransaction ft
+           WHERE ft.treeId = ? AND ft.type = 'INCOME'`,
+          tree.id
+        )
       ]);
-      const totalFiatPromisesG = activeFiatPromisesG._sum?.amount || 0;
-      const totalHistoricalCapitalG = historicalIncomeStatsG._sum?.amount || 0;
+      const totalFiatPromisesG = Number(activeFiatPromisesG[0]?._sum) || 0;
+      const totalHistoricalCapitalG = Number(historicalIncomeStatsG[0]?._sum) || 0;
       const inversionPctG = totalHistoricalCapitalG > 0
         ? Math.min(100, (totalFiatPromisesG / totalHistoricalCapitalG) * 100)
         : 0;
 
-      const groupSatisfactions = await prisma.satisfactionRating.findMany({
-        where: { deliverable: { branch: { treeId: tree.id } } },
-        select: { rating: true }
-      });
+      // $queryRaw: SatisfactionRating + PhaseDeliverable + Branch join
+      const groupSatisfactions = await prisma.$queryRawUnsafe<any[]>(
+        `SELECT sr.rating FROM SatisfactionRating sr
+         JOIN PhaseDeliverable pd ON sr.deliverableId = pd.id
+         JOIN Branch b ON pd.branchId = b.id
+         WHERE b.treeId = ?`,
+        tree.id
+      );
       const groupSatisfactionAvg = groupSatisfactions.length > 0
         ? (groupSatisfactions.reduce((acc, r) => acc + r.rating, 0) / groupSatisfactions.length) / 20
         : null;
@@ -854,22 +882,17 @@ export const getTree = async (req: any, res: Response) => {
       const ninetyDaysAgo = new Date();
       ninetyDaysAgo.setDate(ninetyDaysAgo.getDate() - 90);
 
-      const fiatStats = await prisma.fiatTransaction.groupBy({
-        by: ['type'],
-        where: {
-          treeId: id,
-          date: { gte: ninetyDaysAgo }
-        },
-        _sum: { amount: true }
-      });
+      // fiatTransaction model was deleted (TM1-TM6)
+      const income = 0;
+      const expense = 0;
 
-      const income = Number(fiatStats.find(s => s.type === 'INCOME')?._sum.amount || 0);
-      const expense = Number(fiatStats.find(s => s.type === 'EXPENSE')?._sum.amount || 0);
-
-      const satisfactionRatings = await prisma.satisfactionRating.findMany({
-        where: { deliverable: { branch: { treeId: id } } },
-        select: { rating: true }
-      });
+      const satisfactionRatings = await prisma.$queryRawUnsafe<any[]>(
+        `SELECT sr.rating FROM SatisfactionRating sr
+         JOIN PhaseDeliverable pd ON sr.deliverableId = pd.id
+         JOIN Branch b ON pd.branchId = b.id
+         WHERE b.treeId = ?`,
+        id
+      );
 
       const satisfactionAvg = satisfactionRatings.length > 0
         ? (satisfactionRatings.reduce((acc, r) => acc + r.rating, 0) / satisfactionRatings.length) / 20
@@ -1238,10 +1261,9 @@ export const inviteAI = async (req: any, res: Response) => {
         treeId,
         isAI: true,
         invitedById: req.user.id,
-        weeklyNeedPoints: 1000,
         status: 'VERIFIED',
       },
-    });
+    } as any);
 
     void logEvent({
       ...getRequestContext(req),

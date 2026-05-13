@@ -80,24 +80,20 @@ export async function searchNeeds(query: string): Promise<NeedSearchResult[]> {
 
   // FTS search + LIKE fallback combined in one query
   // Use boolean mode for FTS to require all words; fall back to LIKE for partial matches
-  const rows: any[] = await (prisma as any).$queryRawUnsafe(
-    `SELECT
-       n.id, n.title, n.description, n.status,
-       MATCH(n.title, n.description) AGAINST(? IN BOOLEAN MODE) AS fts_score,
-       t.id AS treeId, t.name AS treeName, t.capacidades
-     FROM Need n
-     JOIN NeedTree nt ON n.id = nt.needId
-     JOIN Tree t ON nt.treeId = t.id
-     WHERE MATCH(n.title, n.description) AGAINST(? IN BOOLEAN MODE)
-        OR n.title LIKE ?
-        OR n.description LIKE ?
-     ORDER BY fts_score DESC
-     LIMIT 30`,
-    ftsQuery,
-    ftsQuery,
-    likePattern,
-    likePattern,
-  );
+  const rows: any[] = await prisma.$queryRaw`
+    SELECT
+      n.id, n.title, n.description, n.status,
+      MATCH(n.title, n.description) AGAINST(${ftsQuery} IN BOOLEAN MODE) AS fts_score,
+      t.id AS treeId, t.name AS treeName, t.capacidades
+    FROM Need n
+    JOIN NeedTree nt ON n.id = nt.needId
+    JOIN Tree t ON nt.treeId = t.id
+    WHERE MATCH(n.title, n.description) AGAINST(${ftsQuery} IN BOOLEAN MODE)
+       OR n.title LIKE ${likePattern}
+       OR n.description LIKE ${likePattern}
+    ORDER BY fts_score DESC
+    LIMIT 30
+  `;
 
   if (rows.length === 0) return [];
 

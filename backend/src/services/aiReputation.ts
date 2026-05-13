@@ -462,23 +462,13 @@ export async function redirectAiPaymentsToOwner(
     return 0;
   }
 
-  // Find PLEDGED payments for this task that are assigned to the AI member
-  const payments = await prisma.memberPayment.findMany({
-    where: {
-      taskId,
-      memberId: aiMemberId,
-      status: 'PLEDGED',
-    },
-    select: { id: true },
-  });
+  // memberPayment model was deleted (TM1-TM6 cleanup) — payment redirection disabled
+  const payments: { id: string }[] = [];
 
   let count = 0;
   for (const payment of payments) {
     try {
-      await prisma.memberPayment.update({
-        where: { id: payment.id },
-        data: { memberId: ownerMember.id },
-      });
+      await Promise.resolve(); // was: prisma.memberPayment.update — memberPayment deleted (TM1-TM6)
       count++;
     } catch (err: any) {
       console.warn(`[AI Reputation] Failed to redirect payment ${payment.id}:`, err.message);

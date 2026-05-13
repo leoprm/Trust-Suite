@@ -28,12 +28,12 @@ export default function Login() {
     try {
       if (isLogin) {
         const { data } = await api.post('/auth/login', { email, password });
-        login(data.user, data.token);
-        navigate('/');
+        login(data.user, data.accessToken, data.refreshToken);
+        navigate('/onboarding');
       } else {
         const { data } = await api.post('/auth/register', { username, email, password });
-        login(data.user, data.token);
-        navigate('/');
+        login(data.user, data.accessToken, data.refreshToken);
+        navigate('/onboarding');
       }
     } catch (err: any) {
       setError(err.response?.data?.error || 'Authentication failed');

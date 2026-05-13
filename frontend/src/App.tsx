@@ -35,6 +35,7 @@ import BillingPage from './pages/BillingPage';
 import BillingPayout from './pages/BillingPayout';
 
 import MainLayout from './layouts/MainLayout';
+import OnboardingWizard from './components/onboarding/OnboardingWizard';
 import ConciergeChat from './components/ConciergeChat';
 import type { AutoOpenContext } from './components/ConciergeChat';
 import { useEffect, useState } from 'react';
@@ -107,10 +108,14 @@ function App() {
         <Routes>
           {/* Public routes */}
           <Route path="/login" element={!isAuthenticated ? <Login /> : <Navigate to={appConfig.defaultPath} />} />
-          <Route path="/" element={<LandingPage />} />
+          <Route path="/" element={isAuthenticated ? <Navigate to="/dashboard" replace /> : <LandingPage />} />
+          <Route path="/landing" element={<LandingPage />} />
           <Route path="/join/:token" element={<GuestJoin />} />
           <Route path="/add/:token" element={<ConnectPerson />} />
           <Route path="/p/:code" element={<PublicProfile />} />
+
+          {/* Onboarding wizard — full screen, requires auth */}
+          <Route path="/onboarding" element={isAuthenticated ? <OnboardingWizard /> : <Navigate to="/login" />} />
 
           {/* Authenticated routes with MainLayout */}
           <Route element={isAuthenticated ? <MainLayout /> : <Navigate to="/login" />}>

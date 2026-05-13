@@ -159,16 +159,18 @@ export default function AdminDashboard() {
 
   if (!stats) return null;
 
+  const isMobile = window.innerWidth <= 768;
+
   return (
-    <div style={{ maxWidth: '1200px', margin: '0 auto', padding: '1.5rem' }}>
+    <div style={{ maxWidth: '1200px', margin: '0 auto', padding: isMobile ? '1rem' : '1.5rem' }}>
       {/* Header */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem', flexWrap: 'wrap', gap: '1rem' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
           <div style={{ background: 'var(--accent-primary)', padding: '0.75rem', borderRadius: 'var(--radius-md)', color: 'white' }}>
-            <Shield size={24} />
+            <Shield size={isMobile ? 20 : 24} />
           </div>
           <div>
-            <h1 style={{ margin: 0, fontSize: '1.75rem' }}>Admin Dashboard</h1>
+            <h1 style={{ margin: 0, fontSize: isMobile ? '1.35rem' : '1.75rem' }}>Admin Dashboard</h1>
             <p style={{ margin: '0.25rem 0 0', color: 'var(--text-secondary)', fontSize: '0.85rem' }}>
               Trust Maker — Platform Overview
             </p>
@@ -185,10 +187,10 @@ export default function AdminDashboard() {
         animate={{ opacity: 1, y: 0 }}
         style={{ display: 'flex', gap: '1rem', marginBottom: '1.5rem', flexWrap: 'wrap' }}
       >
-        <KpiCard icon={<Users size={20} />} label="Active Users" value={String(stats.activeUsers)} color="#3b82f6" />
-        <KpiCard icon={<Cpu size={20} />} label="Registered IAs" value={String(stats.registeredIAs)} color="#8b5cf6" />
-        <KpiCard icon={<DollarSign size={20} />} label="Monthly Cost" value={formatCLP(stats.monthlyCost)} color="#10b981" />
-        <KpiCard icon={<CheckSquare size={20} />} label="Tasks Completed" value={String(stats.completedTasks)} color="#f59e0b" />
+        <KpiCard icon={<Users size={18} />} label="Active Users" value={String(stats.activeUsers)} color="#3b82f6" />
+        <KpiCard icon={<Cpu size={18} />} label="Registered IAs" value={String(stats.registeredIAs)} color="#8b5cf6" />
+        <KpiCard icon={<DollarSign size={18} />} label="Monthly Cost" value={formatCLP(stats.monthlyCost)} color="#10b981" />
+        <KpiCard icon={<CheckSquare size={18} />} label="Tasks Completed" value={String(stats.completedTasks)} color="#f59e0b" />
       </motion.div>
 
       {/* Chart */}

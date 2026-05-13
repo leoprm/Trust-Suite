@@ -41,7 +41,7 @@ export async function runQuorumTimeoutCheck() {
       if (ageDays >= 30) {
         await prisma.need.update({
           where: { id: need.id },
-          data: { quorumMet: true },
+          data: { status: 'COMPLETED' },
         });
         console.log(`[QuorumTimeout] Need "${need.title}" — ${ageDays}d elapsed, quorum forced.`);
         forced++;

@@ -3,11 +3,13 @@ dotenv.config();
 
 import express from 'express';
 import cors from 'cors';
+import helmet from 'helmet';
 import path from 'path';
 import fs from 'fs';
 import mysql from 'mysql2/promise';
 import { PrismaClient } from '@prisma/client';
 import { corsOptions, logCorsConfiguration, isProduction, allowedOrigins, allowAllInDev } from './config/cors';
+import { authLimiter, inferenceLimiter, conciergeLimiter, globalLimiter } from './config/rateLimiter';
 
 import authRoutes from './routes/authRoutes';
 import { authenticateJWT } from './middleware/authMiddleware';
@@ -65,7 +67,6 @@ import aiExecutorRoutes from './routes/aiExecutorRoutes';
 import aiReputationRoutes from './routes/aiReputationRoutes';
 import { aiLeaderboard } from './controllers/aiReputationController';
 import conciergeRoutes from './routes/conciergeRoutes';
-import trustCoreRoutes from './routes/trustCoreRoutes';
 import careerPathRoutes from './routes/careerPathRoutes';
 import byoRoutes from './routes/byoRoutes';
 import billingRoutes from './routes/billingRoutes';
@@ -75,6 +76,7 @@ import inferenceRoutes from './routes/inferenceRoutes';
 import finetuneRoutes from './routes/finetuneRoutes';
 
 const app = express();
+app.disable('x-powered-by');
 const port = process.env.PORT || 3000;
 export const prisma = new PrismaClient();
 
@@ -151,17 +153,22 @@ app.use(cors(corsOptions));
 app.options(/.*/, cors(corsOptions));
 app.use(express.json());
 
-// Security headers
-app.use((_req, res, next) => {
-  res.setHeader('X-Content-Type-Options', 'nosniff');
-  res.setHeader('X-Frame-Options', 'DENY');
-  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
-  res.setHeader('X-Permitted-Cross-Domain-Policies', 'none');
-  if (isProduction) {
-    res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
-  }
-  next();
-});
+// Security headers via Helmet (replaces manual X-Content-Type-Options, X-Frame-Options, etc.)
+app.use(helmet({
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      scriptSrc: ["'self'"],
+      connectSrc: ["'self'", "api.paddle.com"],
+    },
+  },
+  frameguard: { action: 'deny' },
+}));
+
+// HSTS only in production (helmet's default HSTS applies conditionally to HTTPS; explicit for prod)
+if (isProduction) {
+  app.use(helmet.hsts({ maxAge: 31536000, includeSubDomains: true }));
+}
 
 // Uploads
 const uploadsDir = path.join(__dirname, '../uploads');
@@ -188,6 +195,13 @@ app.get('/api/profile-pics/:filename', (req, res) => {
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', message: 'Trust Lite API is running' });
 });
+
+// ── Rate Limiting ─────────────────────────────────────────────────────────────
+app.use('/api/auth/login', authLimiter);
+app.use('/api/auth/register', authLimiter);
+app.use('/api/inference/run', inferenceLimiter);
+app.use('/api/concierge', conciergeLimiter);
+app.use(globalLimiter);
 
 app.use('/api/auth', authRoutes);
 app.use('/api/users', userRoutes);
@@ -238,13 +252,32 @@ app.use('/api/ai', aiExecutorRoutes);
 app.use('/api/ai', authenticateJWT, aiReputationRoutes);
 app.get('/api/trees/:id/ai/leaderboard', authenticateJWT, aiLeaderboard);
 app.use('/api/concierge', conciergeRoutes);
-app.use('/api', trustCoreRoutes);
+
+// DEBUG: Test concierge route
+app.get('/api/debug-concierge', (_req: any, res: any) => {
+  res.json({ chatEndpoint: 'active', conciergeRoutes: true });
+});
+
 app.use('/api/career-path', careerPathRoutes);
 app.use('/api/byo', authenticateJWT, byoRoutes);
 
 app.use('/api/models', modelRoutes);
 app.use('/api/inference', inferenceRoutes);
 app.use('/api/finetune', authenticateJWT, finetuneRoutes);
+
+// ── Global Error Handler ──────────────────────────────────────────────────────
+// Catches unhandled errors from all routes. Hides stack traces in production.
+app.use((err: any, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+  console.error('[Error]', err.stack || err.message || err);
+  if (isProduction) {
+    res.status(err.status || 500).json({ error: 'Internal server error' });
+  } else {
+    res.status(err.status || 500).json({
+      error: err.message || 'Internal server error',
+      stack: err.stack,
+    });
+  }
+});
 
 startCronJobs();
 startMonthlyJob();

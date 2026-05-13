@@ -174,7 +174,7 @@ export default function TrustInsightDashboard() {
             <p>{searchTerm ? 'No needs match your search.' : 'No needs detected yet.'}</p>
           </div>
         ) : (
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: '1rem' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(320px, 100%), 1fr))', gap: '1rem' }}>
             {filteredNeeds.map(need => (
               <NeedCard key={need.id} need={need} />
             ))}

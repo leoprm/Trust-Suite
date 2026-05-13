@@ -255,7 +255,6 @@ export default function SubscriptionPage() {
       display: 'flex',
       flexDirection: 'column',
       gap: '1.5rem',
-      paddingBottom: '6rem',
     }}>
       {/* Page header */}
       <div>

@@ -96,7 +96,7 @@ export const addContact = async (req: any, res: Response) => {
 
     void logEvent({
       ...getRequestContext(req),
-      actorId: userId,
+      actorId: req.user!.id,
       action: 'CONTACT_ADDED',
       entityType: 'UserContact',
       source: 'USER',
@@ -210,7 +210,7 @@ export const connectViaToken = async (req: any, res: Response) => {
 
     void logEvent({
       ...getRequestContext(req),
-      actorId: userId,
+      actorId: req.user!.id,
       action: 'CONTACT_CONNECTED_VIA_TOKEN',
       entityType: 'UserContact',
       source: 'USER',
