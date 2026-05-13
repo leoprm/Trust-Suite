@@ -1,4 +1,5 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { useEffect } from 'react';
 import { useAuthStore } from './store/authStore';
 import MainLayout from './layouts/MainLayout';
 import Home from './pages/Home';
@@ -10,6 +11,13 @@ import SubscribePage from './pages/SubscribePage';
 function App() {
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   const isInitialLoading = useAuthStore((s) => s.isInitialLoading);
+  const fetchUser = useAuthStore((s) => s.fetchUser);
+
+  useEffect(() => {
+    if (isInitialLoading) {
+      fetchUser();
+    }
+  }, [isInitialLoading, fetchUser]);
 
   if (isInitialLoading) {
     return (
