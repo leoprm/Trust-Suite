@@ -1,0 +1,24 @@
+schema: spec-driven
+
+# Project context shown to AI when creating artifacts
+context: |
+  Tech stack: React, Vite, Express, Prisma, MySQL, TypeScript
+  Project: Trust Maker — AI-powered trust-building platform
+  Architecture: chat-first UI, sidebar with trees (árboles) and needs (necesidades)
+  Key concepts:
+    - Trees (árboles): collaborative spaces
+    - Needs (necesidades): goals/initiatives within trees
+    - Eternal ideas (ideas eternas): cross-tree proposals
+    - 10 AI models, 3 interaction routes
+    - Simple voting (votación simple)
+  Conventions: Spanish-first UI, conventional commits, no commit/push without explicit order
+
+# Per-artifact rules
+rules:
+  proposal:
+    - Keep proposals under 500 words
+    - Write in Spanish
+  tasks:
+    - Break tasks into chunks of max 2 hours
+    - Each task must be independently verifiable
+    - Tasks feed into Kanban (hermes kanban create)

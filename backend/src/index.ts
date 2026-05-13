@@ -9,71 +9,21 @@ import fs from 'fs';
 import mysql from 'mysql2/promise';
 import { PrismaClient } from '@prisma/client';
 import { corsOptions, logCorsConfiguration, isProduction, allowedOrigins, allowAllInDev } from './config/cors';
-import { authLimiter, inferenceLimiter, conciergeLimiter, globalLimiter } from './config/rateLimiter';
+import { authLimiter, globalLimiter, conciergeLimiter } from './config/rateLimiter';
 
 import authRoutes from './routes/authRoutes';
 import { authenticateJWT } from './middleware/authMiddleware';
-import userRoutes from './routes/userRoutes';
 import treeRoutes from './routes/treeRoutes';
 import needRoutes from './routes/needRoutes';
-import taskRoutes from './routes/taskRoutes';
-import assetRoutes from './routes/assetRoutes';
-import branchRoutes from './routes/branchRoutes';
-import deliverableRoutes from './routes/deliverableRoutes';
-import adminRoutes from './routes/adminRoutes';
-import fiatRoutes from './routes/fiatRoutes';
-import fiatTransactionRoutes from './routes/fiatTransactionRoutes';
-import contactRoutes from './routes/contactRoutes';
-import uploadRoutes from './routes/uploadRoutes';
-import plantillaRoutes from './routes/plantillaArbolRoutes';
-import geoRoutes from './routes/geoRoutes';
-import p2pRoutes from './routes/p2pRoutes';
-import discoveryRoutes from './routes/discoveryRoutes';
-import bonusRoutes from './routes/bonusRoutes';
-import notificationRoutes from './routes/notificationRoutes';
-import migrationRoutes from './routes/migrationRoutes';
-import skillRoutes from './routes/skillRoutes';
-import recruitmentRoutes from './routes/recruitmentRoutes';
-import privacySettingsRoutes from './routes/privacySettingsRoutes';
-import fileRoutes from './routes/fileRoutes';
-import evidenceRoutes from './routes/evidenceRoutes';
-import exportRoutes from './routes/exportRoutes';
-import externalNeedRoutes from './routes/externalNeedRoutes';
-import autosustentoBranchRoutes from './routes/autosustentoBranchRoutes';
-import autosustentoIdeaRoutes from './routes/autosustentoIdeaRoutes';
-import sustainabilityCycleRoutes from './routes/sustainabilityCycleRoutes';
-import branchOsLedgerRoutes from './routes/branchOsLedgerRoutes';
-import berryFlowRoutes from './routes/berryFlowRoutes';
-import insightRoutes from './routes/insightRoutes';
-import externalCandidateRoutes from './routes/externalCandidateRoutes';
-import financingRoutes from './routes/financingRoutes';
-import receiptRoutes from './routes/receiptRoutes';
-import publicRoutes from './routes/publicRoutes';
-import pingRoutes from './routes/pingRoutes';
-import { listMyEvaluations } from './controllers/externalCandidateController';
-import { startCronJobs } from './cron/weeklyResolution';
-import { startMonthlyJob } from './cron/monthlyEconomy';
-import { startMaterialFallbackJob } from './cron/materialFallback';
-import { startXpDecayCron } from './cron/xpDecay';
-import { startCorruptionCheckCron } from './cron/corruptionCheck';
-import { startSkillPercentileCron } from './cron/skillPercentile';
-import { startTaskMatcherCron } from './cron/taskMatcherCron';
-import { startAIExecutorCron } from './cron/aiExecutorCron';
-import { startMonthlyNeedPointsCron } from './cron/monthlyNeedPointsCron';
-import { startCareerPathGraphCron } from './cron/careerPathGraphCron';
-import { startSubscriptionCron } from './cron/subscriptionCron';
-import aiTaskRoutes from './routes/aiTaskRoutes';
-import aiExecutorRoutes from './routes/aiExecutorRoutes';
-import aiReputationRoutes from './routes/aiReputationRoutes';
-import { aiLeaderboard } from './controllers/aiReputationController';
+import ideaRoutes from './routes/ideaRoutes';
+import resultRoutes from './routes/resultRoutes';
 import conciergeRoutes from './routes/conciergeRoutes';
-import careerPathRoutes from './routes/careerPathRoutes';
-import byoRoutes from './routes/byoRoutes';
 import billingRoutes from './routes/billingRoutes';
+import ratingRoutes from './routes/ratingRoutes';
+import agentRoutes from './routes/agentRoutes';
+import byoRoutes from './routes/byoRoutes';
+import taskRoutes from './routes/taskRoutes';
 import { stripeWebhook, paddleWebhook, createCheckout, cancelSubscription, currentCost, mySubscription } from './controllers/billingController';
-import modelRoutes from './routes/modelRoutes';
-import inferenceRoutes from './routes/inferenceRoutes';
-import finetuneRoutes from './routes/finetuneRoutes';
 
 const app = express();
 app.disable('x-powered-by');
@@ -140,9 +90,6 @@ if (isProduction && allowedOrigins.length === 0 && !allowAllInDev) {
   process.exit(1);
 }
 
-// Public routes BEFORE global CORS
-app.use('/api/public', publicRoutes);
-
 // Stripe webhook: raw body BEFORE JSON parser (Stripe signature verification)
 app.post('/api/billing/stripe-webhook', express.raw({ type: 'application/json' }), stripeWebhook);
 
@@ -153,7 +100,7 @@ app.use(cors(corsOptions));
 app.options(/.*/, cors(corsOptions));
 app.use(express.json());
 
-// Security headers via Helmet (replaces manual X-Content-Type-Options, X-Frame-Options, etc.)
+// Security headers via Helmet
 app.use(helmet({
   contentSecurityPolicy: {
     directives: {
@@ -165,7 +112,7 @@ app.use(helmet({
   frameguard: { action: 'deny' },
 }));
 
-// HSTS only in production (helmet's default HSTS applies conditionally to HTTPS; explicit for prod)
+// HSTS only in production
 if (isProduction) {
   app.use(helmet.hsts({ maxAge: 31536000, includeSubDomains: true }));
 }
@@ -193,80 +140,28 @@ app.get('/api/profile-pics/:filename', (req, res) => {
 });
 
 app.get('/api/health', (req, res) => {
-  res.json({ status: 'ok', message: 'Trust Lite API is running' });
+  res.json({ status: 'ok', message: 'Trust Maker V3 API is running' });
 });
 
 // ── Rate Limiting ─────────────────────────────────────────────────────────────
 app.use('/api/auth/login', authLimiter);
 app.use('/api/auth/register', authLimiter);
-app.use('/api/inference/run', inferenceLimiter);
-app.use('/api/concierge', conciergeLimiter);
 app.use(globalLimiter);
 
+// ── Routes ────────────────────────────────────────────────────────────────────
 app.use('/api/auth', authRoutes);
-app.use('/api/users', userRoutes);
 app.use('/api/trees', treeRoutes);
 app.use('/api/needs', needRoutes);
-app.use('/api/tasks', taskRoutes);
-app.use('/api/assets', assetRoutes);
-app.use('/api/branches', branchRoutes);
-app.use('/api/deliverables', deliverableRoutes);
-app.use('/api/admin', adminRoutes);
-app.use('/api/fiat', fiatRoutes);
-app.use('/api/fiat-transactions', fiatTransactionRoutes);
-app.use('/api/contacts', contactRoutes);
-app.use('/api/uploads', uploadRoutes);
-app.use('/api/files', fileRoutes);
-app.use('/api/evidence', evidenceRoutes);
-app.use('/api/plantillas', plantillaRoutes);
-app.use('/api/geo', geoRoutes);
-app.use('/api/p2p', p2pRoutes);
-app.use('/api/discovery', discoveryRoutes);
-app.use('/api/bonus', bonusRoutes);
-app.use('/api/notifications', notificationRoutes);
-app.use('/api/migration', migrationRoutes);
-app.use('/api/skills', skillRoutes);
-app.use('/api/recruitment', recruitmentRoutes);
-app.use('/api/privacy-settings', privacySettingsRoutes);
-app.use('/api/exports', exportRoutes);
-
-// ── Billing — mounted BEFORE /api catch-all routers ──
+app.use('/api/ideas', ideaRoutes);
+app.use('/api/results', resultRoutes);
+app.use('/api/concierge', conciergeLimiter, conciergeRoutes);
 app.use('/api/billing', billingRoutes);
-
-app.use('/api/ping', pingRoutes);
-
-app.use('/api', autosustentoBranchRoutes);
-app.use('/api', autosustentoIdeaRoutes);
-app.use('/api', sustainabilityCycleRoutes);
-app.use('/api', branchOsLedgerRoutes);
-app.use('/api', berryFlowRoutes);
-app.use('/api', insightRoutes);
-app.use('/api/external-candidates', externalCandidateRoutes);
-app.use('/api/trees/:id/financing', authenticateJWT, financingRoutes);
-app.use('/api/payments', authenticateJWT, receiptRoutes);
-app.use('/api/ping', pingRoutes);
-app.get('/api/evaluations/mine', authenticateJWT, listMyEvaluations);
-app.use('/api', externalNeedRoutes);
-app.use('/api/trees/:treeId', authenticateJWT, aiTaskRoutes);
-app.use('/api/ai', aiExecutorRoutes);
-app.use('/api/ai', authenticateJWT, aiReputationRoutes);
-app.get('/api/trees/:id/ai/leaderboard', authenticateJWT, aiLeaderboard);
-app.use('/api/concierge', conciergeRoutes);
-
-// DEBUG: Test concierge route
-app.get('/api/debug-concierge', (_req: any, res: any) => {
-  res.json({ chatEndpoint: 'active', conciergeRoutes: true });
-});
-
-app.use('/api/career-path', careerPathRoutes);
-app.use('/api/byo', authenticateJWT, byoRoutes);
-
-app.use('/api/models', modelRoutes);
-app.use('/api/inference', inferenceRoutes);
-app.use('/api/finetune', authenticateJWT, finetuneRoutes);
+app.use('/api/ratings', ratingRoutes);
+app.use('/api/agents', agentRoutes);
+app.use('/api/byo', byoRoutes);
+app.use('/api/tasks', taskRoutes);
 
 // ── Global Error Handler ──────────────────────────────────────────────────────
-// Catches unhandled errors from all routes. Hides stack traces in production.
 app.use((err: any, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
   console.error('[Error]', err.stack || err.message || err);
   if (isProduction) {
@@ -279,18 +174,7 @@ app.use((err: any, _req: express.Request, res: express.Response, _next: express.
   }
 });
 
-startCronJobs();
-startMonthlyJob();
-startMaterialFallbackJob();
-startXpDecayCron();
-startCorruptionCheckCron();
-startSkillPercentileCron();
-startTaskMatcherCron();
-startAIExecutorCron();
-startMonthlyNeedPointsCron();
-startCareerPathGraphCron();
-startSubscriptionCron();
-
+// ── Start ─────────────────────────────────────────────────────────────────────
 bootstrapDatabase().then(() => {
   app.listen(Number(port), '0.0.0.0', () => {
     console.log(`Server is running on http://0.0.0.0:${port}`);

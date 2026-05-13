@@ -1,170 +1,141 @@
 import { Request, Response } from 'express';
-import * as crypto from 'crypto';
 import { prisma } from '../index';
-import {
-  estimateInternalCost,
-  computeSavings,
-  MONTHLY_SUBSCRIPTION_COST,
-  isEligibleForPayout,
-  computePayoutAmount,
-} from '../services/savingsCalculator';
+import { encrypt, decrypt } from '../utils/crypto';
 
-/**
- * POST /api/byo/register
- * Registra una IA externa del usuario. Hashea la API key con SHA-256.
- */
-export const registerAI = async (req: Request, res: Response) => {
+// ── POST /api/byo/keys ────────────────────────────────────────────────────
+// Body: { name?, provider, apiKey, costPerToken?, maxParallel? }
+export const createKey = async (req: Request, res: Response) => {
   try {
     const userId = req.user!.id;
-    const { name, provider, apiKey, endpoint } = req.body;
+    const { name, provider, apiKey, costPerToken, maxParallel } = req.body;
 
-    if (!name || !provider || !apiKey) {
-      return res.status(400).json({ error: 'name, provider, and apiKey are required' });
+    if (!provider || typeof provider !== 'string' || !provider.trim()) {
+      return res.status(400).json({ error: 'provider (string) is required' });
+    }
+    if (!apiKey || typeof apiKey !== 'string' || !apiKey.trim()) {
+      return res.status(400).json({ error: 'apiKey (string) is required' });
     }
 
-    const validProviders = ['OPENAI', 'DEEPSEEK', 'ANTHROPIC', 'CUSTOM'];
-    if (!validProviders.includes(provider)) {
-      return res.status(400).json({ error: `Invalid provider. Must be one of: ${validProviders.join(', ')}` });
-    }
+    const encrypted = encrypt(apiKey.trim());
 
-    if (provider === 'CUSTOM' && !endpoint) {
-      return res.status(400).json({ error: 'endpoint is required for CUSTOM provider' });
-    }
-
-    const apiKeyHash = crypto.createHash('sha256').update(apiKey).digest('hex');
-
-    const ai = await prisma.userAI.create({
+    const key = await prisma.byoApiKey.create({
       data: {
         userId,
-        name,
-        provider,
-        apiKeyHash,
-        endpoint: endpoint || null,
+        name: name?.trim() || 'My Key',
+        provider: provider.trim(),
+        apiKey: encrypted,
+        costPerToken: typeof costPerToken === 'number' && costPerToken > 0 ? costPerToken : 0,
+        maxParallel: typeof maxParallel === 'number' && maxParallel >= 1 ? Math.floor(maxParallel) : 5,
       },
       select: {
         id: true,
         name: true,
         provider: true,
-        status: true,
-        endpoint: true,
-        monthlySavings: true,
-        totalPayout: true,
+        costPerToken: true,
+        maxParallel: true,
         createdAt: true,
       },
     });
 
-    res.status(201).json(ai);
-  } catch (error: any) {
-    console.error('[byo] registerAI error:', error);
-    res.status(500).json({ error: 'Failed to register AI', detail: error.message });
+    res.status(201).json(key);
+  } catch (err: any) {
+    console.error('[byo:createKey]', err.message || err);
+    res.status(500).json({ error: 'Failed to create BYO API key' });
   }
 };
 
-/**
- * GET /api/byo/my-ais
- * Lista las IAs registradas por el usuario autenticado. NUNCA expone apiKeyHash.
- */
-export const listMyAIs = async (req: Request, res: Response) => {
+// ── GET /api/byo/keys ─────────────────────────────────────────────────────
+// Returns all keys for the authenticated user (apiKey partially masked).
+export const listKeys = async (req: Request, res: Response) => {
   try {
     const userId = req.user!.id;
 
-    const ais = await prisma.userAI.findMany({
+    const keys = await prisma.byoApiKey.findMany({
       where: { userId },
       select: {
         id: true,
         name: true,
         provider: true,
-        status: true,
-        endpoint: true,
-        monthlySavings: true,
-        totalPayout: true,
+        apiKey: true,
+        costPerToken: true,
+        maxParallel: true,
         createdAt: true,
-        updatedAt: true,
       },
       orderBy: { createdAt: 'desc' },
     });
 
-    res.json({ ais, total: ais.length });
-  } catch (error: any) {
-    console.error('[byo] listMyAIs error:', error);
-    res.status(500).json({ error: 'Failed to list AIs', detail: error.message });
+    const masked = keys.map(k => {
+      let maskedKey = '****';
+      try {
+        const decrypted = decrypt(k.apiKey);
+        if (decrypted.length > 4) {
+          maskedKey = decrypted.slice(0, 4) + '••••' + decrypted.slice(-2);
+        }
+      } catch {
+        // If decryption fails, keep it fully masked
+      }
+      return {
+        ...k,
+        apiKey: maskedKey,
+      };
+    });
+
+    res.json(masked);
+  } catch (err: any) {
+    console.error('[byo:listKeys]', err.message || err);
+    res.status(500).json({ error: 'Failed to list BYO API keys' });
   }
 };
 
-/**
- * DELETE /api/byo/:id
- * Elimina una IA registrada. Solo el dueño puede eliminarla.
- */
-export const deleteAI = async (req: Request, res: Response) => {
+// ── DELETE /api/byo/keys/:id ──────────────────────────────────────────────
+export const deleteKey = async (req: Request, res: Response) => {
   try {
     const userId = req.user!.id;
-    const aiId = req.params.id as string;
+    const id = req.params.id as string;
 
-    const ai = await prisma.userAI.findUnique({ where: { id: aiId } });
-    if (!ai) {
-      return res.status(404).json({ error: 'AI not found' });
+    const key = await prisma.byoApiKey.findUnique({
+      where: { id },
+      select: { userId: true },
+    });
+
+    if (!key) {
+      return res.status(404).json({ error: 'Key not found' });
     }
-    if (ai.userId !== userId) {
-      return res.status(403).json({ error: 'Not your AI' });
+    if (key.userId !== userId) {
+      return res.status(403).json({ error: 'Not your key' });
     }
 
-    await prisma.userAI.delete({ where: { id: aiId } });
-    res.json({ success: true, deleted: aiId });
-  } catch (error: any) {
-    console.error('[byo] deleteAI error:', error);
-    res.status(500).json({ error: 'Failed to delete AI', detail: error.message });
+    await prisma.byoApiKey.delete({ where: { id } });
+    res.json({ deleted: id });
+  } catch (err: any) {
+    console.error('[byo:deleteKey]', err.message || err);
+    res.status(500).json({ error: 'Failed to delete BYO API key' });
   }
 };
 
-/**
- * GET /api/byo/savings
- * Ahorros del mes actual + historial mensual + elegibilidad de payout.
- *
- * El "mes actual" se deriva de updatedAt (última actualización del registro).
- * Si no hay registros actualizados este mes, devuelve 0.
- */
-export const getSavings = async (req: Request, res: Response) => {
+// ── GET /api/byo/keys/:id/decrypt ─────────────────────────────────────────
+// Returns the full decrypted API key (one-time sensitive read).
+export const decryptKey = async (req: Request, res: Response) => {
   try {
     const userId = req.user!.id;
+    const id = req.params.id as string;
 
-    const now = new Date();
-    const monthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
-
-    // Sumar monthlySavings de todas las IAs activas del usuario
-    const ais = await prisma.userAI.findMany({
-      where: { userId, status: 'ACTIVE' },
-      select: { monthlySavings: true, totalPayout: true, name: true, provider: true },
+    const key = await prisma.byoApiKey.findUnique({
+      where: { id },
+      select: { userId: true, apiKey: true },
     });
 
-    const totalMonthlySavings = ais.reduce((sum, ai) => sum + ai.monthlySavings, 0);
-    const totalAllTimePayout = ais.reduce((sum, ai) => sum + ai.totalPayout, 0);
-    const eligible = isEligibleForPayout(totalMonthlySavings);
-    const payoutAmount = eligible ? computePayoutAmount(totalMonthlySavings) : 0;
+    if (!key) {
+      return res.status(404).json({ error: 'Key not found' });
+    }
+    if (key.userId !== userId) {
+      return res.status(403).json({ error: 'Not your key' });
+    }
 
-    // Estimar ahorro basado en tokens (placeholder — en producción se leería de AiExecution)
-    const estimatedSavings = ais.reduce((sum, ai) => {
-      // Asumimos ~100K tokens por mes como estimación base
-      const internalCost = estimateInternalCost(ai.provider, 100_000);
-      const userCost = 0; // El usuario asume el costo de su propia API key
-      return sum + computeSavings(internalCost, userCost);
-    }, 0);
-
-    res.json({
-      month: monthKey,
-      monthlySavings: totalMonthlySavings,
-      estimatedSavings,
-      allTimePayout: totalAllTimePayout,
-      subscriptionCost: MONTHLY_SUBSCRIPTION_COST,
-      payoutEligible: eligible,
-      payoutAmount,
-      ais: ais.map(a => ({
-        name: a.name,
-        provider: a.provider,
-        monthlySavings: a.monthlySavings,
-      })),
-    });
-  } catch (error: any) {
-    console.error('[byo] getSavings error:', error);
-    res.status(500).json({ error: 'Failed to get savings', detail: error.message });
+    const decrypted = decrypt(key.apiKey);
+    res.json({ apiKey: decrypted });
+  } catch (err: any) {
+    console.error('[byo:decryptKey]', err.message || err);
+    res.status(500).json({ error: 'Failed to decrypt BYO API key' });
   }
 };

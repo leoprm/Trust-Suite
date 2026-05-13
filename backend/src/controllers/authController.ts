@@ -25,14 +25,14 @@ function generateRefreshToken(): { raw: string; hash: string } {
 async function storeRefreshToken(userId: string): Promise<string> {
   const { raw, hash } = generateRefreshToken();
   const expiresAt = new Date(Date.now() + REFRESH_TOKEN_DAYS * 24 * 60 * 60 * 1000);
-  await (prisma as any).refreshToken.create({
+  await prisma.refreshToken.create({
     data: { tokenHash: hash, userId, expiresAt },
   });
   return raw;
 }
 
 async function revokeRefreshToken(tokenHash: string): Promise<void> {
-  await (prisma as any).refreshToken.updateMany({
+  await prisma.refreshToken.updateMany({
     where: { tokenHash, revokedAt: null },
     data: { revokedAt: new Date() },
   });
@@ -40,25 +40,22 @@ async function revokeRefreshToken(tokenHash: string): Promise<void> {
 
 async function getUserWithPoints(userId: string) {
   try {
-    const user = await (prisma as any).user.findUnique({
+    const user = await prisma.user.findUnique({
       where: { id: userId },
-      select: { 
-        id: true, 
-        username: true, 
-        email: true, 
+      select: {
+        id: true,
+        username: true,
+        email: true,
         role: true,
-        sharingCode: true,
-        is_guest: true,
         memberships: {
-          select: { id: true, treeId: true, availableNeedPoints: true, status: true, xp: true, level: true, role: true }
+          select: { id: true, treeId: true, xp: true, level: true, status: true, role: true }
         }
       }
     });
 
     if (!user) return null;
 
-    const totalWeeklyPoints = (user as any).memberships.reduce((sum: number, membership: any) => sum + membership.availableNeedPoints, 0);
-    return { ...user, totalWeeklyPoints };
+    return user;
   } catch (error) {
     console.error('getUserWithPoints error:', error);
     throw error;
@@ -76,8 +73,8 @@ export const register = async (req: Request, res: Response) => {
     if (existingUser) return res.status(400).json({ error: 'Username or email already in use' });
 
     const hashedPassword = await bcrypt.hash(password, 10);
-    const adminCount = await prisma.user.count({ where: { role: 'ADMINISTRATOR' } });
-    const role = adminCount === 0 ? 'ADMINISTRATOR' : 'PERSON';
+    const adminCount = await prisma.user.count({ where: { role: 'ADMIN' } });
+    const role = adminCount === 0 ? 'ADMIN' : 'USER';
 
     const user = await prisma.user.create({
       data: { username, email, password: hashedPassword, role }
@@ -96,7 +93,7 @@ export const register = async (req: Request, res: Response) => {
       metadataJson: getRequestMetadata(req, { result: 'success' }),
       source: 'USER',
     });
-    
+
     res.status(201).json({ accessToken, refreshToken, user: fullUser });
   } catch (error: any) {
     res.status(500).json({ error: 'Registration failed: ' + error.message });
@@ -106,10 +103,10 @@ export const register = async (req: Request, res: Response) => {
 export const login = async (req: Request, res: Response) => {
   try {
     const { email, password } = req.body;
-    const user = await prisma.user.findFirst({ 
-      where: { OR: [{ email: email }, { username: email }] } 
+    const user = await prisma.user.findFirst({
+      where: { OR: [{ email: email }, { username: email }] }
     });
-    
+
     if (!user) {
       void logEvent({
         ...getRequestContext(req),
@@ -147,10 +144,9 @@ export const login = async (req: Request, res: Response) => {
         error: 'Account temporarily locked due to too many failed attempts. Try again in 15 minutes.',
       });
     }
-    
+
     const valid = await bcrypt.compare(password, user.password);
     if (!valid) {
-      // Record failed login attempt
       await prisma.loginAttempt.create({
         data: {
           userId: user.id,
@@ -187,7 +183,7 @@ export const login = async (req: Request, res: Response) => {
       metadataJson: getRequestMetadata(req, { result: 'success' }),
       source: 'USER',
     });
-    
+
     res.json({ accessToken, refreshToken, user: fullUser });
   } catch (error) {
     console.error('Login error:', error);
@@ -214,7 +210,7 @@ export const guestJoin = async (req: Request, res: Response) => {
     }
 
     // 1. Buscar y validar el token
-    const tokenRecord = await (prisma as any).tokenInvitacion.findUnique({
+    const tokenRecord = await prisma.tokenInvitacion.findUnique({
       where: { id: token }
     });
 
@@ -239,38 +235,32 @@ export const guestJoin = async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'Ese nombre ya está en uso. Por favor, elige otro apodo.' });
     }
 
-    // 2. Marcar token como usado (En transacción para evitar race conditions)
+    // 2. Marcar token como usado y crear usuario
     const [_, user] = await prisma.$transaction([
-      (prisma as any).tokenInvitacion.update({
+      prisma.tokenInvitacion.update({
         where: { id: token },
         data: { usado: true }
       }),
-      // 3. Crear el usuario fantasma
       prisma.user.create({
         data: {
           username,
-          is_guest: true,
-          role: 'PERSON'
-          // email y password son nullables gracias a la migración
+          role: 'USER'
         }
       })
     ]);
 
-    // 4. Agregar el usuario al árbol
+    // 3. Agregar el usuario al árbol
     await prisma.treeMember.create({
       data: {
         userId: user.id,
         treeId: tokenRecord.arbolId,
         invitedById: tokenRecord.creadorId,
-        status: 'VERIFIED', // Los invitados entran directamente verificados
-        strikesEconomicos: '[]',
-        skills: '[]',
-        goldenTickets: '{}',
+        status: 'ACTIVE',
       }
     });
 
-    // 5. Iniciar sesión automágica
-    const accessToken = jwt.sign({ id: user.id, role: user.role, isGuest: true }, JWT_SECRET, { expiresIn: ACCESS_TOKEN_EXPIRY });
+    // 4. Iniciar sesión automágica
+    const accessToken = jwt.sign({ id: user.id, role: user.role }, JWT_SECRET, { expiresIn: ACCESS_TOKEN_EXPIRY });
     const refreshToken = await storeRefreshToken(user.id);
     const fullUser = await getUserWithPoints(user.id);
 
@@ -293,7 +283,7 @@ export const refresh = async (req: Request, res: Response) => {
     // Hash the incoming token to look it up
     const tokenHash = crypto.createHash('sha256').update(refreshToken).digest('hex');
 
-    const stored = await (prisma as any).refreshToken.findUnique({
+    const stored = await prisma.refreshToken.findUnique({
       where: { tokenHash },
     });
 
@@ -303,7 +293,7 @@ export const refresh = async (req: Request, res: Response) => {
 
     if (stored.revokedAt) {
       // Token reuse detected — revoke ALL refresh tokens for this user (breach mitigation)
-      await (prisma as any).refreshToken.updateMany({
+      await prisma.refreshToken.updateMany({
         where: { userId: stored.userId, revokedAt: null },
         data: { revokedAt: new Date() },
       });

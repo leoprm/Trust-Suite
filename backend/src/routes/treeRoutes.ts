@@ -1,8 +1,6 @@
 import { Router } from 'express';
-import { createTree, joinTree, getMyTrees, getGlobalTrees, getTreeMembers, getTree, leaveTree, inviteMember, removeMember, updateMemberPower, getNetworkGraph, getPendingEvidence, generateGuestToken, consumeGuestToken, toggleCrisisMode, broadcastCrisisSignal, updateTree, inviteAI } from '../controllers/treeController';
-import { addTransaction, getFiatLedgerSummaryController, getTransactions, updateEconomyMode } from '../controllers/fiatController';
-import { authenticateJWT, requireAdmin, optionalAuth } from '../middleware/authMiddleware';
-import { aiGate } from '../middleware/aiEthicsMiddleware';
+import { createTree, joinTree, getMyTrees, getGlobalTrees, getTreeMembers, getTree, leaveTree, inviteMember, removeMember, generateGuestToken, consumeGuestToken, updateTree, getNetworkGraph, getPendingEvidence, toggleCrisisMode, broadcastCrisisSignal, updateMemberPower, inviteAI, getMyLevel } from '../controllers/treeController';
+import { authenticateJWT, optionalAuth } from '../middleware/authMiddleware';
 
 const router = Router();
 
@@ -10,25 +8,19 @@ const router = Router();
 router.get('/global', authenticateJWT, getGlobalTrees);
 router.get('/network', optionalAuth, getNetworkGraph);
 router.get('/network/:centerId', optionalAuth, getNetworkGraph);
-router.get('/:treeId/fiat-ledger', authenticateJWT, getTransactions);
-router.get('/:treeId/fiat-ledger/summary', authenticateJWT, getFiatLedgerSummaryController);
-router.post('/:treeId/fiat-ledger/transactions', authenticateJWT, (req, _res, next) => {
-  req.body = { ...req.body, treeId: req.params.treeId };
-  next();
-}, addTransaction);
-router.patch('/:treeId/economy-mode', authenticateJWT, updateEconomyMode);
 
 // Routes that can optionally be public
 router.get('/:id', optionalAuth, getTree);
 router.get('/:id/members', optionalAuth, getTreeMembers);
 
 // All other tree actions require being logged in
-router.use(authenticateJWT); 
+router.use(authenticateJWT);
 
 router.post('/', createTree);
 router.post('/join', joinTree);
 router.post('/consume-guest-token', consumeGuestToken);
 router.get('/', getMyTrees);
+router.get('/:id/my-level', getMyLevel);
 router.get('/:id/pending-evidence', getPendingEvidence);
 router.post('/:id/invite', inviteMember);
 router.post('/:id/guest-token', generateGuestToken);

@@ -1,150 +1,134 @@
-import { useState } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
+import { useState, FormEvent } from 'react';
+import { Navigate } from 'react-router-dom';
 import { useAuthStore } from '../store/authStore';
 import api from '../lib/api';
-import { motion } from 'framer-motion';
-import { useTranslation } from 'react-i18next';
-import { appConfig } from '../config/appConfig';
+import './Login.css';
 
-export default function Login() {
-  const [isLogin, setIsLogin] = useState(true);
+function Login() {
+  const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
+  const login = useAuthStore((s) => s.login);
+
+  const [mode, setMode] = useState<'login' | 'register'>('login');
   const [username, setUsername] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [error, setError] = useState('');
-  const login = useAuthStore((state: any) => state.login);
-  const navigate = useNavigate();
-  const { t, i18n } = useTranslation();
-  const handleSubmit = async (e: React.FormEvent) => {
+  const [loading, setLoading] = useState(false);
+
+  if (isAuthenticated) return <Navigate to="/" replace />;
+
+  const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     setError('');
 
-    if (!isLogin && password !== confirmPassword) {
-      setError(t('login.passwords_mismatch'));
+    if (mode === 'register' && password !== confirmPassword) {
+      setError('Passwords do not match');
       return;
     }
 
+    setLoading(true);
     try {
-      if (isLogin) {
-        const { data } = await api.post('/auth/login', { email, password });
-        login(data.user, data.accessToken, data.refreshToken);
-        navigate('/onboarding');
-      } else {
-        const { data } = await api.post('/auth/register', { username, email, password });
-        login(data.user, data.accessToken, data.refreshToken);
-        navigate('/onboarding');
-      }
+      const endpoint = mode === 'login' ? '/auth/login' : '/auth/register';
+      const payload = mode === 'login'
+        ? { email: username, password }
+        : { username, email, password };
+
+      const { data } = await api.post(endpoint, payload);
+      login(data.user, data.accessToken, data.refreshToken);
     } catch (err: any) {
-      setError(err.response?.data?.error || 'Authentication failed');
+      setError(err.response?.data?.message ?? 'Authentication failed');
+    } finally {
+      setLoading(false);
     }
   };
 
   return (
-    <div className="container flex justify-center items-center" style={{ minHeight: '100vh', position: 'relative' }}>
-      <div style={{ position: 'absolute', top: '2rem', right: '2rem' }}>
-        <span 
-          style={{ cursor: 'pointer', opacity: i18n.language === 'en' ? 1 : 0.5, marginRight: '1rem' }}
-          onClick={() => i18n.changeLanguage('en')}>EN</span>
-        <span 
-          style={{ cursor: 'pointer', opacity: i18n.language === 'es' ? 1 : 0.5 }}
-          onClick={() => i18n.changeLanguage('es')}>ES</span>
-      </div>
-      <motion.div 
-        initial={{ opacity: 0, scale: 0.95 }}
-        animate={{ opacity: 1, scale: 1 }}
-        className="glass-panel"
-        style={{ width: '100%', maxWidth: '400px' }}
-      >
-        <h2 className="text-gradient text-center mb-8">
-          {isLogin ? t('login.welcome') : t('login.join')}
-        </h2>
+    <div className="login-page">
+      <div className="login-card glass-panel">
+        {/* Logo */}
+        <div className="login-logo">◆</div>
+        <h1 className="login-heading">
+          {mode === 'login' ? 'Welcome Back' : 'Join Trust Maker'}
+        </h1>
+        <p className="login-sub">
+          {mode === 'login'
+            ? 'Sign in to your decentralized trust network'
+            : 'Create your account and start building trust'}
+        </p>
 
-        {error && (
-          <div style={{ color: 'var(--accent-danger)', marginBottom: '1rem', fontSize: '0.9rem', textAlign: 'center' }}>
-            {error}
-          </div>
-        )}
+        {error && <div className="login-error">{error}</div>}
 
-        <form onSubmit={handleSubmit} className="flex-col">
-          {!isLogin && (
-            <div className="input-group">
-              <label>{t('login.username')}</label>
-              <input 
-                type="text" 
-                className="input-field" 
-                value={username} 
-                onChange={e => setUsername(e.target.value)}
-                required
-              />
-            </div>
-          )}
+        <form onSubmit={handleSubmit} className="login-form">
           <div className="input-group">
-            <label>{isLogin ? `${t('login.email')} / ${t('login.username')}` : t('login.email')}</label>
-            <input 
-              type={isLogin ? "text" : "email"} 
-              className="input-field" 
-              value={email} 
-              onChange={e => setEmail(e.target.value)}
+            <label>Username</label>
+            <input
+              className="input-field"
+              value={username}
+              onChange={(e) => setUsername(e.target.value)}
               required
-            />
-          </div>
-          <div className="input-group">
-            <label>{t('login.password')}</label>
-            <input 
-              type="password" 
-              className="input-field" 
-              value={password} 
-              onChange={e => setPassword(e.target.value)}
-              required
+              autoFocus
+              minLength={2}
             />
           </div>
 
-          {!isLogin && (
+          {mode === 'register' && (
             <div className="input-group">
-              <label>{t('login.confirm_password')}</label>
+              <label>Email</label>
               <input
-                type="password"
                 className="input-field"
-                value={confirmPassword}
-                onChange={e => setConfirmPassword(e.target.value)}
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
                 required
               />
             </div>
           )}
 
-          <button type="submit" className="btn btn-primary w-full mt-4">
-            {isLogin ? t('login.signin_btn') : t('login.create_btn')}
+          <div className="input-group">
+            <label>Password</label>
+            <input
+              className="input-field"
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              required
+              minLength={6}
+            />
+          </div>
+
+          {mode === 'register' && (
+            <div className="input-group">
+              <label>Confirm Password</label>
+              <input
+                className="input-field"
+                type="password"
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+                required
+              />
+            </div>
+          )}
+
+          <button className="btn btn-primary w-full" type="submit" disabled={loading}>
+            {loading ? 'Please wait...' : mode === 'login' ? 'Sign In' : 'Create Account'}
           </button>
         </form>
 
-        <p className="text-center mt-4" style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
-          {isLogin ? `${t('login.no_account')} ` : `${t('login.has_account')} `}
-          <span 
-            style={{ color: 'var(--accent-primary)', cursor: 'pointer', fontWeight: 600 }}
-            onClick={() => { setIsLogin(!isLogin); setConfirmPassword(''); setError(''); }}
-          >
-            {isLogin ? t('login.signup_link') : t('login.signin_link')}
-          </span>
-        </p>
-
-        {appConfig.features.talentSearch && (
-          <Link
-            to="/talent"
-            style={{
-              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.4rem',
-              marginTop: '0.8rem', padding: '0.6rem', borderRadius: 10,
-              background: 'rgba(251,191,36,0.06)', border: '1px solid rgba(251,191,36,0.15)',
-              textDecoration: 'none', color: '#fbbf24', fontSize: '0.82rem', fontWeight: 600,
-              transition: 'background 0.2s',
-            }}
-            onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(251,191,36,0.12)')}
-            onMouseLeave={(e) => (e.currentTarget.style.background = 'rgba(251,191,36,0.06)')}
-          >
-            Buscar Talento
-          </Link>
-        )}
-      </motion.div>
+        <div className="login-toggle">
+          {mode === 'login' ? (
+            <>Don't have an account?{' '}
+              <button className="login-link" onClick={() => setMode('register')}>Sign up</button>
+            </>
+          ) : (
+            <>Already have an account?{' '}
+              <button className="login-link" onClick={() => setMode('login')}>Sign in</button>
+            </>
+          )}
+        </div>
+      </div>
     </div>
   );
 }
+
+export default Login;

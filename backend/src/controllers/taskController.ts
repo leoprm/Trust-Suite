@@ -1,380 +1,219 @@
 import { Request, Response } from 'express';
 import { prisma } from '../index';
-import { calculateTotalBranchPoints } from '../utils/scoring';
-import { 
-  calculateXpFromDifficulty, 
-  redistributeTreeBudget,
-  resolveBranchTreeId 
-} from '../utils/economicEngine';
-import { getRequestContext, getRequestMetadata, logEvent } from '../services/eventLogService';
+import { evaluateDifficulty } from '../services/difficultyService';
+import { assignAI } from '../services/assignmentGateService';
+import { logEvent } from '../services/eventLogService';
 
-// ─── CONTROLLERS ──────────────────────────────────────────────────────
-
-export const createExpressTask = async (req: any, res: Response) => {
+// ── evaluateAndAssignTask (internal, fire-and-forget) ─────────────────────────
+// Called after task creation. Evaluates difficulty via Hermes Agent,
+// then assigns the best AI via AssignmentGate. Updates the task row
+// and logs events. Designed to run asynchronously — caller does NOT await.
+export async function evaluateAndAssignTask(
+  taskId: string,
+  treeId: string,
+  title: string,
+  description: string,
+  actorId: string,
+): Promise<void> {
   try {
-    const { branchId, name, description, treeId, assignToMe } = req.body;
+    // ── Step 1: Evaluate difficulty ──────────────────────────────────────
+    const difficulty = await evaluateDifficulty(title, description, treeId);
 
-    const branch = await (prisma as any).branch.findUnique({ where: { id: branchId } });
-    if (!branch) return res.status(404).json({ error: 'Hashtag branch not found' });
-    if (!branch.isHashtag) return res.status(400).json({ error: 'Esta rama no es un hashtag.' });
+    if (difficulty !== null) {
+      await prisma.task.update({
+        where: { id: taskId },
+        data: { difficulty },
+      });
 
-    const membership = await prisma.treeMember.findUnique({
-      where: { userId_treeId: { userId: req.user.id, treeId } },
-      include: { tree: true }
-    });
-    if (!membership) return res.status(403).json({ error: 'Access denied' });
-
-    const task = await prisma.task.create({
-      data: {
-        branchId,
-        name: name || 'Express Task',
-        description,
-        creatorId: req.user.id,
-        assignedTo: assignToMe ? req.user.id : null,
-        status: assignToMe ? 'IN_PROGRESS' : 'OPEN',
-        phase: 'DEVELOPMENT'
-      }
-    });
-
-    void logEvent({
-      ...getRequestContext(req),
-      treeId: treeId ?? branch.treeId ?? null,
-      action: 'TASK_CREATED',
-      entityType: 'Task',
-      entityId: task.id,
-      afterJson: { id: task.id, branchId, name: task.name, status: task.status, assignedTo: task.assignedTo },
-      metadataJson: getRequestMetadata(req, { express: true, result: 'success' }),
-      source: 'USER',
-    });
-
-    res.status(201).json(task);
-  } catch (error) {
-    console.error(error);
-    res.status(500).json({ error: 'Error interno' });
-  }
-};
-
-export const createTask = async (req: any, res: Response) => {
-  try {
-    const { branchId, name, description, tags, phase, requiredHours, difficulty, startPhotoUrl, startPhotoUrls } = req.body;
-    const resolvedStartPhotoUrl = startPhotoUrls !== undefined
-      ? (Array.isArray(startPhotoUrls) && startPhotoUrls.length > 0 ? JSON.stringify(startPhotoUrls) : null)
-      : (startPhotoUrl || null);
-
-    // ── Permission Check ──────────────────────────────────────────────
-    const branch = await (prisma as any).branch.findUnique({
-      where: { id: branchId },
-      include: { tree: true }
-    });
-    if (!branch) return res.status(404).json({ error: 'Rama no encontrada' });
-
-    if (branch.isHashtag) {
-      const treeId = branch.treeId;
-      if (treeId) {
-        const treeMember = await prisma.treeMember.findUnique({
-          where: { userId_treeId: { userId: req.user.id, treeId } }
-        });
-        if (!treeMember) return res.status(403).json({ error: 'Debes ser miembro del árbol para crear tareas en ramas hashtag' });
-      }
-    } else {
-      const treeId = await resolveBranchTreeId(branchId);
-      const isCreator = branch.tree?.creatorId === req.user.id;
-      if (!isCreator) {
-        const branchMember = await (prisma as any).branchMember.findUnique({
-          where: { userId_branchId: { userId: req.user.id, branchId } }
-        });
-        if (!branchMember) return res.status(403).json({ error: 'Debes ser miembro de esta rama para crear tareas' });
-      }
-    }
-
-    const task = await prisma.task.create({
-      data: {
-        branchId,
-        name: name || 'Task',
-        description,
-        phase: phase || 'INVESTIGATION',
-        creatorId: req.user.id,
-        requiredHours: requiredHours || null,
-        difficulty,
-        startPhotoUrl: resolvedStartPhotoUrl,
-        tags: { create: (tags || []).map((t: string) => ({ skillName: t })) }
-      }
-    });
-
-    void logEvent({
-      ...getRequestContext(req),
-      treeId: branch.treeId ?? null,
-      action: 'TASK_CREATED',
-      entityType: 'Task',
-      entityId: task.id,
-      afterJson: { id: task.id, branchId, name: task.name, status: task.status, phase: task.phase },
-      metadataJson: getRequestMetadata(req, {
-        tags: tags || [],
-        hasStartEvidence: Boolean(resolvedStartPhotoUrl),
-        result: 'success',
-      }),
-      source: 'USER',
-    });
-
-    res.status(201).json(task);
-  } catch (error) {
-    console.error('[createTask] error:', error);
-    res.status(500).json({ error: 'Error al crear tarea' });
-  }
-};
-
-export const completeTask = async (req: any, res: Response) => {
-  try {
-    const { id } = req.params;
-    const { evidenceUrl, difficulty, comment, photoUrl, photoUrls } = req.body;
-    const resolvedPhotoUrl = photoUrls !== undefined
-      ? (Array.isArray(photoUrls) && photoUrls.length > 0 ? JSON.stringify(photoUrls) : null)
-      : photoUrl;
-
-    const task = await prisma.task.findUnique({
-      where: { id },
-      include: {
-        branch: { include: { tree: true } }
-      }
-    });
-    if (!task) return res.status(404).json({ error: 'Task not found' });
-
-    const currentTask = task as any;
-    const isAuthor = currentTask.assignedTo === req.user.id;
-
-    // 24h Edit Logic
-    if (currentTask.status === 'COMPLETED' && isAuthor) {
-      const hoursSinceCompletion = (Date.now() - new Date(currentTask.completedAt!).getTime()) / (1000 * 60 * 60);
-      if (hoursSinceCompletion > 24) return res.status(403).json({ error: 'Ventana de 24h expirada' });
-    }
-
-    // Memberships for XP
-    const treeId = (currentTask.branch as any)?.treeId;
-    const treeIds = treeId ? [treeId] : [];
-    const isUnverified = false; // v2: simplified — no unverified check needed
-
-    const { calculateTaskXpReward } = await import('../utils/economicEngine');
-    
-    // Use difficulty from request body if provided, else keep task's existing difficulty
-    const finalDifficulty = difficulty && difficulty >= 1 && difficulty <= 10
-      ? difficulty
-      : currentTask.difficulty;
-
-    // Update task: set difficulty, evidence, status
-    const updatedTask = await prisma.task.update({
-      where: { id },
-      data: {
-        difficulty: finalDifficulty,
-        status: 'COMPLETED',
-        evidenceUrl: evidenceUrl || currentTask.evidenceUrl,
-        completionComment: comment !== undefined ? comment : currentTask.completionComment,
-        completionPhotoUrl: (photoUrls !== undefined || photoUrl !== undefined) ? resolvedPhotoUrl : currentTask.completionPhotoUrl,
-        completedAt: currentTask.completedAt || new Date()
-      }
-    });
-
-    // Calculate and award XP
-    const rawXp = await calculateTaskXpReward(id);
-    const xpToAward = Math.floor(rawXp);
-    let deltaXp = currentTask.status === 'COMPLETED' ? 0 : xpToAward;
-
-    if (updatedTask.status === 'COMPLETED' && currentTask.assignedTo && deltaXp !== 0) {
-      for (const tid of treeIds) {
-        const member = await prisma.treeMember.findUnique({
-          where: { userId_treeId: { userId: currentTask.assignedTo, treeId: tid } }
-        }) as any;
-        if (!member) continue;
-
-        // Award XP (v2: sin boost de endorsement)
-        const oldLevel = member.level;
-        const newXp = Math.max(0, (member.xp || 0) + deltaXp);
-        const newLevel = Math.max(1, Math.floor(newXp / 50) + 1);
-        await prisma.treeMember.update({ where: { id: member.id }, data: { xp: newXp, level: newLevel } });
-
-        void logEvent({
-          ...getRequestContext(req),
-          treeId: tid,
-          actorId: currentTask.assignedTo,
-          action: 'XP_GRANTED',
-          entityType: 'TreeMember',
-          entityId: member.id,
-          beforeJson: { xp: member.xp, level: oldLevel },
-          afterJson: { xp: newXp, level: newLevel },
-          metadataJson: getRequestMetadata(req, { taskId: id, deltaXp }),
-          source: 'SYSTEM',
-        });
-
-        if (oldLevel !== newLevel) {
-          await redistributeTreeBudget(tid);
-          void logEvent({
-            ...getRequestContext(req),
-            treeId: tid,
-            actorId: currentTask.assignedTo,
-            action: 'LEVEL_UPDATED',
-            entityType: 'TreeMember',
-            entityId: member.id,
-            beforeJson: { level: oldLevel },
-            afterJson: { level: newLevel },
-            metadataJson: getRequestMetadata(req, { taskId: id }),
-            source: 'SYSTEM',
-          });
-        }
-      }
-    }
-
-    void logEvent({
-      ...getRequestContext(req),
-      treeId: treeIds[0] ?? null,
-      action: 'TASK_COMPLETED',
-      entityType: 'Task',
-      entityId: id,
-      beforeJson: { status: currentTask.status, difficulty: currentTask.difficulty },
-      afterJson: { status: updatedTask.status, difficulty: updatedTask.difficulty, completedAt: updatedTask.completedAt },
-      metadataJson: getRequestMetadata(req, { xpAwarded: deltaXp, result: 'success' }),
-      source: 'USER',
-    });
-
-    if (evidenceUrl || photoUrl || (Array.isArray(photoUrls) && photoUrls.length > 0)) {
-      void logEvent({
-        ...getRequestContext(req),
-        treeId: treeIds[0] ?? null,
-        action: 'TASK_EVIDENCE_UPLOADED',
+      await logEvent({
+        treeId,
+        actorId,
+        action: 'DIFFICULTY_EVALUATED',
         entityType: 'Task',
-        entityId: id,
-        metadataJson: getRequestMetadata(req, {
-          evidenceKinds: {
-            evidenceUrl: Boolean(evidenceUrl),
-            photoUrl: Boolean(photoUrl),
-            photoUrlsCount: Array.isArray(photoUrls) ? photoUrls.length : 0,
-          },
-        }),
-        source: 'USER',
+        entityId: taskId,
+        afterJson: { difficulty },
+        source: 'AUTOMATION',
+        severity: 'INFO',
       });
     }
 
-    res.json({
-      ...updatedTask,
-      xpAwarded: deltaXp,
+    // ── Step 2: Assign AI ────────────────────────────────────────────────
+    const effectiveDifficulty = difficulty ?? 5; // default mid if evaluation failed
+    const assignedAIId = await assignAI(treeId, effectiveDifficulty);
+
+    if (assignedAIId) {
+      await prisma.task.update({
+        where: { id: taskId },
+        data: {
+          assignedTo: assignedAIId,
+          status: 'IN_PROGRESS',
+        },
+      });
+
+      await logEvent({
+        treeId,
+        actorId,
+        action: 'TASK_ASSIGNED_TO_AI',
+        entityType: 'Task',
+        entityId: taskId,
+        afterJson: { assignedTo: assignedAIId, difficulty: effectiveDifficulty },
+        source: 'AUTOMATION',
+        severity: 'INFO',
+      });
+    } else {
+      console.warn(
+        `[taskController] No AI assigned for task ${taskId} (difficulty=${effectiveDifficulty})`,
+      );
+    }
+  } catch (error: any) {
+    console.error(
+      `[taskController] evaluateAndAssignTask failed for ${taskId}:`,
+      error.message || error,
+    );
+  }
+}
+
+// ── POST /api/tasks ───────────────────────────────────────────────────────────
+export const createTask = async (req: Request, res: Response) => {
+  try {
+    const { treeId, needId, title, description } = req.body;
+
+    // ── Validation ───────────────────────────────────────────────────────
+    if (!treeId || typeof treeId !== 'string') {
+      return res.status(400).json({ error: 'treeId (string) is required' });
+    }
+    if (!title || typeof title !== 'string' || !title.trim()) {
+      return res.status(400).json({ error: 'title (string) is required' });
+    }
+    if (!description || typeof description !== 'string' || !description.trim()) {
+      return res.status(400).json({ error: 'description (string) is required' });
+    }
+
+    // Verify tree exists
+    const tree = await prisma.tree.findUnique({ where: { id: treeId } });
+    if (!tree) {
+      return res.status(404).json({ error: 'Tree not found' });
+    }
+
+    // Verify need if provided
+    if (needId) {
+      const need = await prisma.need.findUnique({ where: { id: needId } });
+      if (!need || need.treeId !== treeId) {
+        return res.status(404).json({ error: 'Need not found in this tree' });
+      }
+    }
+
+    // ── Create task ──────────────────────────────────────────────────────
+    const task = await prisma.task.create({
+      data: {
+        treeId,
+        needId: needId || null,
+        title: title.trim(),
+        description: description.trim(),
+        status: 'OPEN',
+      },
     });
-  } catch (error) {
-    console.error('[completeTask] error:', error);
-    res.status(500).json({ error: 'Error' });
+
+    // Log creation event
+    await logEvent({
+      treeId,
+      actorId: req.user?.id ?? null,
+      action: 'TASK_CREATED',
+      entityType: 'Task',
+      entityId: task.id,
+      afterJson: { title: task.title, needId: task.needId },
+      source: 'USER',
+      severity: 'INFO',
+    });
+
+    // ── Fire-and-forget: evaluate + assign asynchronously ─────────────────
+    // Don't await — task returns immediately to the user.
+    evaluateAndAssignTask(
+      task.id,
+      treeId,
+      title.trim(),
+      description.trim(),
+      req.user?.id ?? 'system',
+    ).catch((err) => {
+      console.error('[taskController] Unhandled evaluateAndAssignTask error:', err);
+    });
+
+    res.status(201).json(task);
+  } catch (error: any) {
+    console.error('[taskController] createTask error:', error.message || error);
+    res.status(500).json({ error: 'Failed to create task' });
   }
 };
 
-export const getPendingTasks = async (req: any, res: Response) => {
+// ── GET /api/tasks ────────────────────────────────────────────────────────────
+export const getTasks = async (req: Request, res: Response) => {
   try {
-    const userId = req.user.id;
-    const memberships = await prisma.treeMember.findMany({ where: { userId } });
-    const userTreeIds = memberships.map(m => m.treeId);
+    const { treeId, status, assignedTo } = req.query;
+
+    if (!treeId || typeof treeId !== 'string') {
+      return res.status(400).json({ error: 'treeId query param is required' });
+    }
+
+    const where: any = { treeId };
+
+    if (status && typeof status === 'string') {
+      where.status = status;
+    }
+
+    if (assignedTo && typeof assignedTo === 'string') {
+      where.assignedTo = assignedTo;
+    }
 
     const tasks = await prisma.task.findMany({
-      where: {
-        status: { in: ['OPEN', 'IN_PROGRESS', 'COMPLETED'] },
-        OR: [
-          { branch: { treeId: { in: userTreeIds } } },
-        ]
-      },
+      where,
+      orderBy: { createdAt: 'desc' },
       include: {
-        branch: { include: { tree: true } },
-        tags: true
+        assignedAI: {
+          select: {
+            id: true,
+            aiProfile: true,
+            aiProvider: true,
+            aiModel: true,
+            level: true,
+          },
+        },
       },
-      orderBy: { createdAt: 'desc' }
     });
 
-    const results = await Promise.all(tasks.map(async (task) => {
-      const branchPoints = await calculateTotalBranchPoints(task.branchId);
-      return { ...task, branch: { ...task.branch, totalPoints: branchPoints } };
-    }));
-
-    res.json(results);
-  } catch (error) {
-    res.status(500).json({ error: 'Error' });
+    res.json(tasks);
+  } catch (error: any) {
+    console.error('[taskController] getTasks error:', error.message || error);
+    res.status(500).json({ error: 'Failed to fetch tasks' });
   }
 };
 
-export const assignTask = async (req: any, res: Response) => {
+// ── GET /api/tasks/:id ────────────────────────────────────────────────────────
+export const getTask = async (req: Request, res: Response) => {
   try {
-    const { id } = req.params;
-    const task = await prisma.task.findUnique({ where: { id } }) as any;
-    if (!task) return res.status(404).json({ error: 'Task not found' });
-    if (task.status !== 'OPEN') return res.status(400).json({ error: 'Solo se pueden asumir tareas abiertas' });
+    const taskId = req.params.id as string;
+    const task = await prisma.task.findUnique({
+      where: { id: taskId },
+      include: {
+        assignedAI: {
+          select: {
+            id: true,
+            aiProfile: true,
+            aiProvider: true,
+            aiModel: true,
+            level: true,
+            xp: true,
+          },
+        },
+      },
+    });
 
-    // Auto-release expired tasks before checking
-    if (task.assignedTo && task.deadlineAt && new Date() > new Date(task.deadlineAt)) {
-      await (prisma as any).task.update({ where: { id }, data: { assignedTo: null, status: 'OPEN', deadlineAt: null } });
-    } else if (task.assignedTo) {
-      return res.status(400).json({ error: 'Esta tarea ya está asignada a otro usuario' });
+    if (!task) {
+      return res.status(404).json({ error: 'Task not found' });
     }
 
-    // Calculate deadline: 1.3x requiredHours (default 24h if not set)
-    const hours = (task.requiredHours || 24) * 1.3;
-    const deadlineAt = new Date(Date.now() + hours * 60 * 60 * 1000);
-
-    // Optional start photo ("before" evidence)
-    const { startPhotoUrl } = req.body || {};
-
-    const updated = await (prisma as any).task.update({
-      where: { id },
-      data: {
-        assignedTo: req.user.id,
-        status: 'IN_PROGRESS',
-        deadlineAt,
-        ...(startPhotoUrl ? { startPhotoUrl } : {}),
-      }
-    });
-
-    const treeId = await resolveBranchTreeId(task.branchId);
-    void logEvent({
-      ...getRequestContext(req),
-      treeId,
-      action: 'TASK_ASSIGNED',
-      entityType: 'Task',
-      entityId: id,
-      beforeJson: { assignedTo: task.assignedTo, status: task.status },
-      afterJson: { assignedTo: updated.assignedTo, status: updated.status, deadlineAt: updated.deadlineAt },
-      metadataJson: getRequestMetadata(req, { hasStartEvidence: Boolean(startPhotoUrl), result: 'success' }),
-      source: 'USER',
-    });
-
-    if (startPhotoUrl) {
-      void logEvent({
-        ...getRequestContext(req),
-        treeId,
-        action: 'TASK_EVIDENCE_UPLOADED',
-        entityType: 'Task',
-        entityId: id,
-        metadataJson: getRequestMetadata(req, { evidenceKinds: { startPhotoUrl: true } }),
-        source: 'USER',
-      });
-    }
-
-    res.json(updated);
-  } catch (error) {
-    console.error('[assignTask] error:', error);
-    res.status(500).json({ error: 'Error' });
-  }
-};
-
-export const approveTaskEvidence = async (req: any, res: Response) => {
-  try {
-    const updated = await prisma.task.update({
-      where: { id: req.params.id },
-      data: { status: 'COMPLETED' }
-    });
-    const treeId = await resolveBranchTreeId(updated.branchId);
-    void logEvent({
-      ...getRequestContext(req),
-      treeId,
-      action: 'TASK_COMPLETED',
-      entityType: 'Task',
-      entityId: req.params.id,
-      afterJson: { status: updated.status },
-      metadataJson: getRequestMetadata(req, { via: 'approve_evidence', result: 'success' }),
-      source: 'USER',
-    });
-    res.json(updated);
-  } catch (error) {
-    res.status(500).json({ error: 'Error' });
+    res.json(task);
+  } catch (error: any) {
+    console.error('[taskController] getTask error:', error.message || error);
+    res.status(500).json({ error: 'Failed to fetch task' });
   }
 };

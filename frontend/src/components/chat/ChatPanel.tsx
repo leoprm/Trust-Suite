@@ -1,6 +1,8 @@
 import { useState, useRef, useEffect } from 'react';
-import { Send, Sparkles } from 'lucide-react';
+import { Send, Sparkles, CheckCircle } from 'lucide-react';
 import api from '../../lib/api';
+import { useUIStore } from '../../store/uiStore';
+import RatingForm from './RatingForm';
 import './ChatPanel.css';
 
 interface Message {
@@ -30,12 +32,20 @@ function ChatPanel({ activeNeedId }: ChatPanelProps) {
   ]);
   const [input, setInput] = useState('');
   const [sending, setSending] = useState(false);
+  const [showingRating, setShowingRating] = useState(false);
   const msgsEndRef = useRef<HTMLDivElement>(null);
   const sessionId = useRef(crypto.randomUUID());
+  const activeTreeId = useUIStore((s) => s.activeTreeId);
 
   useEffect(() => {
     msgsEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
+  }, [messages, showingRating]);
+
+  // Count assistant responses beyond the welcome message
+  const assistantReplyCount = messages.filter(
+    (m) => m.role === 'assistant' && m.id !== 'welcome'
+  ).length;
+  const canRate = assistantReplyCount > 0 && !!activeTreeId && !showingRating;
 
   const send = async () => {
     if (!input.trim() || sending) return;
@@ -50,6 +60,7 @@ function ChatPanel({ activeNeedId }: ChatPanelProps) {
       const body: Record<string, string> = {
         message: text,
         agentId: sessionId.current,
+        treeId: activeTreeId || '',
       };
       if (activeNeedId) {
         body.needId = activeNeedId;
@@ -89,6 +100,11 @@ function ChatPanel({ activeNeedId }: ChatPanelProps) {
     }
   };
 
+  const handleRatingComplete = (_result: unknown) => {
+    // Rating submitted — keep showing result for a moment, then hide
+    setTimeout(() => setShowingRating(false), 5000);
+  };
+
   return (
     <div className="chat-panel">
       {/* Messages */}
@@ -111,6 +127,30 @@ function ChatPanel({ activeNeedId }: ChatPanelProps) {
         )}
         <div ref={msgsEndRef} />
       </div>
+
+      {/* Complete & Rate button */}
+      {canRate && (
+        <div className="chat-rate-bar">
+          <button
+            className="chat-rate-btn"
+            onClick={() => setShowingRating(true)}
+          >
+            <CheckCircle size={16} />
+            Completar y evaluar
+          </button>
+        </div>
+      )}
+
+      {/* Rating form */}
+      {showingRating && activeTreeId && (
+        <RatingForm
+          agentId={sessionId.current}
+          treeId={activeTreeId}
+          taskId={sessionId.current}
+          onComplete={handleRatingComplete}
+          onCancel={() => setShowingRating(false)}
+        />
+      )}
 
       {/* Suggestions (when empty) */}
       {messages.length <= 1 && (

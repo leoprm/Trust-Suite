@@ -1,19 +1,35 @@
 import { Router } from 'express';
-import { createNeed, getNeeds, getNeed, assignPointsToNeed, updateNeed, deleteNeed, getHashtagProposals, searchNeeds } from '../controllers/needController';
+import {
+  createNeed,
+  getNeeds,
+  getNeed,
+  updateImportance,
+  updateStatus,
+} from '../controllers/needV3Controller';
+import { getTopIdeas } from '../controllers/ideaController';
 import { authenticateJWT, optionalAuth } from '../middleware/authMiddleware';
-import { aiGate } from '../middleware/aiEthicsMiddleware';
 
 const router = Router();
 
+// ── TMV3 NEED endpoints ─────────────────────────────────────────
+
+// POST /api/needs — crear necesidad con auto-match cross-tree
+router.post('/', authenticateJWT, createNeed);
+
+// GET /api/needs?treeId=X — listar necesidades con conteo de ideas
 router.get('/', optionalAuth, getNeeds);
-router.get('/search', optionalAuth, searchNeeds);
-router.get('/hashtag-proposals', authenticateJWT, getHashtagProposals);
+
+// GET /api/needs/:id/top-ideas — top 3 ideas + preValidated flag
+// (MUST be before /:id to avoid Express catching 'top-ideas' as param)
+router.get('/:id/top-ideas', optionalAuth, getTopIdeas);
+
+// GET /api/needs/:id — detalle con ideas propias + cross-tree
 router.get('/:id', optionalAuth, getNeed);
 
-router.use(authenticateJWT);
-router.post('/', aiGate('CREATE_NEED'), createNeed);
-router.patch('/:id', updateNeed);
-router.delete('/:id', deleteNeed);
-router.post('/:id/fund', assignPointsToNeed);
+// PATCH /api/needs/:id/importance
+router.patch('/:id/importance', authenticateJWT, updateImportance);
+
+// PATCH /api/needs/:id/status
+router.patch('/:id/status', authenticateJWT, updateStatus);
 
 export default router;
