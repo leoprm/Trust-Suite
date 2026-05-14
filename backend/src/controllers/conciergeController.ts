@@ -13,6 +13,159 @@ import { prisma } from '../index';
 const HERMES_API = 'http://127.0.0.1:8642/v1/chat/completions';
 const API_SERVER_KEY = process.env.HERMES_API_SERVER_KEY ?? '';
 
+// ── Factual question detection ─────────────────────────────────────────────
+
+const FACTUAL_PATTERNS: Array<{ regex: RegExp; handler: string }> = [
+  { regex: /(soy|eres|estoy|estás)\s+(miembro|member|parte|en\s+el\s+árbol|en\s+este\s+árbol)/i, handler: 'membership' },
+  { regex: /(qué|que|cuáles|cuales|cual|cuál)\s+(árboles|trees|arboles)\s+(hay|existen|tengo|estoy|estás)/i, handler: 'treelist' },
+  { regex: /(cuántas|cuantas|cuántos|cuantos)\s+(necesidades|needs|ideas|miembros|members)/i, handler: 'stats' },
+  { regex: /(qui[eé]n|quien)\s+(soy|eres)/i, handler: 'whoami' },
+  { regex: /(mis|mis\s+datos|mi\s+perfil|mi\s+cuenta)/i, handler: 'profile' },
+];
+
+function detectFactualQuestion(message: string): string | null {
+  for (const pattern of FACTUAL_PATTERNS) {
+    if (pattern.regex.test(message)) return pattern.handler;
+  }
+  return null;
+}
+
+// ── DB-backed responses for factual questions ──────────────────────────────
+
+async function handleMembershipQuery(treeId: string, telegramUserId: string): Promise<string> {
+  // Find user by telegramUserId
+  const user = await (prisma as any).user.findUnique({
+    where: { telegramUserId: BigInt(telegramUserId) },
+    select: { id: true, username: true },
+  });
+
+  if (!user) {
+    return `No estás registrado en Trust Maker. Usa el comando /login en el grupo para crear tu cuenta.`;
+  }
+
+  // Check membership in this tree
+  const member = await prisma.treeMember.findUnique({
+    where: { userId_treeId: { userId: user.id, treeId } },
+    select: { status: true, joinedAt: true },
+  });
+
+  if (member) {
+    return `✅ Sí, eres miembro de este árbol desde ${member.joinedAt.toLocaleDateString('es-CL')}. Tu estado es: ${member.status}.`;
+  }
+
+  // Check memberships in other trees
+  const otherMemberships = await prisma.treeMember.findMany({
+    where: { userId: user.id },
+    include: { tree: { select: { id: true, name: true, icono: true } } },
+  });
+
+  if (otherMemberships.length > 0) {
+    const treeNames = otherMemberships.map(m => `${m.tree.icono} ${m.tree.name}`).join(', ');
+    return `No eres miembro de este árbol, pero perteneces a: ${treeNames}. ¿Quieres unirte a este?`;
+  }
+
+  return `No eres miembro de ningún árbol aún. ¡Vamos a crear o unirte a uno!`;
+}
+
+async function handleTreeListQuery(telegramUserId: string): Promise<string> {
+  const trees = await prisma.tree.findMany({
+    select: { id: true, name: true, icono: true, description: true, _count: { select: { members: true, needs: true } } },
+    orderBy: { createdAt: 'desc' },
+    take: 10,
+  });
+
+  // Find user's trees
+  let userTrees: string[] = [];
+  if (telegramUserId) {
+    const user = await (prisma as any).user.findUnique({
+      where: { telegramUserId: BigInt(telegramUserId) },
+      select: { id: true },
+    });
+    if (user) {
+      const memberships = await prisma.treeMember.findMany({
+        where: { userId: user.id },
+        select: { treeId: true },
+      });
+      userTrees = memberships.map(m => m.treeId);
+    }
+  }
+
+  if (trees.length === 0) {
+    return 'No hay árboles aún. ¡Sé el primero en crear uno!';
+  }
+
+  const lines = ['🌳 **Árboles disponibles:**\n'];
+  for (const t of trees) {
+    const marker = userTrees.includes(t.id) ? '👤' : '🌐';
+    lines.push(`${t.icono} **${t.name}** ${marker} — ${t._count.members} miembros, ${t._count.needs} necesidades`);
+    if (t.description) lines.push(`  _${t.description.slice(0, 100)}_`);
+  }
+  return lines.join('\n');
+}
+
+async function handleStatsQuery(treeId: string): Promise<string> {
+  const tree = await prisma.tree.findUnique({
+    where: { id: treeId },
+    include: { _count: { select: { members: true, needs: true, ratings: true } } },
+  });
+
+  if (!tree) return 'Árbol no encontrado.';
+
+  const openNeeds = await prisma.need.count({ where: { treeId, status: 'OPEN' } });
+  const ideaCount = await (prisma as any).needIdea.count({ where: { need: { treeId } } });
+
+  return [
+    `📊 **${tree.icono} ${tree.name}**\n`,
+    `👥 Miembros: ${tree._count.members}`,
+    `📝 Necesidades totales: ${tree._count.needs} (${openNeeds} abiertas)`,
+    `💡 Ideas: ${ideaCount}`,
+    `⭐ Ratings: ${tree._count.ratings}`,
+  ].join('\n');
+}
+
+async function handleWhoAmI(telegramUserId: string): Promise<string> {
+  if (!telegramUserId) return 'No pude identificar tu usuario de Telegram.';
+
+  const user = await (prisma as any).user.findUnique({
+    where: { telegramUserId: BigInt(telegramUserId) },
+    select: { id: true, username: true, role: true, createdAt: true },
+  });
+
+  if (!user) {
+    return `No estás registrado. Usa /login en el grupo para crear tu cuenta.`;
+  }
+
+  const memberships = await prisma.treeMember.findMany({
+    where: { userId: user.id },
+    include: { tree: { select: { name: true, icono: true } } },
+  });
+
+  const lines = [
+    `👤 **${user.username}**`,
+    `🛡️ Rol: ${user.role}`,
+    `📅 Registrado: ${user.createdAt.toLocaleDateString('es-CL')}`,
+  ];
+
+  if (memberships.length > 0) {
+    lines.push(`🌳 Árboles: ${memberships.map(m => `${m.tree.icono} ${m.tree.name}`).join(', ')}`);
+  } else {
+    lines.push('🌳 Sin árboles aún.');
+  }
+
+  return lines.join('\n');
+}
+
+// ── Extract Telegram user from session header ──────────────────────────────
+
+function extractTelegramUserId(req: Request): string | null {
+  const sessionKey = req.headers['x-hermes-session-key'] as string | undefined;
+  if (!sessionKey) return null;
+  const match = sessionKey.match(/^tg-user-(\d+)$/);
+  return match ? match[1] : null;
+}
+
+// ── Main handler ───────────────────────────────────────────────────────────
+
 export const conciergeHandler = async (req: Request, res: Response) => {
   try {
     const { message, treeId, needId, agentId } = req.body;
@@ -28,6 +181,36 @@ export const conciergeHandler = async (req: Request, res: Response) => {
       });
     }
 
+    // ── Extract Telegram user from session header ──────────────────────────
+    const telegramUserId = extractTelegramUserId(req);
+
+    // ── Detect factual questions → answer from DB directly ─────────────────
+    const factualType = detectFactualQuestion(message.trim());
+    if (factualType) {
+      let reply: string;
+      const tgId = telegramUserId || '';
+
+      switch (factualType) {
+        case 'membership':
+          reply = await handleMembershipQuery(treeId, tgId);
+          break;
+        case 'treelist':
+          reply = await handleTreeListQuery(tgId);
+          break;
+        case 'stats':
+          reply = await handleStatsQuery(treeId);
+          break;
+        case 'whoami':
+        case 'profile':
+          reply = await handleWhoAmI(tgId);
+          break;
+        default:
+          reply = 'No pude interpretar tu pregunta.';
+      }
+
+      return res.json({ reply, agentId: agentId || null, treeId, source: 'db' });
+    }
+
     // ── Fetch tree context from DB ─────────────────────────────────────────
     const tree = await prisma.tree.findUnique({
       where: { id: treeId },
@@ -40,12 +223,39 @@ export const conciergeHandler = async (req: Request, res: Response) => {
       return res.status(404).json({ error: 'Tree not found' });
     }
 
+    // ── Fetch user context from DB ─────────────────────────────────────────
+    let userContext = '';
+    if (telegramUserId) {
+      const user = await (prisma as any).user.findUnique({
+        where: { telegramUserId: BigInt(telegramUserId) },
+        select: { id: true, username: true, role: true },
+      });
+      if (user) {
+        const isMember = await prisma.treeMember.findUnique({
+          where: { userId_treeId: { userId: user.id, treeId } },
+        });
+        const allMemberships = await prisma.treeMember.findMany({
+          where: { userId: user.id },
+          include: { tree: { select: { id: true, name: true, icono: true } } },
+        });
+
+        userContext = [
+          '',
+          '## Current User (REAL, from DB)',
+          `Username: ${user.username}`,
+          `Role: ${user.role}`,
+          `Is member of this tree: ${isMember ? 'YES' : 'NO'}`,
+          `All tree memberships: ${allMemberships.map(m => `${m.tree.icono} ${m.tree.name} (${m.tree.id})`).join(', ') || 'none'}`,
+        ].join('\n');
+      }
+    }
+
     // ── Build system prompt with real tree context ─────────────────────────
     const contextLines: string[] = [
       `You are the Tree Agent for "${tree.name}" (${tree.icono}) — a Trust Maker community.`,
       'You are the Hermes Agent integrated into Trust Maker, responding in Spanish.',
       '',
-      `Tree metadata:`,
+      `Tree metadata (REAL, from DB):`,
       `  Name: ${tree.name}`,
       `  Description: ${tree.description || 'No description set'}`,
       `  Admission: ${tree.admissionPolicy}`,
@@ -78,6 +288,9 @@ export const conciergeHandler = async (req: Request, res: Response) => {
     });
     contextLines.push(`  Open needs: ${openNeeds}`);
 
+    // Add user context
+    contextLines.push(userContext);
+
     contextLines.push('');
     contextLines.push(
       'Respond in Spanish. Be concise, helpful, and action-oriented.',
@@ -85,37 +298,9 @@ export const conciergeHandler = async (req: Request, res: Response) => {
     contextLines.push(
       'When the user asks about tasks, prioritize open needs from this tree.',
     );
-
-    // ── Trust Maker tools available to the agent ──────────────────────────
     contextLines.push('');
-    contextLines.push('## Trust Maker Tools');
-    contextLines.push('Tienes acceso a estas operaciones sobre el árbol:');
-    contextLines.push(
-      '- list_trees() — árboles disponibles',
-    );
-    contextLines.push(
-      '- get_needs(treeId) — necesidades del árbol (usa el treeId del contexto)',
-    );
-    contextLines.push('- get_ideas(needId) — ideas para una necesidad');
-    contextLines.push(
-      '- get_top_ideas(needId, limit) — mejores ideas por votos',
-    );
-    contextLines.push(
-      '- propose_idea(content, treeId) — proponer idea (auto-match a necesidades)',
-    );
-    contextLines.push(
-      '- vote_on_idea(ideaId, needId) — votar por una idea',
-    );
-    contextLines.push(
-      '- register_result(needId, ideaId, summary, evaluation) — registrar resultado',
-    );
-    contextLines.push('');
-    contextLines.push(
-      'Cuando el usuario pregunte por datos del árbol, CONSULTA las herramientas.',
-    );
-    contextLines.push(
-      'NO inventes información. Usa datos reales del árbol.',
-    );
+    contextLines.push('IMPORTANT: You have REAL user and tree data above. Use it. Do NOT invent or hallucinate.');
+    contextLines.push('If the user asks about membership, trees, or stats, the data above IS authoritative.');
 
     const systemPrompt = contextLines.join('\n');
 
