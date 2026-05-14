@@ -106,6 +106,7 @@ model User {
   email           String?   @unique
   password        String?
   role            UserRole  @default(USER)
+  isPlatformAdmin Boolean   @default(false)  // Si true, exento de cobro
   telegramUserId  BigInt?   @unique
   createdAt       DateTime  @default(now())
   skills          String?   // JSON: {'design':45,'frontend':72}

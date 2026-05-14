@@ -9,6 +9,7 @@ import { registerReactionHandler } from "./voting";
 import { checkPaymentAccess } from "./payment";
 import { formatForChannel, sendViaTelegram } from "./channelAdapter";
 import { textToSpeech } from "../services/ttsService";
+import { TreeSandbox } from "../services/treeSandbox";
 
 // ── IPv4 fetch wrapper: undici (Node fetch) no respeta dns.setDefaultResultOrder ─
 // para api.telegram.org. Usamos https.get con family:4 como fallback.
@@ -225,6 +226,15 @@ export function createBot(prisma: PrismaClient): Bot<BotContext> | null {
             console.log(
               `[Telegram Bot] Árbol creado: "${tree.name}" (${tree.id}) para grupo ${chatId}`
             );
+
+            // SPEC-4: auto-create sandbox — non-blocking
+            try {
+              TreeSandbox.create(tree.id).catch((err: any) =>
+                console.error("[Telegram Bot] Sandbox auto-create failed:", err?.message || err)
+              );
+            } catch {
+              // Non-blocking
+            }
           }
 
           // Auto-add the user who invited the bot

@@ -4,7 +4,6 @@ import { randomBytes } from 'crypto';
 import { getRequestContext, getRequestMetadata, logEvent } from '../services/eventLogService';
 import { onTreeCreated } from '../services/genesisService';
 import { TreeSandbox } from '../services/treeSandbox';
-import { destroySandbox } from '../services/sandboxService';
 
 // ── Tree CRUD ────────────────────────────────────────────────────────────────
 
@@ -69,6 +68,19 @@ export const createTree = async (req: any, res: Response) => {
       // Non-blocking: import or top-level sync error
     }
 
+    // SPEC-4: auto-create sandbox — non-blocking, fire-and-forget
+    // Only if admission is not fully closed (future-proofing: CLOSED may be added to enum)
+    const policy = tree.admissionPolicy as string;
+    if (policy !== 'CLOSED') {
+      try {
+        TreeSandbox.create(tree.id).catch(err => {
+          console.error('[TreeSandbox] auto-create failed:', err?.message || err);
+        });
+      } catch {
+        // Non-blocking
+      }
+    }
+
     res.status(201).json(tree);
   } catch (error: any) {
     console.error('[createTree] ERROR:', error?.message || error);
@@ -120,7 +132,7 @@ export const deleteTree = async (req: any, res: Response) => {
 
     // T5: Auto-destruir sandbox — non-blocking, fire-and-forget
     try {
-      await destroySandbox(id);
+      await TreeSandbox.destroy(id);
     } catch (err: any) {
       console.warn(`[deleteTree] Sandbox destroy failed for tree ${id.slice(0, 8)}…:`, err?.message || err);
     }

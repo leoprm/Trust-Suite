@@ -2,7 +2,7 @@ import { prisma } from '../index';
 import fs from 'fs';
 import path from 'path';
 
-const TREES_BASE = '/home/leo/trees';
+const TREES_BASE = process.env.SANDBOX_BASE_DIR || '/home/leo/trees';
 const PORT_RANGE = { min: 4100, max: 4999 };
 
 interface SandboxInfo {
@@ -13,6 +13,14 @@ interface SandboxInfo {
   createdAt: Date;
 }
 
+/** Thrown when the port pool 4100-4999 is exhausted. Route handlers map this to 507. */
+export class PortPoolExhaustedError extends Error {
+  constructor() {
+    super('No free ports in range 4100-4999');
+    this.name = 'PortPoolExhaustedError';
+  }
+}
+
 async function findFreePort(): Promise<number> {
   const usedPorts = await prisma.treeSandbox.findMany({
     select: { port: true },
@@ -21,11 +29,17 @@ async function findFreePort(): Promise<number> {
   for (let port = PORT_RANGE.min; port <= PORT_RANGE.max; port++) {
     if (!used.has(port)) return port;
   }
-  throw new Error('No free ports in range 4100-4999');
+  throw new PortPoolExhaustedError();
 }
 
 export class TreeSandbox {
   static async create(treeId: string): Promise<SandboxInfo> {
+    // 0. Verify the tree exists
+    const tree = await prisma.tree.findUnique({ where: { id: treeId } });
+    if (!tree) {
+      throw new Error(`Tree ${treeId} not found`);
+    }
+
     // 1. Check if sandbox already exists
     const existing = await prisma.treeSandbox.findUnique({ where: { treeId } });
     if (existing) {
