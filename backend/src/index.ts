@@ -2,14 +2,13 @@ import dotenv from 'dotenv';
 dotenv.config();
 
 import express from 'express';
-import cors from 'cors';
-import helmet from 'helmet';
 import path from 'path';
 import fs from 'fs';
 import mysql from 'mysql2/promise';
 import { PrismaClient } from '@prisma/client';
-import { corsOptions, logCorsConfiguration, isProduction, allowedOrigins, allowAllInDev } from './config/cors';
 import { authLimiter, globalLimiter, conciergeLimiter } from './config/rateLimiter';
+
+const isProduction = process.env.NODE_ENV === 'production';
 
 import authRoutes from './routes/authRoutes';
 import { authenticateJWT } from './middleware/authMiddleware';
@@ -82,40 +81,13 @@ async function bootstrapDatabase(): Promise<void> {
   }
 }
 
-logCorsConfiguration();
-
-if (isProduction && allowedOrigins.length === 0 && !allowAllInDev) {
-  console.error('[CORS] FATAL: production mode requires CORS_ALLOWED_ORIGINS to be set.');
-  console.error('[CORS] Add CORS_ALLOWED_ORIGINS=https://your-domain.com to your .env file.');
-  process.exit(1);
-}
-
 // Stripe webhook: raw body BEFORE JSON parser (Stripe signature verification)
 app.post('/api/billing/stripe-webhook', express.raw({ type: 'application/json' }), stripeWebhook);
 
 // Paddle webhook: raw body BEFORE JSON parser (Paddle signature verification)
 app.post('/api/billing/webhook', express.raw({ type: 'application/json' }), paddleWebhook);
 
-app.use(cors(corsOptions));
-app.options(/.*/, cors(corsOptions));
 app.use(express.json());
-
-// Security headers via Helmet
-app.use(helmet({
-  contentSecurityPolicy: {
-    directives: {
-      defaultSrc: ["'self'"],
-      scriptSrc: ["'self'"],
-      connectSrc: ["'self'", "api.paddle.com"],
-    },
-  },
-  frameguard: { action: 'deny' },
-}));
-
-// HSTS only in production
-if (isProduction) {
-  app.use(helmet.hsts({ maxAge: 31536000, includeSubDomains: true }));
-}
 
 // Uploads
 const uploadsDir = path.join(__dirname, '../uploads');
