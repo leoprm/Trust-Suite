@@ -219,6 +219,57 @@ async function handleCrea(
     },
   });
 
+  // T8: Send anonymous poll to group chat
+  const chatId = ctx.chat?.id;
+  if (chatId) {
+    try {
+      const desc = descripcion.length > 200
+        ? descripcion.slice(0, 200) + "..."
+        : descripcion;
+
+      const pollMessage = await ctx.api.sendPoll(
+        chatId,
+        `📋 ${titulo}\n\n${desc}\n\n¿Qué importancia tiene?`,
+        [
+          { text: "👍 Baja" },
+          { text: "❤️ Media" },
+          { text: "⭐ Alta / Urgente" },
+        ],
+        {
+          is_anonymous: true,
+          allows_multiple_answers: false,
+          reply_markup: {
+            inline_keyboard: [[
+              {
+                text: "🔗 Ver necesidad",
+                url: `https://t.me/TrustMakerBot?start=need_${need.id}`,
+              },
+            ]],
+          },
+        },
+      );
+
+      // Save poll_id → need_id mapping
+      await (prisma as any).pollMapping.create({
+        data: {
+          pollId: pollMessage.poll.id,
+          needId: need.id,
+          chatId: chatId.toString(),
+          messageId: pollMessage.message_id,
+        },
+      });
+
+      // Optionally store the poll message ID on the need for reference
+      await (prisma as any).need.update({
+        where: { id: need.id },
+        data: { telegramMessageId: pollMessage.message_id },
+      });
+    } catch (err: any) {
+      console.error("[handleCrea] Failed to send poll:", err.message);
+      // Non-fatal: still return the created confirmation
+    }
+  }
+
   return formatNeedCreated(need);
 }
 

@@ -18,6 +18,9 @@ const CONFIG_SEED = [
 
   // Margen de crecimiento
   { key: 'growth_margin_pct', value: '20', label: 'Margen de crecimiento (%)', category: 'margin' },
+
+  // Período gratuito
+  { key: 'free_period_months', value: '2', label: 'Meses gratis para nuevos usuarios', category: 'margin' },
 ];
 
 async function main() {

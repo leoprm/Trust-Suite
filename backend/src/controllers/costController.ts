@@ -39,6 +39,19 @@ export const getCostSummary = async (_req: Request, res: Response) => {
 
     const totalApiCost = Object.values(byProvider).reduce((sum, v) => sum + v.cost, 0);
 
+    // 2b. Costo absorbido por período gratuito este mes
+    const absorbedThisMonth = await (prisma as any).apiUsage.aggregate({
+      where: { createdAt: { gte: startOfMonth }, isFreePeriod: true },
+      _sum: { absorbedByPlatform: true },
+    });
+    const absorbed = absorbedThisMonth._sum?.absorbedByPlatform || 0;
+
+    // 2c. Usuarios en período gratuito
+    const freeUsersSet = new Set(
+      apiUsageThisMonth.filter((u: any) => u.isFreePeriod).map((u: any) => u.userId.toString())
+    );
+    const freeUserCount = freeUsersSet.size;
+
     // 3. Usuarios activos este mes
     const activeUsers = await (prisma as any).apiUsage.groupBy({
       by: ['userId'],
@@ -78,6 +91,10 @@ export const getCostSummary = async (_req: Request, res: Response) => {
         },
       },
       growth_margin_pct: margin,
+      free_period: {
+        users_in_trial: freeUserCount,
+        absorbed_this_month: Math.round(absorbed * 100) / 100,
+      },
       per_user_estimate: {
         active_users: userCount,
         avg_api_cost: Math.round(avgApiPerUser * 100) / 100,

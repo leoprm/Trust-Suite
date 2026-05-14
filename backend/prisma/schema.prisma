@@ -320,19 +320,34 @@ model IdeaVote {
 }
 
 model Result {
-  id            String      @id @default(uuid())
-  needId        String
-  ideaId        String
-  summary       String      @db.Text
-  evaluation    Int?
-  createdBy     MatchSource @default(AI)
-  evaluatedById String?
-  evaluatedAt   DateTime?
-  createdAt     DateTime    @default(now())
-  updatedAt     DateTime    @updatedAt
+  id                String      @id @default(uuid())
+  needId            String
+  ideaId            String
+  summary           String      @db.Text
+  evaluation        Int?
+  createdBy         MatchSource @default(AI)
+  evaluatedById     String?
+  evaluatedAt       DateTime?
+  satisfactionScore Int         @default(0)
+  satisfactionCount Int         @default(0)
+  judgeComment      String?     @db.Text
+  judgeAnalysis     String?     @db.Text
+  createdAt         DateTime    @default(now())
+  updatedAt         DateTime    @updatedAt
   need      Need  @relation(fields: [needId], references: [id], onDelete: Cascade)
   idea      Idea  @relation(fields: [ideaId], references: [id], onDelete: Cascade)
   evaluator User? @relation(fields: [evaluatedById], references: [id], onDelete: SetNull)
+  satisfactionPolls SatisfactionPoll[]
+}
+
+model SatisfactionPoll {
+  id        String   @id @default(uuid())
+  pollId    String   @unique
+  resultId  String
+  chatId    String
+  messageId Int
+  createdAt DateTime @default(now())
+  result Result @relation(fields: [resultId], references: [id], onDelete: Cascade)
 }
 
 model Task {
@@ -587,6 +602,17 @@ model TreeSandbox {
   tree Tree @relation(fields: [treeId], references: [id], onDelete: Cascade)
 }
 
+// ── Telegram Native Polls (T8: Votación anónima) ──────────────────────────
+
+model PollMapping {
+  id        String   @id @default(uuid())
+  pollId    String   @unique
+  needId    String
+  chatId    String
+  messageId Int
+  createdAt DateTime @default(now())
+}
+
 // ── Platform Config & API Usage Tracking ─────────────────────────────────
 
 model PlatformConfig {
@@ -609,6 +635,8 @@ model ApiUsage {
   tokensOut      Int      @default(0)           // completion_tokens
   cost           Float    @default(0)           // costo en USD calculado
   messagePreview String   @default("")          // primeros 100 chars del mensaje
+  isFreePeriod        Boolean @default(false)    // si el usuario está en período gratuito
+  absorbedByPlatform  Float   @default(0)        // costo absorbido si en período gratis
   createdAt      DateTime @default(now())
 
   @@index([userId])

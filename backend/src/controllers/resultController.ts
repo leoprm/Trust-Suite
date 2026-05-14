@@ -1,6 +1,22 @@
 import { Request, Response } from 'express';
 import { prisma } from '../index';
 
+// Lazy import to avoid circular dependency at module load time.
+// The bot is only accessed at runtime when evaluateResult is called.
+let _cachedBot: any = null;
+function getBot(): any | null {
+  if (_cachedBot !== null) return _cachedBot;
+  try {
+    // Dynamic import breaks the cycle: index.ts → resultRoutes → resultController → index.ts
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const idx = require('../index');
+    _cachedBot = idx.telegramBot ?? null;
+  } catch {
+    _cachedBot = undefined;
+  }
+  return _cachedBot ?? null;
+}
+
 // Helper: add XP to a tree member and recalculate level
 async function addXP(treeId: string, userId: string, amount: number): Promise<void> {
   const member = await prisma.treeMember.findUnique({
@@ -161,6 +177,16 @@ export const evaluateResult = async (req: any, res: Response) => {
 
     if (treeId) {
       await addXP(treeId, userId, 5);
+    }
+
+    // ── T10: Trigger satisfaction poll (fire-and-forget) ──
+    const bot = getBot();
+    if (bot) {
+      import('../bot/satisfaction').then(({ sendSatisfactionPoll }) =>
+        sendSatisfactionPoll(bot, prisma, updated.id).catch((err: Error) =>
+          console.error(`[evaluateResult] Satisfaction poll failed for result ${updated.id}:`, err.message)
+        )
+      );
     }
 
     res.json(updated);

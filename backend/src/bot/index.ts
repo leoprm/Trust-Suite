@@ -5,7 +5,12 @@ import { BotContext, BotSessionData } from "./types";
 import { handleMessage, extractCommandText } from "./commands";
 import { handleNaturalMessage } from "./messages";
 import { analyzeMessage } from "./analyzer";
-import { registerReactionHandler } from "./voting";
+import { registerReactionHandler, handleNeedPollAnswer } from "./voting";
+import {
+  sendSatisfactionPoll,
+  handleSatisfactionPollAnswer,
+  handleSatisfactionCommentReply,
+} from "./satisfaction";
 import { checkPaymentAccess } from "./payment";
 import { formatForChannel, sendViaTelegram } from "./channelAdapter";
 import { textToSpeech } from "../services/ttsService";
@@ -199,6 +204,40 @@ export function createBot(prisma: PrismaClient): Bot<BotContext> | null {
     await ctx.reply(lines.join("\n"), { parse_mode: "Markdown" });
   });
 
+  // ── Welcome / rejoin messages ─────────────────────────────────────────
+  const WELCOME_MESSAGE = `
+🌳 **¡Hola! Soy Ari, el asistente de Trust Maker.**
+
+Estoy aquí para ayudar a tu comunidad a identificar necesidades, priorizarlas y resolverlas con inteligencia artificial.
+
+**🧠 ¿Qué puedo hacer?**
+• Registrar necesidades del grupo
+• Priorizarlas con votación anónima (encuesta nativa de Telegram)
+• Asignar las mejores IAs para resolver cada necesidad
+• Evaluar resultados y aprender de la comunidad
+
+**🗳️ Sistema de votación (anónimo):**
+• 👍 *Baja* — 1 punto — la necesidad es poco urgente
+• ❤️ *Media* — 2 puntos — importante, pero no crítica
+• ⭐ *Alta* — 3 puntos — urgente, necesita atención inmediata
+
+Las necesidades con más puntos suben al podio y son resueltas primero.
+
+**💰 Costo transparente:**
+Cada persona paga solo lo que consume en IAs + su parte de costos fijos.
+Los primeros 2 meses son gratis para nuevos usuarios.
+Pregúntame "¿cuánto cuesta?" para ver el desglose completo.
+
+**🚀 Para empezar:**
+Envía un mensaje mencionándome (@TrustMakerBot) con tu necesidad o idea.
+Ejemplo: *"@TrustMakerBot necesito que alguien rediseñe el logo del grupo"*
+
+¡Estoy aquí para servirles! 🌟`.trim();
+
+  function rejoinMessage(treeName: string): string {
+    return `🌳 ¡He vuelto! El árbol "${treeName}" sigue activo.`;
+  }
+
   // ── Grupo: auto-crear árbol cuando el bot es agregado ─────────────────
   bot.on("my_chat_member", async (ctx) => {
     const chat = ctx.chat;
@@ -213,6 +252,7 @@ export function createBot(prisma: PrismaClient): Bot<BotContext> | null {
           let tree = await (prisma as any).tree.findUnique({
             where: { telegramChatId: chatId },
           });
+          let isNewTree = false;
           if (!tree) {
             tree = await (prisma as any).tree.create({
               data: {
@@ -235,6 +275,7 @@ export function createBot(prisma: PrismaClient): Bot<BotContext> | null {
             } catch {
               // Non-blocking
             }
+            isNewTree = true;
           }
 
           // Auto-add the user who invited the bot
@@ -257,6 +298,18 @@ export function createBot(prisma: PrismaClient): Bot<BotContext> | null {
             );
           } catch (memberErr: any) {
             console.error(`[Telegram Bot] Error al agregar miembro ${adderId}:`, memberErr.message);
+          }
+
+          // Send welcome / rejoin message
+          try {
+            const message = isNewTree
+              ? WELCOME_MESSAGE
+              : rejoinMessage(tree!.name);
+            await ctx.api.sendMessage(chatId, message, {
+              parse_mode: "Markdown",
+            });
+          } catch (msgErr: any) {
+            console.error(`[Telegram Bot] Error al enviar mensaje de bienvenida:`, msgErr.message);
           }
         } catch (err: any) {
           console.error(`[Telegram Bot] Error al crear árbol para grupo ${chatId}:`, err.message);
@@ -639,6 +692,35 @@ export function createBot(prisma: PrismaClient): Bot<BotContext> | null {
 
   // ── Reaction handler (votos con reacciones) ─────────────────────────
   registerReactionHandler(bot);
+
+  // ── Satisfaction poll answer handler (T10) ─────────────────────────
+  bot.on("poll_answer", async (ctx) => {
+    const answer = ctx.pollAnswer;
+    if (!answer) return;
+
+    const pollId = answer.poll_id;
+    const optionIds = answer.option_ids;
+    const voterId = answer.user?.id;
+    if (!voterId || optionIds.length === 0) return;
+
+    handleSatisfactionPollAnswer(prisma, ctx as BotContext, pollId, optionIds, voterId);
+  });
+
+  // ── Satisfaction comment reply handler (T10) ────────────────────────
+  // Runs before the main message:text handler. Detects force_reply
+  // responses to the bot's "¿Quieres agregar un comentario?" prompt.
+  bot.on("message:text", async (ctx, next) => {
+    const msg = ctx.message;
+    if (!msg || !("text" in msg)) return next();
+
+    // Check if this is a reply to a bot message (force_reply pattern)
+    if (msg.reply_to_message) {
+      const handled = await handleSatisfactionCommentReply(prisma, ctx as BotContext);
+      if (handled) return; // Don't continue to the normal message handler
+    }
+
+    return next();
+  });
 
   // ── Global error boundary: evita que el polling muera silenciosamente ─
   bot.catch((err) => {

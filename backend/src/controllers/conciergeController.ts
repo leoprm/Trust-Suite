@@ -292,6 +292,11 @@ async function handleCostQuery(): Promise<string> {
   const users = new Set(usage.map((u: any) => u.userId.toString())).size || 1;
   const avgTotal = (totalApi + totalFixed) / users;
 
+  // Free period: users in trial + absorbed cost
+  const freeUsersSet = new Set(usage.filter((u: any) => u.isFreePeriod).map((u: any) => u.userId.toString()));
+  const freeUserCount = freeUsersSet.size;
+  const absorbed = usage.filter((u: any) => u.isFreePeriod).reduce((sum: number, u: any) => sum + (u.absorbedByPlatform || 0), 0);
+
   return [
     '📊 **Transparencia de costos — Trust Maker**',
     '',
@@ -308,6 +313,10 @@ async function handleCostQuery(): Promise<string> {
     '👤 **Costo promedio por usuario:**',
     `• $${avgTotal.toFixed(2)}/mes (${users} usuarios activos)`,
     `• Margen de crecimiento: ${margin}%`,
+    '',
+    '🎁 **Período gratuito activo:**',
+    `• Usuarios en período de prueba: ${freeUserCount}`,
+    `• Costo absorbido por la plataforma este mes: $${absorbed.toFixed(2)}`,
     '',
     `💰 Cada usuario paga solo lo que consume en APIs + su parte de costos fijos.`,
     `Si tienes dudas sobre tu factura específica, puedes consultarme.`,
@@ -598,6 +607,9 @@ export const conciergeHandler = async (req: Request, res: Response) => {
     contextLines.push(
       'When the user asks about tasks, prioritize open needs from this tree.',
     );
+    contextLines.push(
+      'Voting: ideas use 3 weight levels — like (1 point), heart ❤️ (2 pts), star ⭐ (3 pts).',
+    );
     contextLines.push('');
     contextLines.push('IMPORTANT: You have REAL user and tree data above. Use it. Do NOT invent or hallucinate.');
     contextLines.push('If the user asks about membership, trees, or stats, the data above IS authoritative.');
@@ -674,6 +686,20 @@ export const conciergeHandler = async (req: Request, res: Response) => {
         console.log('[concierge] Skipping usage tracking for platform admin');
       } else {
         try {
+          // Check if user is in free period
+          let isFreePeriod = false;
+          const user = await resolveOrCreateUser(telegramUserId);
+          if (user) {
+            let freeMonths = 2;
+            try {
+              const config = await (prisma as any).platformConfig.findUnique({ where: { key: 'free_period_months' } });
+              if (config) freeMonths = parseInt(config.value, 10) || 2;
+            } catch {}
+            const billingStart = new Date(user.createdAt);
+            billingStart.setMonth(billingStart.getMonth() + freeMonths);
+            isFreePeriod = new Date() < billingStart;
+          }
+
           // Detectar el provider/model de la respuesta o usar defaults
         const model = data?.model || 'deepseek-v4-pro';
         const provider = model.includes('gpt') ? 'openai' 
@@ -703,6 +729,8 @@ export const conciergeHandler = async (req: Request, res: Response) => {
             tokensOut: usage.completion_tokens || 0,
             cost,
             messagePreview: message.trim().slice(0, 100),
+            isFreePeriod,
+            absorbedByPlatform: isFreePeriod ? cost : 0,
           },
         });
       } catch (usageErr) {

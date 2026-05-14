@@ -105,6 +105,7 @@ def init():
         ideaId TEXT NOT NULL,
         userId TEXT NOT NULL,
         needId TEXT NOT NULL,
+        weight INTEGER DEFAULT 1,
         createdAt TEXT NOT NULL,
         FOREIGN KEY (ideaId) REFERENCES Idea(id),
         UNIQUE(ideaId, userId, needId)
@@ -278,8 +279,8 @@ def init():
         (idea_ids[4], user_ids["carlos"], need_ids[2]),
     ]
     c.executemany(
-        "INSERT OR IGNORE INTO IdeaVote VALUES (?,?,?,?,?)",
-        [(uid(), idea_id, user_id, need_id, now()) for idea_id, user_id, need_id in vote_pairs]
+        "INSERT OR IGNORE INTO IdeaVote VALUES (?,?,?,?,?,?)",
+        [(uid(), idea_id, user_id, need_id, 1, now()) for idea_id, user_id, need_id in vote_pairs]
     )
 
     # Results

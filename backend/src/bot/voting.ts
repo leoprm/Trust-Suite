@@ -6,8 +6,9 @@ const prisma = new PrismaClient();
 
 // ── Reaction weight mapping ──────────────────────────────────────────────
 const REACTION_WEIGHT: Record<string, number> = {
-  "👍": 1, // thumbs up = 1 voto
-  "❤️": 2, // heart = 2 votos
+  "👍": 1, // thumbs up = 1 voto (like)
+  "❤️": 2, // heart = 2 votos (corazón)
+  "⭐": 3, // star = 3 votos (estrella)
 };
 
 // ── Helpers ──────────────────────────────────────────────────────────────
@@ -28,6 +29,25 @@ function computeWeight(reactions: any[]): number {
     }
   }
   return w;
+}
+
+// ── Helper: resolve or create user from Telegram ID ──────────────────────
+
+async function resolveOrCreateUser(tgId: string): Promise<any | null> {
+  try {
+    const bigIntId = BigInt(tgId);
+    let user = await prisma.user.findUnique({
+      where: { telegramUserId: bigIntId },
+    });
+    if (!user) {
+      user = await prisma.user.create({
+        data: { username: `tg_${tgId}`, telegramUserId: bigIntId },
+      });
+    }
+    return user;
+  } catch {
+    return null;
+  }
 }
 
 // ── Reaction handler ─────────────────────────────────────────────────────
@@ -198,5 +218,90 @@ export function registerReactionHandler(bot: Bot<BotContext>): void {
     }
   });
 
-  console.log("[Telegram Bot] Reaction handler ready (👍=1 voto, ❤️=2 votos)");
+  console.log("[Telegram Bot] Reaction handler ready (👍=1 voto, ❤️=2 votos, ⭐=3 votos)");
+}
+
+// ── Poll handler (T8: Votación anónima con encuestas nativas) ─────────────
+
+/**
+ * Attempt to handle a poll_answer as a need-voting poll (T8).
+ * Returns true if the poll was handled, false if it should fall through.
+ */
+export async function handleNeedPollAnswer(
+  prisma: PrismaClient,
+  ctx: BotContext,
+): Promise<boolean> {
+  try {
+    const pollId = ctx.pollAnswer.poll_id;
+    const optionIds = ctx.pollAnswer.option_ids; // [0, 1, 2]
+    const voterTgId = ctx.pollAnswer.user?.id;
+    if (!voterTgId) return false; // anonymous polls don't expose user — can't handle
+
+    // Find the poll → need mapping
+    const mapping = await (prisma as any).pollMapping.findUnique({
+      where: { pollId },
+    });
+    if (!mapping) return false;
+
+    // Find ideas linked to this need
+    const ideas = await prisma.idea.findMany({
+      where: { needId: mapping.needId },
+      orderBy: { createdAt: "asc" },
+    });
+
+    if (ideas.length === 0) return true; // handled, but no ideas yet
+
+    // Take the first idea (simplified: in future, allow voting on any idea)
+    const idea = ideas[0];
+
+    // Resolve Trust Maker user
+    const user = await resolveOrCreateUser(voterTgId.toString());
+    if (!user) return true;
+
+    // Weight = option_ids[0] + 1 → (0→1=Baja, 1→2=Media, 2→3=Alta)
+    const weight = optionIds[0] + 1;
+
+    // Upsert vote
+    const existing = await prisma.ideaVote.findUnique({
+      where: {
+        ideaId_userId_needId: {
+          ideaId: idea.id,
+          userId: user.id,
+          needId: mapping.needId,
+        },
+      },
+    });
+
+    if (existing) {
+      const delta = weight - existing.weight;
+      await prisma.ideaVote.update({
+        where: { id: existing.id },
+        data: { weight },
+      });
+      if (delta !== 0) {
+        await prisma.idea.update({
+          where: { id: idea.id },
+          data: { totalLikes: Math.max(0, idea.totalLikes + delta) },
+        });
+      }
+    } else {
+      await prisma.ideaVote.create({
+        data: {
+          ideaId: idea.id,
+          userId: user.id,
+          needId: mapping.needId,
+          weight,
+        },
+      });
+      await prisma.idea.update({
+        where: { id: idea.id },
+        data: { totalLikes: idea.totalLikes + weight },
+      });
+    }
+
+    return true;
+  } catch (err) {
+    console.error("[Telegram Bot] need poll handler error:", err);
+    return false;
+  }
 }

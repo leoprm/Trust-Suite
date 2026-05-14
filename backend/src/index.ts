@@ -102,6 +102,7 @@ export const prisma = new PrismaClient();
 // createBot returns null gracefully when TELEGRAM_BOT_TOKEN is not configured.
 // The bot starts polling immediately inside createBot().
 const telegramBot = createBot(prisma);
+export { telegramBot }; // exported for satisfaction poll trigger
 
 // ── Initialize dispute broadcast service ──────────────────────────────────────
 initDisputeService(prisma, telegramBot);

@@ -196,15 +196,21 @@ export const getIdeas = async (req: any, res: Response) => {
 };
 
 // ── POST /api/ideas/:id/vote ───────────────────────────────────────────────
-// Vote for an idea in the context of a need. Body: { needId }
+// Vote for an idea in the context of a need. Body: { needId, weight? }
+// weight: 1=like (default), 2=heart, 3=star
 export const voteIdea = async (req: any, res: Response) => {
   try {
     const { id } = req.params;
-    const { needId } = req.body;
+    const { needId, weight } = req.body;
     const userId = req.user.id;
 
     if (!needId) {
       return res.status(400).json({ error: 'needId is required in body' });
+    }
+
+    const voteWeight = weight ?? 1;
+    if (![1, 2, 3].includes(voteWeight)) {
+      return res.status(400).json({ error: 'weight must be 1 (like), 2 (heart), or 3 (star)' });
     }
 
     // Verify idea exists
@@ -215,36 +221,35 @@ export const voteIdea = async (req: any, res: Response) => {
     const need = await (prisma as any).need.findUnique({ where: { id: needId } });
     if (!need) return res.status(404).json({ error: 'Need not found' });
 
-    // Check if already voted
-    const existing = await (prisma as any).ideaVote.findUnique({
+    // Upsert vote (allow changing weight)
+    await (prisma as any).ideaVote.upsert({
       where: {
         ideaId_userId_needId: { ideaId: id, userId, needId },
       },
+      create: { ideaId: id, userId, needId, weight: voteWeight },
+      update: { weight: voteWeight },
     });
 
-    if (existing) {
-      return res.status(409).json({ error: 'Already voted for this idea in this need' });
-    }
-
-    // Create vote with weight=1 (API votes are always standard likes)
-    await (prisma as any).ideaVote.create({
-      data: { ideaId: id, userId, needId, weight: 1 },
+    // Recalculate totalLikes = SUM(weight)
+    const aggregate = await (prisma as any).ideaVote.aggregate({
+      where: { ideaId: id },
+      _sum: { weight: true },
     });
+    const newTotal = aggregate._sum?.weight ?? 0;
 
-    // Increment totalLikes
     const updated = await (prisma as any).idea.update({
       where: { id },
-      data: { totalLikes: { increment: 1 } },
+      data: { totalLikes: newTotal },
     });
 
-    // Award +5 XP to the idea creator in the need's tree
+    // Award +5 XP to the idea creator in the need's tree (same weight regardless)
     if (idea.creatorId && need.treeId && idea.creatorId !== userId) {
       addXP(need.treeId, idea.creatorId, 5).catch(err =>
         console.error(`[voteIdea] addXP failed for idea ${id}:`, err)
       );
     }
 
-    res.json({ message: 'Vote registered', totalLikes: updated.totalLikes });
+    res.json({ message: 'Vote registered', totalLikes: updated.totalLikes, weight: voteWeight });
   } catch (error: any) {
     if (error?.code === 'P2002') {
       return res.status(409).json({ error: 'Already voted for this idea in this need' });
