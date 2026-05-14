@@ -91,6 +91,36 @@ export const getAgentLeaderboard = async (req: any, res: Response) => {
 };
 
 /**
+ * GET /api/agents/:id
+ * Agente simple con profile y últimos 10 ratings.
+ */
+export const getAgentById = async (req: any, res: Response) => {
+  try {
+    const { id } = req.params;
+
+    const agent = await prisma.agent.findUnique({
+      where: { id },
+      include: {
+        profile: true,
+        ratings: {
+          orderBy: { createdAt: 'desc' },
+          take: 10,
+        },
+      },
+    });
+
+    if (!agent) {
+      return res.status(404).json({ error: 'Agent not found' });
+    }
+
+    res.json(agent);
+  } catch (error: any) {
+    console.error('[getAgentById] ERROR:', error?.message || error);
+    res.status(500).json({ error: 'Failed to fetch agent' });
+  }
+};
+
+/**
  * GET /api/trees/:id/agents
  * Agentes actualmente asignados (AgentRoleHistory con releasedAt null).
  * Incluye role y performanceScore.

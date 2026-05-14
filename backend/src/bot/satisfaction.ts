@@ -10,6 +10,8 @@
 import { Bot } from "grammy";
 import { PrismaClient } from "@prisma/client";
 import { BotContext } from "./types";
+import { applyRatings } from "../services/ratingService";
+import { updateProfileFromRating } from "../services/agentProfileService";
 
 const CONCIERGE_URL = "http://localhost:3100/api/concierge";
 const CONCIERGE_TIMEOUT_MS = 120_000; // 2 min for judge analysis
@@ -135,6 +137,20 @@ export async function handleSatisfactionPollAnswer(
       },
     });
 
+    // ── T10bis: Create Ratings for agents who worked on this result ──
+    try {
+      await createRatingsFromSatisfaction(
+        prisma,
+        satisfactionPoll.resultId,
+        satisfaction,
+      );
+    } catch (ratingErr: any) {
+      console.error(
+        `[satisfaction] Rating creation failed (non-fatal):`,
+        ratingErr.message,
+      );
+    }
+
     // Track that this voter was asked for a comment
     setPending(voterId, satisfactionPoll.resultId, satisfactionPoll.chatId);
 
@@ -158,6 +174,96 @@ export async function handleSatisfactionPollAnswer(
     console.error(`[satisfaction] poll_answer error:`, err.message);
     return false;
   }
+}
+
+// ── T10bis: Creates Ratings for all agents in the tree from satisfaction ──
+
+async function createRatingsFromSatisfaction(
+  prisma: PrismaClient,
+  resultId: string,
+  satisfaction: number,
+): Promise<void> {
+  // 1. Get result with need.tree and need.creatorId
+  const result = await (prisma as any).result.findUnique({
+    where: { id: resultId },
+    include: {
+      need: {
+        include: { tree: { select: { id: true } } },
+      },
+    },
+  });
+
+  if (!result?.need?.tree?.id) {
+    console.warn(
+      `[satisfaction] No tree for result ${resultId} — skipping ratings`,
+    );
+    return;
+  }
+
+  const treeId: string = result.need.tree.id;
+  const needId: string = result.needId;
+
+  // 2. Find first task linked to this need
+  const tasks = await prisma.task.findMany({
+    where: { needId },
+    orderBy: { createdAt: "asc" },
+    take: 1,
+  });
+
+  let taskId: string;
+  if (tasks.length > 0) {
+    taskId = tasks[0].id;
+  } else {
+    // Create synthetic task so Rating.fk_taskId is satisfied
+    const synthetic = await prisma.task.create({
+      data: {
+        treeId,
+        needId,
+        title: `Satisfaction proxy (result ${resultId})`,
+        description: "Synthetic task for satisfaction rating",
+        budget: 0,
+        status: "VERIFIED",
+        creatorId: result.need.creatorId,
+      },
+    });
+    taskId = synthetic.id;
+    console.log(`[satisfaction] Created synthetic task ${taskId} for result ${resultId}`);
+  }
+
+  // 3. Find active AgentMemberships in this tree
+  const memberships = await prisma.agentMembership.findMany({
+    where: { treeId, status: "ACTIVE" },
+  });
+
+  if (memberships.length === 0) {
+    console.warn(
+      `[satisfaction] No active agents in tree ${treeId} — skipping ratings`,
+    );
+    return;
+  }
+
+  // 4. For each agent: create Rating + update membership XP + update profile
+  for (const membership of memberships) {
+    try {
+      await applyRatings(membership.agentId, treeId, taskId, [
+        { role: membership.role, stars: satisfaction },
+      ]);
+      await updateProfileFromRating(
+        membership.agentId,
+        membership.role,
+        satisfaction,
+      );
+    } catch (err: any) {
+      console.error(
+        `[satisfaction] Failed to rate agent ${membership.agentId}:`,
+        err.message,
+      );
+    }
+  }
+
+  console.log(
+    `[satisfaction] Created ${memberships.length} ratings for result ${resultId} (${satisfaction}★)`,
+  );
 }
 
 // ── Step 3: Handle comment reply → IA judge analysis ─────────────────────

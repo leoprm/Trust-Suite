@@ -3,6 +3,7 @@ import {
   getAgents,
   getAgentLeaderboard,
   getAgentProfile,
+  getAgentById,
 } from '../controllers/agentController';
 import { getAgentTreeStats } from '../controllers/ratingController';
 
@@ -13,6 +14,9 @@ router.get('/', getAgents);
 
 // GET /api/agents/leaderboard?role=analyst — top 20 by confidenceScore
 router.get('/leaderboard', getAgentLeaderboard);
+
+// GET /api/agents/:id — simple agent + profile + recent ratings
+router.get('/:id', getAgentById);
 
 // GET /api/agents/:id/trees/:treeId/stats — public: level, xp, totalRatings
 router.get('/:id/trees/:treeId/stats', getAgentTreeStats);
