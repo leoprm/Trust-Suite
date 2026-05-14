@@ -585,3 +585,32 @@ model TreeSandbox {
 
   tree Tree @relation(fields: [treeId], references: [id], onDelete: Cascade)
 }
+
+// ── Platform Config & API Usage Tracking ─────────────────────────────────
+
+model PlatformConfig {
+  id        String   @id @default(uuid())
+  key       String   @unique
+  value     String   // JSON string con el valor (número, objeto, etc.)
+  label     String   @default("")  // Descripción en español
+  category  String   @default("")  // "api_cost", "fixed", "margin", etc.
+  updatedAt DateTime @updatedAt
+  createdAt DateTime @default(now())
+}
+
+model ApiUsage {
+  id             String   @id @default(uuid())
+  userId         BigInt   // telegramUserId del usuario
+  treeId         String   // árbol donde se hizo la consulta
+  provider       String   @default("deepseek")  // deepseek, openai, anthropic
+  model          String   @default("")          // modelo específico
+  tokensIn       Int      @default(0)           // prompt_tokens
+  tokensOut      Int      @default(0)           // completion_tokens
+  cost           Float    @default(0)           // costo en USD calculado
+  messagePreview String   @default("")          // primeros 100 chars del mensaje
+  createdAt      DateTime @default(now())
+
+  @@index([userId])
+  @@index([treeId])
+  @@index([createdAt])
+}
