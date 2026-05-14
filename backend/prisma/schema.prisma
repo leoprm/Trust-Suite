@@ -3,8 +3,9 @@ generator client {
 }
 
 datasource db {
-  provider = "mysql"
-  url      = env("DATABASE_URL")
+  provider          = "mysql"
+  url               = env("DATABASE_URL")
+  shadowDatabaseUrl = env("SHADOW_DATABASE_URL")
 }
 
 enum UserRole {
@@ -148,6 +149,7 @@ model Tree {
   chatMessages     ChatMessage[]
   ledgerEntries    TransactionLedger[]
   disputeMessages  DisputeMessage[]
+  sandbox          TreeSandbox?
 }
 
 model TreeMember {
@@ -571,4 +573,15 @@ model TelegramDisputeVote {
   disputeMessage DisputeMessage @relation(fields: [disputeMessageId], references: [id], onDelete: Cascade)
 
   @@unique([disputeMessageId, telegramUserId])
+}
+
+model TreeSandbox {
+  id        String   @id @default(uuid())
+  treeId    String   @unique
+  port      Int      @unique
+  status    String   @default("IDLE") // IDLE | RUNNING | ERROR
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tree Tree @relation(fields: [treeId], references: [id], onDelete: Cascade)
 }

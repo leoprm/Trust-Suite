@@ -192,6 +192,118 @@ TrustMaker/
 
 ---
 
+## 🔒 Aislamiento por Árbol
+
+Cada comunidad (árbol) puede generar sus propias aplicaciones — frontends, scripts, agentes. Para evitar colisiones, fugas de seguridad y consumo descontrolado de recursos, Trust Maker implementa **aislamiento por directorio** (Fase 1), con ruta de crecimiento a Docker (Fase 2).
+
+### Estructura de directorios
+
+Cada árbol tiene su workspace aislado en el filesystem:
+
+```
+/home/leo/trees/
+  {treeId}/
+    apps/       # Aplicaciones del árbol (frontends, scripts)
+    data/       # Datos persistentes (uploads, exports, DB local)
+    logs/       # Logs de aplicaciones
+```
+
+El sandbox se crea automáticamente al crear un árbol cuya `admissionPolicy` no sea `CLOSED`.
+
+### API de sandboxes
+
+| Método | Ruta | Descripción |
+|--------|------|-------------|
+| `POST` | `/api/trees/:id/sandbox` | Crear sandbox (directorios + puerto) |
+| `GET` | `/api/trees/:id/sandbox` | Obtener estado del sandbox |
+| `DELETE` | `/api/trees/:id/sandbox` | Destruir sandbox (libera directorios y puerto) |
+| `GET` | `/api/trees/:id/sandbox/health` | Health check del sandbox |
+
+Crear y destruir requieren autenticación JWT.
+
+**Ejemplo — crear sandbox:**
+```bash
+curl -X POST http://localhost:3000/api/trees/abc123/sandbox \
+  -H "Authorization: Bearer $TOKEN"
+```
+**Respuesta:**
+```json
+{
+  "treeId": "abc123",
+  "port": 4100,
+  "workspacePath": "/home/leo/trees/abc123",
+  "status": "IDLE",
+  "createdAt": "2026-05-14T12:00:00Z"
+}
+```
+
+**Ejemplo — destruir sandbox:**
+```bash
+curl -X DELETE http://localhost:3000/api/trees/abc123/sandbox \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+### Pool de puertos
+
+Cada sandbox recibe un puerto TCP del rango **4100–4999** (900 puertos disponibles). El servicio `TreeSandbox` asigna el menor puerto libre secuencialmente, evitando colisiones consultando la tabla `TreeSandbox` en base de datos. Si el pool se agota, la API retorna `507 Insufficient Storage`.
+
+| Propiedad | Valor |
+|-----------|-------|
+| Rango | 4100 – 4999 |
+| Capacidad | 900 puertos |
+| Asignación | Secuencial, menor libre primero |
+| Agotado | Error 507 |
+
+### Modelo de datos
+
+```prisma
+model TreeSandbox {
+  id        String   @id @default(uuid())
+  treeId    String   @unique
+  port      Int      @unique
+  status    String   @default("IDLE")  // IDLE | RUNNING | ERROR
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tree Tree @relation(fields: [treeId], references: [id], onDelete: Cascade)
+}
+```
+
+### Servicio TreeSandbox
+
+`backend/src/services/treeSandbox.ts` abstrae las operaciones de filesystem y puertos:
+
+```typescript
+class TreeSandbox {
+  static async create(treeId: string): Promise<SandboxInfo>;
+  static async destroy(treeId: string): Promise<void>;
+  static async get(treeId: string): Promise<SandboxInfo | null>;
+  static async list(): Promise<SandboxInfo[]>;
+  static async health(treeId: string): Promise<boolean>;
+}
+```
+
+### Plan de migración a Docker (Fase 2)
+
+La interfaz `TreeSandbox` está diseñada para que los consumers (API routes, bot) no cambien al migrar. En Fase 2:
+
+| Operación | Fase 1 (hoy) | Fase 2 (Docker) |
+|-----------|-------------|-----------------|
+| `create` | `mkdir` + asignar puerto | `docker compose up` con volumen montado |
+| `destroy` | `rm -rf` + liberar puerto | `docker compose down` |
+| `health` | `GET localhost:{port}/health` | `docker ps` + healthcheck HTTP |
+| `list` | `SELECT * FROM TreeSandbox` | Sin cambios |
+
+**Beneficios de Fase 2:**
+- Aislamiento real de procesos (cgroups, namespaces)
+- Límites de CPU/memoria por árbol
+- Reinicio automático de apps caídas
+- Sin cambios en el código que consume `TreeSandbox`
+
+> **Nota:** Fase 1 es ligera — no requiere Docker instalado. Las apps corren en el mismo proceso Node.js pero con contexto aislado por árbol. Ideal para prototipado y pilotos controlados.
+
+---
+
 ## 🚀 Inicio rápido
 
 ```bash

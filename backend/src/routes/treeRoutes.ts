@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { createTree, joinTree, getMyTrees, getGlobalTrees, getTreeMembers, getTree, leaveTree, inviteMember, removeMember, generateGuestToken, consumeGuestToken, updateTree, getNetworkGraph, getPendingEvidence, toggleCrisisMode, broadcastCrisisSignal, updateMemberPower, inviteAI, getMyLevel, getTreeLedger } from '../controllers/treeController';
+import { createTree, joinTree, getMyTrees, getGlobalTrees, getTreeMembers, getTree, leaveTree, inviteMember, removeMember, generateGuestToken, consumeGuestToken, updateTree, deleteTree, getNetworkGraph, getPendingEvidence, toggleCrisisMode, broadcastCrisisSignal, updateMemberPower, inviteAI, getMyLevel, getTreeLedger } from '../controllers/treeController';
 import { authenticateJWT, optionalAuth } from '../middleware/authMiddleware';
 
 const router = Router();
@@ -32,5 +32,6 @@ router.patch('/:id/members/:userId/power', updateMemberPower);
 router.delete('/:id/leave', leaveTree);
 router.put('/:id', updateTree);
 router.post('/:id/invite-ai', inviteAI);
+router.delete('/:id', deleteTree);
 
 export default router;

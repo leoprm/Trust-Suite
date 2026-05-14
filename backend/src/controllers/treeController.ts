@@ -3,6 +3,8 @@ import { prisma } from '../index';
 import { randomBytes } from 'crypto';
 import { getRequestContext, getRequestMetadata, logEvent } from '../services/eventLogService';
 import { onTreeCreated } from '../services/genesisService';
+import { TreeSandbox } from '../services/treeSandbox';
+import { destroySandbox } from '../services/sandboxService';
 
 // ── Tree CRUD ────────────────────────────────────────────────────────────────
 
@@ -101,6 +103,36 @@ export const updateTree = async (req: any, res: Response) => {
   } catch (error: any) {
     console.error('[updateTree] ERROR:', error?.message || error);
     res.status(500).json({ error: 'Failed to update tree' });
+  }
+};
+
+export const deleteTree = async (req: any, res: Response) => {
+  try {
+    const { id } = req.params;
+
+    const tree = await prisma.tree.findUnique({ where: { id } });
+    if (!tree) return res.status(404).json({ error: 'Tree not found' });
+
+    // Only creator can delete
+    if (tree.creatorId !== req.user.id) {
+      return res.status(403).json({ error: 'Only the tree creator can delete it' });
+    }
+
+    // T5: Auto-destruir sandbox — non-blocking, fire-and-forget
+    try {
+      await destroySandbox(id);
+    } catch (err: any) {
+      console.warn(`[deleteTree] Sandbox destroy failed for tree ${id.slice(0, 8)}…:`, err?.message || err);
+    }
+
+    // Prisma cascade cleans up: members, needs, ideas, votes, tokens,
+    // chatMessages, eventLogs, ratings, ledgerEntries, TreeSandbox, etc.
+    await prisma.tree.delete({ where: { id } });
+
+    res.json({ message: 'Tree deleted successfully' });
+  } catch (error: any) {
+    console.error('[deleteTree] ERROR:', error?.message || error);
+    res.status(500).json({ error: 'Failed to delete tree' });
   }
 };
 
