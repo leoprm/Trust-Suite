@@ -1,5 +1,6 @@
 import { Request, Response } from 'express';
 import { prisma } from '../index';
+import { evaluateAndAssignTask } from './taskController';
 
 // ── POST /api/concierge ────────────────────────────────────────────────────────
 // Proxies a concierge query to the local Hermes Agent API.
@@ -28,6 +29,51 @@ function detectFactualQuestion(message: string): string | null {
     if (pattern.regex.test(message)) return pattern.handler;
   }
   return null;
+}
+
+// ── Task creation intent detection ────────────────────────────────────────
+
+/**
+ * Task creation intent patterns.
+ * Matches messages like:
+ *   "necesito que alguien rediseñe el hero, 15 lucas"
+ *   "necesito un dev que haga X por Y lucas"
+ *   "crea una tarea para..."
+ *   "busco alguien que..."
+ */
+const TASK_CREATION_PATTERNS: RegExp[] = [
+  /(necesito|busco|quiero)\s+(que\s+alguien|un|una)\s+/i,
+  /(necesito|busco|quiero)\s+(alguien|un\s+dev|un\s+desarrollador|un\s+diseñador)\s+(que|para)\s+/i,
+  /\d+\s*(lucas|luca|clp|pesos|usd|dólares|dolares|eur)\b/i,
+  /(crea|crear|creame|ábreme)\s+(una\s+)?(tarea|task|ticket)\b/i,
+  /presupuesto\s*(de|es)?\s*\d+/i,
+  /pago\s*\d+/i,
+];
+
+/**
+ * Scores how likely a message is a task creation request.
+ * Returns true if 2+ patterns match or budget keywords are present with a task-like phrase.
+ */
+function detectTaskCreationIntent(message: string): boolean {
+  const trimmed = message.trim();
+  const budgetPhrase = /\d+\s*(lucas|luca|clp|pesos|usd|dólares|dolares|eur|k)\b/i;
+  const requestPhrase = /(necesito|busco|quiero|encargo|pido)\s+/i;
+  const workPhrase = /(alguien\s+que|que\s+(me\s+)?(haga|hagan|desarrolle|implemente|diseñe|programe|rediseñe|arregle|fix|codee|escriba))/i;
+
+  // Strong signal: budget + request + work action
+  const hasBudget = budgetPhrase.test(trimmed);
+  const hasRequest = requestPhrase.test(trimmed);
+  const hasWork = workPhrase.test(trimmed);
+
+  if (hasBudget && (hasRequest || hasWork)) return true;
+  if (hasRequest && hasWork) return true;
+
+  // Count pattern matches
+  let matches = 0;
+  for (const pattern of TASK_CREATION_PATTERNS) {
+    if (pattern.test(trimmed)) matches++;
+  }
+  return matches >= 2;
 }
 
 // ── User resolution with auto-registration ─────────────────────────────────
@@ -219,6 +265,124 @@ function extractTelegramUserId(req: Request): string | null {
   return match ? match[1] : null;
 }
 
+// ── Task creation via natural language ─────────────────────────────────────
+
+interface ExtractedTask {
+  title: string;
+  description: string;
+  budget: string | null;
+  needId: string | null;
+}
+
+/**
+ * Builds a system prompt that instructs the Hermes Agent to extract
+ * structured task fields from the user's message and return them as JSON.
+ */
+function buildTaskCreationSystemPrompt(treeName: string, treeIcono: string): string {
+  return [
+    `Eres el asistente de Trust Maker para el árbol "${treeName}" (${treeIcono}).`,
+    '',
+    'El usuario quiere crear una tarea en lenguaje natural.',
+    'Tu trabajo es extraer la siguiente información del mensaje:',
+    '',
+    '1. **title**: un título corto y descriptivo (máx 100 chars)',
+    '2. **description**: descripción detallada de lo que se necesita',
+    '3. **budget**: presupuesto mencionado (ej: "15 lucas", "50 USD"), o null si no se menciona',
+    '4. **needId**: null (a menos que el usuario mencione explícitamente una necesidad existente)',
+    '',
+    'REGLAS CRÍTICAS:',
+    '- Si el mensaje es ambiguo o no entiendes qué tarea quiere crear, responde con una pregunta aclaratoria en español.',
+    '- Si entiendes la tarea pero falta algún campo (como presupuesto), da una respuesta amable confirmando lo que entendiste Y pregunta educadamente por lo que falta.',
+    '- Si tienes TODOS los campos (título y descripción como mínimo), responde ÚNICAMENTE con el siguiente JSON (sin markdown, sin backticks, sin texto adicional):',
+    '',
+    '{"intent":"create_task","title":"...","description":"...","budget":"... o null","needId":null}',
+    '',
+    'Ejemplo de respuesta con todos los campos:',
+    '{"intent":"create_task","title":"Rediseñar hero section","description":"Rediseñar la sección hero de la landing page con nuevo copy e imágenes. Presupuesto: 15 lucas.","budget":"15 lucas","needId":null}',
+    '',
+    'Ejemplo de respuesta cuando falta presupuesto:',
+    '¡Entendido! Veo que necesitas rediseñar el hero. ¿Cuál es tu presupuesto aproximado para esta tarea?',
+    '',
+    'Responde SIEMPRE en español. Sé conciso y amable.',
+  ].join('\n');
+}
+
+/**
+ * Tries to parse a create_task JSON from the agent response.
+ * Returns the parsed task or null if not found / invalid.
+ */
+function parseTaskJson(reply: string): { title: string; description: string; budget: string | null } | null {
+  // Try direct JSON parse
+  try {
+    const parsed = JSON.parse(reply.trim());
+    if (parsed.intent === 'create_task' && parsed.title && parsed.description) {
+      return {
+        title: parsed.title.trim(),
+        description: parsed.description.trim(),
+        budget: parsed.budget ?? null,
+      };
+    }
+  } catch {
+    // Not direct JSON — try to find JSON block in the text
+  }
+
+  // Try to extract JSON object from text (common with Hermes Agent)
+  const jsonMatch = reply.match(/\{[\s\S]*"intent"\s*:\s*"create_task"[\s\S]*\}/);
+  if (jsonMatch) {
+    try {
+      const parsed = JSON.parse(jsonMatch[0]);
+      if (parsed.title && parsed.description) {
+        return {
+          title: parsed.title.trim(),
+          description: parsed.description.trim(),
+          budget: parsed.budget ?? null,
+        };
+      }
+    } catch {
+      // Ignore
+    }
+  }
+
+  return null;
+}
+
+/**
+ * Creates a task from bot interaction (no JWT required).
+ * Used internally by concierge when the Hermes Agent extracts a task.
+ */
+async function createTaskFromBot(
+  treeId: string,
+  title: string,
+  description: string,
+  budget: string | null,
+  actorId: string,
+): Promise<{ id: string; title: string }> {
+  const task = await prisma.task.create({
+    data: {
+      treeId,
+      title,
+      description: budget
+        ? `${description}\n\n💰 Presupuesto: ${budget}`
+        : description,
+      status: 'OPEN',
+    },
+  });
+
+  // Fire-and-forget: evaluate difficulty + route
+  evaluateAndAssignTask(
+    task.id,
+    treeId,
+    title,
+    task.description,
+    actorId,
+  ).catch((err) => {
+    console.error('[concierge] evaluateAndAssignTask error:', err);
+  });
+
+  console.log(`[concierge] Task created via natural language: ${task.id} — "${title}"`);
+  return { id: task.id, title: task.title };
+}
+
 // ── Main handler ───────────────────────────────────────────────────────────
 
 export const conciergeHandler = async (req: Request, res: Response) => {
@@ -265,6 +429,9 @@ export const conciergeHandler = async (req: Request, res: Response) => {
 
       return res.json({ reply, agentId: agentId || null, treeId, source: 'db' });
     }
+
+    // ── Detect task creation intent ────────────────────────────────────────
+    const isTaskCreation = detectTaskCreationIntent(message.trim());
 
     // ── Fetch tree context from DB ─────────────────────────────────────────
     const tree = await prisma.tree.findUnique({
@@ -319,16 +486,18 @@ export const conciergeHandler = async (req: Request, res: Response) => {
     }
 
     // ── Build system prompt with real tree context ─────────────────────────
-    const contextLines: string[] = [
-      `You are the Tree Agent for "${tree.name}" (${tree.icono}) — a Trust Maker community.`,
-      'You are the Hermes Agent integrated into Trust Maker, responding in Spanish.',
-      '',
-      `Tree metadata (REAL, from DB):`,
-      `  Name: ${tree.name}`,
-      `  Description: ${tree.description || 'No description set'}`,
-      `  Admission: ${tree.admissionPolicy}`,
-      `  Created: ${tree.createdAt.toISOString()}`,
-    ];
+    const contextLines: string[] = isTaskCreation
+      ? [buildTaskCreationSystemPrompt(tree.name, tree.icono)]
+      : [
+          `You are the Tree Agent for "${tree.name}" (${tree.icono}) — a Trust Maker community.`,
+          'You are the Hermes Agent integrated into Trust Maker, responding in Spanish.',
+          '',
+          `Tree metadata (REAL, from DB):`,
+          `  Name: ${tree.name}`,
+          `  Description: ${tree.description || 'No description set'}`,
+          `  Admission: ${tree.admissionPolicy}`,
+          `  Created: ${tree.createdAt.toISOString()}`,
+        ];
 
     const memberCount = (tree as any)._count?.members ?? 0;
     const needCount = (tree as any)._count?.needs ?? 0;
@@ -427,6 +596,37 @@ export const conciergeHandler = async (req: Request, res: Response) => {
       data?.content ??
       data?.reply ??
       '';
+
+    // ── Task creation: parse JSON and create task ──────────────────────────
+    if (isTaskCreation && reply) {
+      const extractedTask = parseTaskJson(reply);
+      if (extractedTask) {
+        // Task extracted successfully — create it
+        const tgId = telegramUserId || 'system';
+        const user = telegramUserId ? await resolveOrCreateUser(telegramUserId) : null;
+        const actorId = user?.id ?? tgId;
+
+        const created = await createTaskFromBot(
+          treeId,
+          extractedTask.title,
+          extractedTask.description,
+          extractedTask.budget,
+          actorId,
+        );
+
+        const confirmation = [
+          `✅ **Tarea creada exitosamente**`,
+          ``,
+          `📋 **${created.title}**`,
+          `🆔 \`${created.id}\``,
+          ``,
+          `La tarea ha sido publicada y será asignada automáticamente al agente más adecuado.`,
+          extractedTask.budget ? `💰 Presupuesto: ${extractedTask.budget}` : '',
+        ].filter(Boolean).join('\n');
+
+        return res.json({ reply: confirmation, agentId: agentId || null, treeId, source: 'task-created' });
+      }
+    }
 
     // ── Persist chat messages ─────────────────────────────────────────────
     const userId = req.user?.id;

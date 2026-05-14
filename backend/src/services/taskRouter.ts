@@ -13,6 +13,15 @@ const ROLE_KEYWORDS: Record<string, string[]> = {
   designer: ['diseñar', 'design', 'ui', 'ux', 'interfaz', 'interface', 'layout', 'css', 'estilo', 'style', 'visual'],
 };
 
+// Stop words to filter from keyword extraction (es + en)
+const STOP_WORDS = new Set([
+  'el', 'la', 'los', 'las', 'un', 'una', 'unos', 'unas', 'de', 'del', 'en', 'con',
+  'por', 'para', 'que', 'es', 'son', 'the', 'a', 'an', 'and', 'or', 'but', 'in',
+  'on', 'at', 'to', 'for', 'of', 'with', 'is', 'are', 'was', 'were', 'be', 'been',
+  'this', 'that', 'it', 'its', 'se', 'no', 'si', 'ya', 'lo', 'al', 'como', 'más',
+  'muy', 'todo', 'todos', 'hay', 'tiene', 'tienen', 'ser', 'hacer', 'puede',
+]);
+
 function inferRole(title: string, description: string): string {
   const text = `${title} ${description}`.toLowerCase();
   const scores: Record<string, number> = {};
@@ -32,6 +41,28 @@ function inferRole(title: string, description: string): string {
   return best && best[1] > 0 ? best[0] : 'implementer';
 }
 
+// ── Keyword extraction for skill matching ──────────────────────────────────────
+// Extract meaningful words from title+description to match against member skills.
+
+function extractKeywords(title: string, description: string): string[] {
+  const text = `${title} ${description}`.toLowerCase();
+  // Split on non-alphanumeric, filter stop words and short tokens
+  const tokens = text.split(/[^a-záéíóúüñ0-9]+/);
+  const seen = new Set<string>();
+  const keywords: string[] = [];
+
+  for (const token of tokens) {
+    const clean = token.trim();
+    if (clean.length < 3) continue;
+    if (STOP_WORDS.has(clean)) continue;
+    if (seen.has(clean)) continue;
+    seen.add(clean);
+    keywords.push(clean);
+  }
+
+  return keywords;
+}
+
 // ── Scoring ────────────────────────────────────────────────────────────────────
 // confidenceScore * 0.7 + (1 - carga/3) * 0.3
 // carga = number of active tasks assigned to this agent in this tree.
@@ -42,25 +73,133 @@ function scoreAgent(confidenceScore: number, activeTaskCount: number): number {
   return confidenceScore * 0.7 + (1 - loadPenalty) * 0.3;
 }
 
-// ── Main routing ───────────────────────────────────────────────────────────────
+// ── Unified candidate interface ────────────────────────────────────────────────
 
-interface RoutedAgent {
-  treeMemberId: string;  // TreeMember.id (for Task.assignedTo)
-  agentId: string;       // Agent.id (for logging)
-  role: string;
+interface RoutedCandidate {
+  treeMemberId: string;
+  agentId?: string;        // AI only
+  isHuman: boolean;
+  role?: string;           // AI only
   score: number;
   activeTasks: number;
-  confidenceScore: number;
+  tasksThisWeek?: number;  // human rotation tracking
+  skillMatches?: number;   // human: how many skills matched keywords
+  xp?: number;             // human XP for logging
+  confidenceScore?: number; // AI confidence score
 }
 
+// ── Human candidate search ─────────────────────────────────────────────────────
+// Query tree members with isAI=false, status=ACTIVE.
+// Match their skills (JSON array) against extracted keywords from the task.
+// Sort by XP desc. Exclude >3 active tasks. Rotation penalty for ≥2 this week.
+
+async function findHumanCandidates(
+  treeId: string,
+  title: string,
+  description: string,
+): Promise<RoutedCandidate[]> {
+  const keywords = extractKeywords(title, description);
+  if (keywords.length === 0) return [];
+
+  // Query human members in the tree
+  const humanMembers = await (prisma as any).treeMember.findMany({
+    where: {
+      treeId,
+      isAI: false,
+      status: 'ACTIVE',
+    },
+    select: {
+      id: true,
+      userId: true,
+      skills: true,
+      xp: true,
+    },
+  });
+
+  if (humanMembers.length === 0) return [];
+
+  // Find max XP for normalization
+  const maxXp = Math.max(1, ...humanMembers.map((m: any) => m.xp || 0));
+
+  const oneWeekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+  const candidates: RoutedCandidate[] = [];
+
+  for (const member of humanMembers) {
+    const skills: string[] = JSON.parse(member.skills || '[]');
+    const skillsLower = skills.map((s: string) => s.toLowerCase());
+
+    // Count keyword matches against skills
+    let skillMatches = 0;
+    for (const kw of keywords) {
+      for (const skill of skillsLower) {
+        if (skill.includes(kw) || kw.includes(skill)) {
+          skillMatches++;
+          break;
+        }
+      }
+    }
+
+    // Get active task count
+    const activeTasks = await prisma.task.count({
+      where: {
+        assignedTo: member.id,
+        status: { in: ['OPEN', 'IN_PROGRESS'] },
+      },
+    });
+
+    // Exclude members with >3 active tasks
+    if (activeTasks > 3) continue;
+
+    // Count tasks assigned this week for rotation
+    const tasksThisWeek = await prisma.task.count({
+      where: {
+        assignedTo: member.id,
+        createdAt: { gte: oneWeekAgo },
+      },
+    });
+
+    // Score: skill match + XP + load + rotation penalty
+    // Normalized to ~0-1 range for comparison with AI scores
+    const xpFactor = (member.xp || 0) / maxXp;
+    const skillMatchFactor = Math.min(1, skillMatches / Math.max(1, keywords.length));
+    const loadPenalty = Math.min(activeTasks / 3, 1.0);
+    // Rotation: baja prioridad si ya tiene ≥2 tasks esta semana
+    const rotationPenalty = tasksThisWeek >= 2 ? 0.2 : 0;
+
+    const score =
+      skillMatchFactor * 0.3 +
+      xpFactor * 0.4 +
+      (1 - loadPenalty) * 0.3 -
+      rotationPenalty;
+
+    candidates.push({
+      treeMemberId: member.id,
+      isHuman: true,
+      score,
+      activeTasks,
+      tasksThisWeek,
+      skillMatches,
+      xp: member.xp || 0,
+    });
+  }
+
+  // Sort by score descending
+  candidates.sort((a, b) => b.score - a.score);
+
+  return candidates;
+}
+
+// ── Main routing ───────────────────────────────────────────────────────────────
+
 /**
- * Finds the best agent in the tree for a task based on:
- * 1. Role match via AgentRoleHistory
- * 2. Active task load (< 3)
- * 3. confidenceScore * 0.7 + (1 - carga/3) * 0.3
+ * Finds the best agent or human in the tree for a task based on:
+ * 1. Role match via AgentRoleHistory (AI) or skill keyword match (human)
+ * 2. Active task load (< 3 for AI, ≤ 3 for human)
+ * 3. Scoring: AI uses confidenceScore, humans use XP + skill match
+ * 4. Rotation: humans with ≥2 tasks this week get a score penalty
  *
- * If no agent matches the inferred role, falls back to all active agents in the tree.
- * If still no match, returns null (task stays unassigned = broadcast).
+ * Priority: best candidate from combined AI + human pool.
+ * If no candidate matches, returns null (task stays unassigned = broadcast).
  */
 export async function routeTask(taskId: string): Promise<string | null> {
   // 1. Load task
@@ -81,7 +220,7 @@ export async function routeTask(taskId: string): Promise<string | null> {
 
   const role = inferRole(task.title, task.description);
 
-  // 2. Find all agents in the tree via AgentRoleHistory (active = not released)
+  // ── 2. AI candidates (existing logic) ─────────────────────────────────────
   const activeHistory = await prisma.agentRoleHistory.findMany({
     where: {
       treeId: task.treeId,
@@ -94,14 +233,6 @@ export async function routeTask(taskId: string): Promise<string | null> {
     },
   });
 
-  if (activeHistory.length === 0) {
-    console.warn(`[taskRouter] No active agents in tree ${task.treeId} — broadcasting task`);
-    // Broadcast: leave unassigned (null) — any agent can claim it
-    return null;
-  }
-
-  // 3. Bridge Agent → TreeMember by matching Agent.name to TreeMember.aiProfile
-  //    within this tree. TreeMember is where Task.assignedTo points.
   const agentNames = activeHistory.map(h => h.agent.name);
   const treeMembers = await prisma.treeMember.findMany({
     where: {
@@ -118,17 +249,15 @@ export async function routeTask(taskId: string): Promise<string | null> {
     if (tm.aiProfile) memberByName.set(tm.aiProfile, tm.id);
   }
 
-  // 4. Build candidate list: agents with a TreeMember and role match
-  const candidates: RoutedAgent[] = [];
+  const allCandidates: RoutedCandidate[] = [];
 
-  // First pass: role-matched agents
+  // AI pool: role-matched first, then fallback to all
   const roleMatched = activeHistory.filter(h => h.role === role);
-  // Fallback: if no role match, consider all agents in the tree
-  const pool = roleMatched.length > 0 ? roleMatched : activeHistory;
+  const aiPool = roleMatched.length > 0 ? roleMatched : activeHistory;
 
-  for (const h of pool) {
+  for (const h of aiPool) {
     const tmId = memberByName.get(h.agent.name);
-    if (!tmId) continue; // agent has no TreeMember in this tree
+    if (!tmId) continue;
 
     const activeTasks = await prisma.task.count({
       where: {
@@ -137,14 +266,15 @@ export async function routeTask(taskId: string): Promise<string | null> {
       },
     });
 
-    if (activeTasks >= 3) continue; // load gate
+    if (activeTasks >= 3) continue;
 
     const confidenceScore = h.agent.profile?.confidenceScore ?? 0;
     const score = scoreAgent(confidenceScore, activeTasks);
 
-    candidates.push({
+    allCandidates.push({
       treeMemberId: tmId,
       agentId: h.agentId,
+      isHuman: false,
       role: h.role,
       score,
       activeTasks,
@@ -152,16 +282,29 @@ export async function routeTask(taskId: string): Promise<string | null> {
     });
   }
 
-  if (candidates.length === 0) {
-    console.warn(`[taskRouter] No available agent for task ${taskId} (role=${role}) — broadcasting`);
+  // ── 3. Human candidates (new) ──────────────────────────────────────────────
+  const humanCandidates = await findHumanCandidates(
+    task.treeId,
+    task.title,
+    task.description,
+  );
+  allCandidates.push(...humanCandidates);
+
+  // ── 4. Pick best ──────────────────────────────────────────────────────────
+  if (allCandidates.length === 0) {
+    const noAi = activeHistory.length === 0;
+    const noHumans = humanCandidates.length === 0;
+    const reason = noAi && noHumans
+      ? `No AI agents or human members available in tree ${task.treeId}`
+      : `No available candidate for task ${taskId} (role=${role})`;
+    console.warn(`[taskRouter] ${reason} — broadcasting`);
     return null;
   }
 
-  // 5. Sort by score descending, pick best
-  candidates.sort((a, b) => b.score - a.score);
-  const best = candidates[0];
+  allCandidates.sort((a, b) => b.score - a.score);
+  const best = allCandidates[0];
 
-  // 6. Assign
+  // ── 5. Assign ─────────────────────────────────────────────────────────────
   await prisma.task.update({
     where: { id: taskId },
     data: {
@@ -178,20 +321,31 @@ export async function routeTask(taskId: string): Promise<string | null> {
     entityId: taskId,
     afterJson: {
       assignedTo: best.treeMemberId,
-      agentId: best.agentId,
-      role: best.role,
+      agentId: best.agentId ?? null,
+      isHuman: best.isHuman,
+      role: best.role ?? null,
       score: Math.round(best.score * 100) / 100,
       activeTasks: best.activeTasks,
-      confidenceScore: best.confidenceScore,
+      confidenceScore: best.confidenceScore ?? null,
       inferredRole: role,
-      poolSize: candidates.length,
+      poolSize: allCandidates.length,
+      aiCandidates: allCandidates.filter(c => !c.isHuman).length,
+      humanCandidates: allCandidates.filter(c => c.isHuman).length,
+      // Human-specific metadata
+      ...(best.isHuman && {
+        skillMatches: best.skillMatches,
+        xp: best.xp,
+        tasksThisWeek: best.tasksThisWeek,
+      }),
     },
     source: 'AUTOMATION',
     severity: 'INFO',
   });
 
+  const assigneeType = best.isHuman ? 'human' : 'agent';
+  const assigneeId = best.isHuman ? best.treeMemberId : best.agentId;
   console.log(
-    `[taskRouter] Task ${taskId} → agent ${best.agentId} (role=${best.role}, score=${best.score.toFixed(2)})`,
+    `[taskRouter] Task ${taskId} → ${assigneeType} ${assigneeId} (score=${best.score.toFixed(2)})`,
   );
 
   return best.treeMemberId;
