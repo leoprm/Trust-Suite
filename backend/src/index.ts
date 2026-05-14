@@ -23,6 +23,7 @@ import agentRoutes from './routes/agentRoutes';
 import byoRoutes from './routes/byoRoutes';
 import taskRoutes from './routes/taskRoutes';
 import { createBot } from './bot/index';
+import { startScheduler } from './bot/scheduler';
 import { stripeWebhook, paddleWebhook, createCheckout, cancelSubscription, currentCost, mySubscription } from './controllers/billingController';
 
 const app = express();
@@ -34,6 +35,19 @@ export const prisma = new PrismaClient();
 // createBot returns null gracefully when TELEGRAM_BOT_TOKEN is not configured.
 // The bot starts polling immediately inside createBot().
 const telegramBot = createBot(prisma);
+
+// ── Scheduler: cierre diario a medianoche ──────────────────────────────────────
+// El scheduler necesita el bot para enviar resúmenes a los grupos.
+// Si el bot no está configurado (sin TELEGRAM_BOT_TOKEN), el scheduler
+// igual corre — solo procesa árboles sin enviar mensajes.
+if (telegramBot) {
+  startScheduler(prisma, telegramBot);
+} else {
+  console.warn(
+    "[Scheduler] Bot no disponible — el cierre diario se ejecutará sin notificaciones de Telegram."
+  );
+  startScheduler(prisma, null);
+}
 
 // ── Database Bootstrap ────────────────────────────────────────────────────────
 async function bootstrapDatabase(): Promise<void> {
