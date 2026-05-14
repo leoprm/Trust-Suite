@@ -77,11 +77,29 @@ async function handleMembershipQuery(treeId: string, telegramUserId: string): Pr
     return `No estás registrado en Trust Maker. Usa el comando /login en el grupo para crear tu cuenta.`;
   }
 
-  // Check membership in this tree
-  const member = await prisma.treeMember.findUnique({
+  // Check membership in this tree — auto-join if OPEN
+  let member = await prisma.treeMember.findUnique({
     where: { userId_treeId: { userId: user.id, treeId } },
     select: { status: true, joinedAt: true },
   });
+
+  if (!member) {
+    // Auto-join: si el árbol es OPEN, agregar al usuario
+    const tree = await prisma.tree.findUnique({ where: { id: treeId }, select: { admissionPolicy: true } });
+    if (tree?.admissionPolicy === 'OPEN') {
+      try {
+        await prisma.treeMember.create({
+          data: { userId: user.id, treeId, status: 'ACTIVE' },
+        });
+        member = { status: 'ACTIVE', joinedAt: new Date() } as any;
+        console.log(`[concierge] handleMembershipQuery auto-joined user ${user.username} to tree`);
+      } catch (err: any) {
+        if (!err.message?.includes('Unique constraint')) {
+          console.error('[concierge] Auto-join failed:', err.message);
+        }
+      }
+    }
+  }
 
   if (member) {
     return `✅ Sí, eres miembro de este árbol desde ${member.joinedAt.toLocaleDateString('es-CL')}. Tu estado es: ${member.status}.`;
