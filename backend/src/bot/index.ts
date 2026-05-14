@@ -406,8 +406,9 @@ export function createBot(prisma: PrismaClient): Bot<BotContext> | null {
         if (isCommand || isHelpAlias) {
           const result = await handleMessage(prisma, ctx);
           if (result) {
+            const voiceBuffer = await generateVoice(result.text);
             const messages = formatForChannel(
-              { text: result.text, react: result.react },
+              { text: result.text, react: result.react, voiceBuffer: voiceBuffer ?? undefined },
               "telegram",
             );
             await sendViaTelegram(ctx, messages);
@@ -418,8 +419,9 @@ export function createBot(prisma: PrismaClient): Bot<BotContext> | null {
         } else {
           const naturalResult = await handleNaturalMessage(prisma, ctx);
           if (naturalResult) {
+            const voiceBuffer = await generateVoice(naturalResult.text);
             const messages = formatForChannel(
-              { text: naturalResult.text },
+              { text: naturalResult.text, voiceBuffer: voiceBuffer ?? undefined },
               "telegram",
             );
             await sendViaTelegram(ctx, messages);
