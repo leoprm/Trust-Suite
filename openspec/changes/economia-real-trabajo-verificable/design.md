@@ -14,6 +14,8 @@
 
 **Implementación**: El mensaje se envía al concierge (Hermes Agent), que extrae: título, descripción, presupuesto, necesidad relacionada. Si falta algún campo, el bot pregunta.
 
+**Asignación**: El TaskRouter (IA) asigna la task automáticamente al miembro más apto. Los humanos pueden sobrescribir la asignación o crear nuevas tasks manualmente. Cualquier asignación puede ser disputada por el árbol.
+
 ## 2. Skills matcheadas con existentes, no inferencia libre
 
 **Decisión**: Al verificar una task, el bot primero revisa las skills que el usuario YA tiene. Si la task calza con una → suma XP ahí. Si no calza con ninguna → crea UNA nueva skill.
