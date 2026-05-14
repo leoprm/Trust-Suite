@@ -11,6 +11,19 @@ interface Message {
   content: string;
 }
 
+interface HistoryMessage {
+  id: string;
+  role: string;
+  content: string;
+  createdAt: string;
+}
+
+const WELCOME_MSG: Message = {
+  id: 'welcome',
+  role: 'assistant',
+  content: 'Welcome to Trust Maker. Ask me about your trees, needs, or ideas.',
+};
+
 const SUGGESTIONS = [
   'What are the most urgent needs?',
   'Summarize recent ideas in my trees',
@@ -23,27 +36,67 @@ interface ChatPanelProps {
 }
 
 function ChatPanel({ activeNeedId }: ChatPanelProps) {
-  const [messages, setMessages] = useState<Message[]>([
-    {
-      id: 'welcome',
-      role: 'assistant',
-      content: 'Welcome to Trust Maker. Ask me about your trees, needs, or ideas.',
-    },
-  ]);
+  const [messages, setMessages] = useState<Message[]>([WELCOME_MSG]);
   const [input, setInput] = useState('');
   const [sending, setSending] = useState(false);
   const [showingRating, setShowingRating] = useState(false);
+  const [historyLoaded, setHistoryLoaded] = useState(false);
   const msgsEndRef = useRef<HTMLDivElement>(null);
   const sessionId = useRef(crypto.randomUUID());
   const activeTreeId = useUIStore((s) => s.activeTreeId);
 
+  // ── Scroll to bottom on message changes ───────────────────────────────
   useEffect(() => {
     msgsEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, showingRating]);
 
+  // ── Load chat history when tree changes ───────────────────────────────
+  useEffect(() => {
+    if (!activeTreeId) return;
+
+    let cancelled = false;
+
+    const loadHistory = async () => {
+      try {
+        const { data } = await api.get('/concierge/history', {
+          params: { treeId: activeTreeId },
+        });
+        const history: HistoryMessage[] = data?.messages ?? [];
+
+        if (!cancelled) {
+          if (history.length > 0) {
+            setMessages(
+              history.map((m) => ({
+                id: m.id,
+                role: m.role as 'user' | 'assistant',
+                content: m.content,
+              })),
+            );
+          } else {
+            setMessages([WELCOME_MSG]);
+          }
+          setHistoryLoaded(true);
+        }
+      } catch (_err) {
+        // API interceptor handles 401; keep welcome message on other errors
+        if (!cancelled) {
+          setMessages([WELCOME_MSG]);
+          setHistoryLoaded(true);
+        }
+      }
+    };
+
+    loadHistory();
+    return () => {
+      cancelled = true;
+    };
+    // Reset historyLoaded when tree changes
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTreeId]);
+
   // Count assistant responses beyond the welcome message
   const assistantReplyCount = messages.filter(
-    (m) => m.role === 'assistant' && m.id !== 'welcome'
+    (m) => m.role === 'assistant' && m.id !== 'welcome',
   ).length;
   const canRate = assistantReplyCount > 0 && !!activeTreeId && !showingRating;
 
@@ -105,6 +158,9 @@ function ChatPanel({ activeNeedId }: ChatPanelProps) {
     setTimeout(() => setShowingRating(false), 5000);
   };
 
+  // ── Don't render suggestions until history check is done ──────────────
+  const showSuggestions = historyLoaded && messages.length <= 1 && messages[0]?.id === 'welcome';
+
   return (
     <div className="chat-panel">
       {/* Messages */}
@@ -153,7 +209,7 @@ function ChatPanel({ activeNeedId }: ChatPanelProps) {
       )}
 
       {/* Suggestions (when empty) */}
-      {messages.length <= 1 && (
+      {showSuggestions && (
         <div className="chat-suggestions">
           {SUGGESTIONS.map((s) => (
             <button key={s} className="chat-suggestion" onClick={() => setInput(s)}>
