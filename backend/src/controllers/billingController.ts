@@ -100,7 +100,22 @@ export const paddleWebhook = async (req: any, res: Response) => {
         break;
       }
       case 'transaction.completed': case 'transaction.paid': {
-        if (eventData?.subscription_id) await (prisma as any).subscription.updateMany({ where: { paddleSubscriptionId: eventData.subscription_id }, data: { status: 'ACTIVE' } });
+        const subId = eventData?.subscription_id;
+        if (subId) {
+          // 1. Actualizar Subscription
+          await (prisma as any).subscription.updateMany({ where: { paddleSubscriptionId: subId }, data: { status: 'ACTIVE' } });
+
+          // 2. Activar pago en todos los árboles del usuario (incluye desbloqueo si estaba BLOCKED)
+          const sub = await (prisma as any).subscription.findFirst({ where: { paddleSubscriptionId: subId } });
+          if (sub?.userId) {
+            const now = new Date();
+            await prisma.treeMember.updateMany({
+              where: { userId: sub.userId },
+              data: { paymentStatus: 'ACTIVE', lastPaymentAt: now },
+            });
+            console.log(`[billing] TreeMember paymentStatus → ACTIVE for user ${sub.userId} (${eventType})`);
+          }
+        }
         break;
       }
     }
@@ -155,8 +170,77 @@ export const recalculateNow = async (_req: any, res: Response) => {
   res.json({ monthlyCost: 0, currency: 'CLP', message: 'Cost recalculation removed in V3' });
 };
 
-// ── Stripe Webhook (stubbed — connect removed) ──
+// ── Stripe Webhook — handles checkout.session.completed for task budget payments ──
 
-export const stripeWebhook = async (_req: any, res: Response) => {
-  res.status(501).json({ error: 'Stripe webhook removed in V3' });
+const STRIPE_WEBHOOK_SECRET = process.env.STRIPE_WEBHOOK_SECRET || '';
+
+export const stripeWebhook = async (req: any, res: Response) => {
+  const sig = req.headers['stripe-signature'] as string;
+
+  if (!STRIPE_WEBHOOK_SECRET) {
+    console.warn('[stripeWebhook] STRIPE_WEBHOOK_SECRET not set — skipping verification');
+  }
+
+  const Stripe = (await import('stripe')).default;
+  const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || '', {
+    apiVersion: '2025-03-31.basil' as any,
+  });
+
+  let event: any;
+  try {
+    if (STRIPE_WEBHOOK_SECRET && sig) {
+      event = stripe.webhooks.constructEvent(
+        req.body,
+        sig,
+        STRIPE_WEBHOOK_SECRET,
+      );
+    } else {
+      // Fallback: parse raw body (for development only)
+      const raw = Buffer.isBuffer(req.body)
+        ? req.body.toString('utf-8')
+        : typeof req.body === 'string'
+          ? req.body
+          : JSON.stringify(req.body);
+      event = JSON.parse(raw);
+    }
+  } catch (err: any) {
+    console.error('[stripeWebhook] Signature verification failed:', err.message);
+    return res.status(400).json({ error: `Webhook signature verification failed: ${err.message}` });
+  }
+
+  console.log(`[stripeWebhook] Event: ${event.type}`);
+
+  // Handle checkout.session.completed — trigger payment split
+  if (event.type === 'checkout.session.completed') {
+    const session = event.data.object;
+    const taskId = session.metadata?.taskId;
+    const needId = session.metadata?.needId;
+
+    if (taskId) {
+      try {
+        // Dynamically import to avoid circular dependency
+        const { processTaskPayment } = await import('../services/paymentSplitService');
+
+        const result = await processTaskPayment(taskId);
+
+        // Transition task to PAID
+        await prisma.task.update({
+          where: { id: taskId },
+          data: { status: 'PAID' },
+        });
+
+        console.log(`[stripeWebhook] Task ${taskId} → PAID. Splits: ${JSON.stringify(result.splits)}`);
+        if (result.errors.length > 0) {
+          console.warn(`[stripeWebhook] Warnings for task ${taskId}:`, result.errors);
+        }
+      } catch (err: any) {
+        console.error(`[stripeWebhook] Failed to process payment split for task ${taskId}:`, err.message);
+        // Don't return error to Stripe — they'll retry
+      }
+    } else {
+      console.log('[stripeWebhook] checkout.session.completed without taskId — skipping split');
+    }
+  }
+
+  return res.json({ received: true });
 };

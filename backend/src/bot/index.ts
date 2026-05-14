@@ -5,6 +5,8 @@ import { handleMessage, extractCommandText } from "./commands";
 import { handleNaturalMessage } from "./messages";
 import { analyzeMessage } from "./analyzer";
 import { registerReactionHandler } from "./voting";
+import { checkPaymentAccess } from "./payment";
+import { formatForChannel, sendViaTelegram } from "./channelAdapter";
 
 export function createBot(prisma: PrismaClient): Bot<BotContext> | null {
   const token = process.env.TELEGRAM_BOT_TOKEN || "";
@@ -22,7 +24,7 @@ export function createBot(prisma: PrismaClient): Bot<BotContext> | null {
   bot.use(
     session({
       initial(): BotSessionData {
-        return { userId: null, authenticatedAt: null };
+        return { userId: null, authenticatedAt: null, awaitingEvidenceTaskId: null, awaitingEvidenceBotMsgId: null };
       },
     })
   );
@@ -41,6 +43,8 @@ export function createBot(prisma: PrismaClient): Bot<BotContext> | null {
       "Comandos disponibles:\n" +
         "/start — Iniciar el bot\n" +
         "/login — Vincular tu cuenta de Trust Maker\n" +
+        "/cuota — Ver tu cuota mensual\n" +
+        "/pagar — Ver pagos pendientes\n" +
         "/help — Mostrar esta ayuda\n\n" +
         "En grupos, menciona @TrustMakerBot:\n" +
         "  @TrustMakerBot /info\n" +
@@ -50,6 +54,113 @@ export function createBot(prisma: PrismaClient): Bot<BotContext> | null {
         "  @TrustMakerBot /vota <id>\n\n" +
         "También puedes conversar naturalmente mencionando al bot."
     );
+  });
+
+  // ── /cuota: mostrar cuota mensual ──────────────────────────────────────
+  bot.command("cuota", async (ctx) => {
+    const tgUser = ctx.from;
+    if (!tgUser) {
+      await ctx.reply("⚠️ No se pudo identificar tu cuenta de Telegram.");
+      return;
+    }
+
+    const telegramId = BigInt(tgUser.id);
+    const user = await (prisma as any).user.findUnique({
+      where: { telegramUserId: telegramId },
+      select: { id: true },
+    });
+
+    if (!user) {
+      await ctx.reply(
+        "⚠️ No tienes una cuenta vinculada. Usa /start para vincularte a Trust Maker."
+      );
+      return;
+    }
+
+    const memberships = await (prisma as any).treeMember.findMany({
+      where: { userId: user.id, status: "ACTIVE" },
+      include: {
+        tree: { select: { name: true, icono: true } },
+      },
+    });
+
+    if (memberships.length === 0) {
+      await ctx.reply("🌳 No eres miembro activo de ningún árbol.");
+      return;
+    }
+
+    const lines: string[] = ["💰 *Tu cuota mensual*:\n"];
+    for (const m of memberships) {
+      const fee = m.monthlyFee ?? 0;
+      const icono = m.tree.icono ?? "🌳";
+      const statusEmoji: Record<string, string> = {
+        GRACE: "🆕",
+        ACTIVE: "✅",
+        DELINQUENT: "⚠️",
+        BLOCKED: "🚫",
+      };
+      const emoji = statusEmoji[m.paymentStatus] ?? "❓";
+      lines.push(
+        `${icono} *${m.tree.name}*: ${fee} CLP/mes ${emoji}`
+      );
+    }
+    lines.push("", "Usa /pagar para ver cómo pagar.");
+
+    await ctx.reply(lines.join("\n"), { parse_mode: "Markdown" });
+  });
+
+  // ── /pagar: mostrar info de pago ───────────────────────────────────────
+  bot.command("pagar", async (ctx) => {
+    const tgUser = ctx.from;
+    if (!tgUser) {
+      await ctx.reply("⚠️ No se pudo identificar tu cuenta de Telegram.");
+      return;
+    }
+
+    const telegramId = BigInt(tgUser.id);
+    const user = await (prisma as any).user.findUnique({
+      where: { telegramUserId: telegramId },
+      select: { id: true },
+    });
+
+    if (!user) {
+      await ctx.reply(
+        "⚠️ No tienes una cuenta vinculada. Usa /start para vincularte a Trust Maker."
+      );
+      return;
+    }
+
+    const memberships = await (prisma as any).treeMember.findMany({
+      where: { userId: user.id, status: "ACTIVE" },
+      include: {
+        tree: { select: { name: true, icono: true } },
+      },
+    });
+
+    if (memberships.length === 0) {
+      await ctx.reply("🌳 No eres miembro activo de ningún árbol.");
+      return;
+    }
+
+    const paymentLink = process.env.PAYMENT_LINK || "https://trustmaker.app/pagos";
+    const lines: string[] = ["💳 *Pagos*:\n"];
+
+    let total = 0;
+    for (const m of memberships) {
+      const fee = m.monthlyFee ?? 0;
+      total += fee;
+      const icono = m.tree.icono ?? "🌳";
+      lines.push(`${icono} *${m.tree.name}*: ${fee} CLP`);
+    }
+
+    lines.push(
+      "",
+      `💰 Total: ${total} CLP/mes`,
+      "",
+      `Para pagar, visita: ${paymentLink}`
+    );
+
+    await ctx.reply(lines.join("\n"), { parse_mode: "Markdown" });
   });
 
   // ── Grupo: auto-crear árbol cuando el bot es agregado ─────────────────
@@ -106,6 +217,15 @@ export function createBot(prisma: PrismaClient): Bot<BotContext> | null {
     // 3. Si no menciona → solo análisis pasivo, no responder
     if (cmdText === null) return;
 
+    // 3.5 Payment check: verificar acceso antes de procesar
+    if (chatId) {
+      const paymentResult = await checkPaymentAccess(prisma, ctx, chatId, cmdText);
+      if (paymentResult.blocked) {
+        await ctx.reply(paymentResult.reply, { parse_mode: "Markdown" });
+        return;
+      }
+    }
+
     // 4. Si menciona — rutear a comando o conversación natural
     const isCommand = cmdText.startsWith("/");
     const isHelpAlias = /^(help|ayuda)$/i.test(cmdText);
@@ -115,7 +235,12 @@ export function createBot(prisma: PrismaClient): Bot<BotContext> | null {
       const result = await handleMessage(prisma, ctx);
 
       if (result) {
-        await ctx.reply(result.text, { parse_mode: "Markdown" });
+        // Route through channel adapter (T27)
+        const messages = formatForChannel(
+          { text: result.text, react: result.react },
+          "telegram",
+        );
+        await sendViaTelegram(ctx, messages);
 
         if (result.react) {
           try {
@@ -129,8 +254,161 @@ export function createBot(prisma: PrismaClient): Bot<BotContext> | null {
       // ── Modo conversación natural (SPEC-2) ──
       const naturalResult = await handleNaturalMessage(prisma, ctx);
       if (naturalResult) {
-        await ctx.reply(naturalResult.text);
+        // Route through channel adapter (T27)
+        const messages = formatForChannel(
+          { text: naturalResult.text },
+          "telegram",
+        );
+        await sendViaTelegram(ctx, messages);
       }
+    }
+  });
+
+  // ── Evidencia: fotos y documentos ──────────────────────────────────────
+  // Handlers for photo and document uploads as task evidence.
+  // When the bot previously asked a user for evidence, it sets
+  // session.awaitingEvidenceTaskId + awaitingEvidenceBotMsgId.
+  // These handlers detect the upload, download the file from Telegram,
+  // and POST it to POST /api/tasks/:id/evidence.
+
+  const EVIDENCE_API_URL = "http://localhost:3100/api/tasks";
+  const API_SERVER_KEY = process.env.HERMES_API_SERVER_KEY ?? "";
+
+  async function handleEvidenceUpload(
+    ctx: BotContext,
+    fileId: string,
+    fileName: string,
+    mimeType: string,
+    taskId: string,
+    prisma: PrismaClient,
+  ): Promise<string | null> {
+    try {
+      // 1. Get file path from Telegram
+      const fileInfo = await ctx.api.getFile(fileId);
+      if (!fileInfo.file_path) {
+        console.error("[Evidence] Telegram returned no file_path for", fileId);
+        return null;
+      }
+
+      // 2. Download file from Telegram
+      const tgUrl = `https://api.telegram.org/file/bot${process.env.TELEGRAM_BOT_TOKEN}/${fileInfo.file_path}`;
+      const fileResp = await fetch(tgUrl);
+      if (!fileResp.ok) {
+        console.error("[Evidence] Failed to download from Telegram:", fileResp.status);
+        return null;
+      }
+      const fileBuffer = Buffer.from(await fileResp.arrayBuffer());
+
+      // 3. POST to evidence endpoint as multipart
+      const formData = new FormData();
+      const blob = new Blob([fileBuffer], { type: mimeType });
+      formData.append("file", blob, fileName);
+
+      const evidenceResp = await fetch(`${EVIDENCE_API_URL}/${taskId}/evidence`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${API_SERVER_KEY}`,
+        },
+        body: formData,
+      });
+
+      if (!evidenceResp.ok) {
+        const errText = await evidenceResp.text();
+        console.error("[Evidence] API rejected upload:", evidenceResp.status, errText);
+        return null;
+      }
+
+      const data = await evidenceResp.json() as any;
+      return data.evidenceUrl ?? null;
+    } catch (err: any) {
+      console.error("[Evidence] Upload exception:", err.message || err);
+      return null;
+    }
+  }
+
+  bot.on("message:photo", async (ctx) => {
+    const msg = ctx.message;
+    if (!msg?.photo || msg.photo.length === 0) return;
+
+    const session = ctx.session;
+    const taskId = session.awaitingEvidenceTaskId;
+
+    // Must be awaiting evidence
+    if (!taskId) return;
+
+    // Check reply-to matches the bot message that requested evidence (if set)
+    const botMsgId = session.awaitingEvidenceBotMsgId;
+    const repliedTo = msg.reply_to_message?.message_id;
+    if (botMsgId && repliedTo !== botMsgId) return;
+
+    // Highest resolution photo is the last element
+    const photo = msg.photo[msg.photo.length - 1];
+    const fileId = photo.file_id;
+
+    await ctx.replyWithChatAction("upload_document");
+
+    const fileName = `photo_${Date.now()}.jpg`;
+    const evidenceUrl = await handleEvidenceUpload(
+      ctx as BotContext, fileId, fileName, "image/jpeg", taskId, prisma,
+    );
+
+    // Clear awaiting state
+    session.awaitingEvidenceTaskId = null;
+    session.awaitingEvidenceBotMsgId = null;
+
+    if (evidenceUrl) {
+      await ctx.reply(
+        "✅ Evidencia recibida. La foto fue registrada para la tarea.",
+        { reply_to_message_id: msg.message_id },
+      );
+    } else {
+      await ctx.reply(
+        "⚠️ No se pudo procesar la foto como evidencia. Intenta de nuevo o contacta al administrador.",
+        { reply_to_message_id: msg.message_id },
+      );
+    }
+  });
+
+  bot.on("message:document", async (ctx) => {
+    const msg = ctx.message;
+    if (!msg?.document) return;
+
+    const session = ctx.session;
+    const taskId = session.awaitingEvidenceTaskId;
+
+    // Must be awaiting evidence
+    if (!taskId) return;
+
+    // Check reply-to matches the bot message that requested evidence (if set)
+    const botMsgId = session.awaitingEvidenceBotMsgId;
+    const repliedTo = msg.reply_to_message?.message_id;
+    if (botMsgId && repliedTo !== botMsgId) return;
+
+    const doc = msg.document;
+    const fileId = doc.file_id;
+    const fileName = doc.file_name ?? `document_${Date.now()}`;
+    const mimeType = doc.mime_type ?? "application/octet-stream";
+
+    await ctx.replyWithChatAction("upload_document");
+
+    const evidenceUrl = await handleEvidenceUpload(
+      ctx as BotContext, fileId, fileName, mimeType, taskId, prisma,
+    );
+
+    // Clear awaiting state
+    session.awaitingEvidenceTaskId = null;
+    session.awaitingEvidenceBotMsgId = null;
+
+    if (evidenceUrl) {
+      await ctx.reply(
+        `✅ Evidencia recibida. El documento "${fileName}" fue registrado para la tarea.`,
+        { reply_to_message_id: msg.message_id },
+      );
+    } else {
+      await ctx.reply(
+        "⚠️ No se pudo procesar el documento como evidencia. Intenta de nuevo o contacta al administrador.",
+        { reply_to_message_id: msg.message_id },
+      );
     }
   });
 

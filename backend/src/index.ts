@@ -41,10 +41,15 @@ import ratingRoutes from './routes/ratingRoutes';
 import agentRoutes from './routes/agentRoutes';
 import byoRoutes from './routes/byoRoutes';
 import taskRoutes from './routes/taskRoutes';
+import userRoutes from './routes/userRoutes';
 import analyticsRoutes from './routes/analyticsRoutes';
+import memberRoutes from './routes/memberRoutes';
+import stripeRoutes from './routes/stripeRoutes';
+import whatsappRoutes from './routes/whatsappRoutes';
 import { createBot } from './bot/index';
 import { startScheduler } from './bot/scheduler';
 import { stripeWebhook, paddleWebhook, createCheckout, cancelSubscription, currentCost, mySubscription } from './controllers/billingController';
+import { whatsappReceive } from './controllers/whatsappController';
 import { getTreeAgents, assignTreeAgent } from './controllers/agentController';
 
 const app = express();
@@ -128,6 +133,20 @@ app.post('/api/billing/stripe-webhook', express.raw({ type: 'application/json' }
 // Paddle webhook: raw body BEFORE JSON parser (Paddle signature verification)
 app.post('/api/billing/webhook', express.raw({ type: 'application/json' }), paddleWebhook);
 
+// WhatsApp Cloud API webhook: requiere raw body para validación de firma (opcional)
+// POST con raw parser debe estar ANTES de express.json()
+app.post('/api/whatsapp/webhook', express.raw({ type: 'application/json' }), (req, res) => {
+  // Parse raw buffer back into JSON body for whatsappReceive
+  try {
+    const raw = Buffer.isBuffer(req.body) ? req.body.toString('utf-8') : String(req.body ?? '');
+    req.body = JSON.parse(raw);
+  } catch {
+    req.body = {};
+  }
+  // Delegate to the full controller (message normalization + concierge forwarding)
+  whatsappReceive(req, res);
+});
+
 app.use(express.json());
 
 // Uploads
@@ -173,7 +192,11 @@ app.use('/api/ratings', ratingRoutes);
 app.use('/api/agents', agentRoutes);
 app.use('/api/byo', byoRoutes);
 app.use('/api/tasks', taskRoutes);
+app.use('/api/users', userRoutes);
 app.use('/api/analytics', analyticsRoutes);
+app.use('/api/members', memberRoutes);
+app.use('/api/stripe', stripeRoutes);
+app.use('/api/whatsapp', whatsappRoutes);
 
 // Tree-scoped agent endpoints
 app.get('/api/trees/:id/agents', getTreeAgents);

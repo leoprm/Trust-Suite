@@ -1,0 +1,5 @@
+-- AlterTable
+ALTER TABLE `User` ADD COLUMN `skills` VARCHAR(191) NULL;
+
+-- AlterTable
+ALTER TABLE `User` ADD COLUMN `totalXp` INT NOT NULL DEFAULT 0;

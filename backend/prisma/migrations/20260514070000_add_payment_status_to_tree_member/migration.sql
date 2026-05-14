@@ -1,0 +1,6 @@
+-- AlterTable
+ALTER TABLE `TreeMember`
+  ADD COLUMN `monthlyFee` INT NULL,
+  ADD COLUMN `paymentStatus` ENUM('GRACE', 'ACTIVE', 'DELINQUENT', 'BLOCKED') NOT NULL DEFAULT 'GRACE',
+  ADD COLUMN `graceUntil` DATETIME(3) NULL,
+  ADD COLUMN `lastPaymentAt` DATETIME(3) NULL;

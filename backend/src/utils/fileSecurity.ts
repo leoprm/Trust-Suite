@@ -7,10 +7,12 @@ import { prisma } from '../index';
 export const UPLOAD_ROOT = path.resolve(process.env.UPLOAD_ROOT || path.join(__dirname, '../../uploads'));
 
 export const ALLOWED_UPLOAD_TYPES: Record<string, { extensions: string[]; maxBytes: number; inline: boolean }> = {
-  'image/jpeg': { extensions: ['.jpg', '.jpeg'], maxBytes: 5 * 1024 * 1024, inline: true },
-  'image/png': { extensions: ['.png'], maxBytes: 5 * 1024 * 1024, inline: true },
-  'image/webp': { extensions: ['.webp'], maxBytes: 5 * 1024 * 1024, inline: true },
+  'image/jpeg': { extensions: ['.jpg', '.jpeg'], maxBytes: 10 * 1024 * 1024, inline: true },
+  'image/png': { extensions: ['.png'], maxBytes: 10 * 1024 * 1024, inline: true },
+  'image/webp': { extensions: ['.webp'], maxBytes: 10 * 1024 * 1024, inline: true },
   'application/pdf': { extensions: ['.pdf'], maxBytes: 10 * 1024 * 1024, inline: true },
+  'application/zip': { extensions: ['.zip'], maxBytes: 10 * 1024 * 1024, inline: false },
+  'application/x-zip-compressed': { extensions: ['.zip'], maxBytes: 10 * 1024 * 1024, inline: false },
   'text/plain': { extensions: ['.txt'], maxBytes: 10 * 1024 * 1024, inline: false },
   'text/csv': { extensions: ['.csv'], maxBytes: 10 * 1024 * 1024, inline: false },
   'application/vnd.openxmlformats-officedocument.wordprocessingml.document': { extensions: ['.docx'], maxBytes: 10 * 1024 * 1024, inline: false },
@@ -18,7 +20,7 @@ export const ALLOWED_UPLOAD_TYPES: Record<string, { extensions: string[]; maxByt
 };
 
 export const BLOCKED_EXTENSIONS = new Set([
-  '.exe', '.sh', '.bat', '.cmd', '.js', '.ts', '.html', '.htm', '.svg', '.php', '.jar', '.zip',
+  '.exe', '.sh', '.bat', '.cmd', '.js', '.ts', '.html', '.htm', '.svg', '.php', '.jar',
 ]);
 
 export type EvidenceVisibility = 'TREE_ONLY' | 'PUBLIC';

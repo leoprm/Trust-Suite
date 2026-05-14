@@ -30,6 +30,9 @@ import {
   formatVoteAck,
   needNotFound,
   createNeedHelp,
+  noMemberError,
+  formatCuota,
+  formatPagar,
 } from "./formatters";
 
 // ── Tipos ──────────────────────────────────────────────────────────────────
@@ -41,6 +44,8 @@ export type ParsedCommand =
   | { type: "vota"; needId: string }
   | { type: "ideas"; query: string }
   | { type: "info" }
+  | { type: "cuota" }
+  | { type: "pagar" }
   | { type: "help" }
   | { type: "unknown" };
 
@@ -68,6 +73,12 @@ export function parseCommand(raw: string): ParsedCommand {
 
   // ── info ──
   if (/^info$/i.test(cmd)) return { type: "info" };
+
+  // ── cuota ──
+  if (/^cuota$/i.test(cmd)) return { type: "cuota" };
+
+  // ── pagar ──
+  if (/^pagar$/i.test(cmd)) return { type: "pagar" };
 
   // ── help / ayuda ──
   if (/^(help|ayuda)$/i.test(cmd)) return { type: "help" };
@@ -339,6 +350,96 @@ async function handleIdeas(
   return lines.join("\n");
 }
 
+// ── cuota ──
+
+const ACTIVE_TASK_STATUSES_CUOTA = ["PENDING", "ASSIGNED", "IN_PROGRESS", "EVIDENCE_SUBMITTED"];
+
+async function handleCuota(
+  prisma: PrismaClient,
+  ctx: Context,
+  tree: TreeInfo | null
+): Promise<string> {
+  if (!tree) return noTreeError();
+
+  const userId = await resolveTelegramUser(prisma, ctx);
+  if (!userId) return "⚠️ No se pudo identificar tu usuario de Telegram. Usa /login.";
+
+  // Buscar membresía en este árbol
+  const member = await (prisma as any).treeMember.findUnique({
+    where: { userId_treeId: { userId, treeId: tree.id } },
+    select: { monthlyFee: true },
+  });
+  if (!member) return noMemberError();
+
+  // Recalcular breakdown para mostrar base + tasks
+  let costoBase = 0;
+  if (tree.creatorId) {
+    const sub = await (prisma as any).subscription.findFirst({
+      where: { userId: tree.creatorId, status: "ACTIVE" },
+      select: { monthlyCost: true },
+    });
+    costoBase = sub?.monthlyCost ?? 0;
+  }
+
+  const budgetAgg = await (prisma as any).task.aggregate({
+    where: {
+      treeId: tree.id,
+      status: { in: ACTIVE_TASK_STATUSES_CUOTA },
+    },
+    _sum: { budget: true },
+  });
+  const taskBudgetSum = budgetAgg._sum.budget ?? 0;
+
+  const memberCount = await (prisma as any).treeMember.count({
+    where: { treeId: tree.id, status: "ACTIVE" },
+  });
+
+  const taskShare = memberCount > 0 ? Math.round(taskBudgetSum / memberCount) : 0;
+  const cuota = member.monthlyFee ?? (costoBase + taskShare);
+
+  return formatCuota(cuota, costoBase, taskShare);
+}
+
+// ── pagar ──
+
+async function handlePagar(
+  prisma: PrismaClient,
+  ctx: Context,
+  tree: TreeInfo | null
+): Promise<string> {
+  if (!tree) return noTreeError();
+
+  const userId = await resolveTelegramUser(prisma, ctx);
+  if (!userId) return "⚠️ No se pudo identificar tu usuario de Telegram. Usa /login.";
+
+  const member = await (prisma as any).treeMember.findUnique({
+    where: { userId_treeId: { userId, treeId: tree.id } },
+    select: { id: true },
+  });
+  if (!member) return noMemberError();
+
+  // Balance
+  const balance = await (prisma as any).memberBalance.findUnique({
+    where: { memberId: member.id },
+    select: { availableBalance: true, pendingBalance: true },
+  });
+
+  // Splits
+  const splitsRaw = await (prisma as any).paymentSplit.findMany({
+    where: { memberId: member.id },
+    include: { need: { select: { title: true } } },
+    orderBy: { createdAt: "desc" },
+  });
+
+  const splits = splitsRaw.map((s: any) => ({
+    needTitle: s.need?.title ?? "(sin necesidad)",
+    percentage: s.percentage,
+    reason: s.reason,
+  }));
+
+  return formatPagar(balance, splits);
+}
+
 // ── Dispatcher ─────────────────────────────────────────────────────────────
 
 /**
@@ -379,7 +480,7 @@ export async function handleMessage(
 
   // Only look up tree for commands that need it
   const needsTree: ParsedCommand["type"][] = [
-    "info", "lista", "crea", "vota", "ideas",
+    "info", "lista", "crea", "vota", "ideas", "cuota", "pagar",
   ];
 
   if (needsTree.includes(parsed.type)) {
@@ -405,6 +506,12 @@ export async function handleMessage(
 
     case "ideas":
       return { text: await handleIdeas(prisma, ctx, tree, parsed.query) };
+
+    case "cuota":
+      return { text: await handleCuota(prisma, ctx, tree) };
+
+    case "pagar":
+      return { text: await handlePagar(prisma, ctx, tree) };
 
     case "help":
       return { text: helpMessage() };

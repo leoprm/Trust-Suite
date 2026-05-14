@@ -9,6 +9,10 @@ export interface BotSessionData {
   userId: string | null;
   /** Timestamp de autenticación */
   authenticatedAt: number | null;
+  /** Task ID for which the bot is expecting photo/document evidence */
+  awaitingEvidenceTaskId: string | null;
+  /** Bot's message ID that requested evidence (used to detect replies) */
+  awaitingEvidenceBotMsgId: number | null;
 }
 
 /**

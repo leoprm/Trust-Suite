@@ -63,7 +63,7 @@ export function sanitizeForEventLog(value: unknown, depth = 0): unknown {
 export function getRequestContext(req: Request) {
   const userAgentHeader = req.headers['user-agent'];
   return {
-    actorId: req.user?.id ?? null,
+    actorId: (req as any).user?.id ?? null,
     ipAddress: req.ip ?? null,
     userAgent: Array.isArray(userAgentHeader) ? userAgentHeader.join(' ') : userAgentHeader ?? null,
   };

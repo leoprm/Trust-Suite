@@ -23,6 +23,8 @@ export function helpMessage(): string {
     "• `@TrustMakerBot /crea necesidad \"título\" — descripción` — crear necesidad",
     "• `@TrustMakerBot /ideas para \"título\"` — ver ideas de una necesidad",
     "• `@TrustMakerBot /vota <id>` — votar por una necesidad",
+    "• `@TrustMakerBot /cuota` — ver tu cuota mensual",
+    "• `@TrustMakerBot /pagar` — ver tus pagos pendientes",
     "",
     "_Responde en el grupo mencionando @TrustMaker._",
   ].join("\n");
@@ -167,4 +169,57 @@ export function createNeedHelp(): string {
     "Ejemplo:",
     "`@TrustMakerBot /crea necesidad \"Mejorar onboarding\" — Crear un tutorial interactivo para nuevos miembros`",
   ].join("\n");
+}
+
+// ── Cuota ──────────────────────────────────────────────────────────────────
+
+export function noMemberError(): string {
+  return "⚠️ No eres miembro de este árbol. Únete desde la app web para ver tu cuota.";
+}
+
+export function formatCuota(cuota: number, costoBase: number, taskShare: number): string {
+  return [
+    `💰 *Tu cuota mensual*`,
+    "",
+    `💵 Total: *$${cuota.toLocaleString("es-CL")} CLP*`,
+    `📦 Base: $${costoBase.toLocaleString("es-CL")} CLP`,
+    `🔧 Tasks: $${taskShare.toLocaleString("es-CL")} CLP`,
+    "",
+    `_Paga con /pagar_`,
+  ].join("\n");
+}
+
+// ── Pagar ──────────────────────────────────────────────────────────────────
+
+export function formatPagar(
+  balance: { availableBalance: number; pendingBalance: number } | null,
+  splits: Array<{ needTitle: string; percentage: number; reason: string }>,
+): string {
+  const lines: string[] = ["💳 *Pagos pendientes*", ""];
+
+  if (balance) {
+    lines.push(
+      `💵 Saldo disponible: $${balance.availableBalance.toLocaleString("es-CL")} CLP`,
+      `⏳ Saldo pendiente: $${balance.pendingBalance.toLocaleString("es-CL")} CLP`,
+    );
+  } else {
+    lines.push("💵 Sin balance registrado aún.");
+  }
+
+  if (splits.length > 0) {
+    lines.push("", "*Splits de pago:*");
+    for (const s of splits) {
+      const pct = Math.round(s.percentage);
+      lines.push(`• ${s.needTitle} — ${pct}% (${s.reason})`);
+    }
+  } else {
+    lines.push("", "_Sin splits de pago pendientes._");
+  }
+
+  lines.push(
+    "",
+    `Para pagar tu cuota, visita: ${process.env.PAYMENT_LINK || "https://trustmaker.app/pagos"}`,
+  );
+
+  return truncar(lines.join("\n"));
 }

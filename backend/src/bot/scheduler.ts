@@ -10,7 +10,7 @@ import type { ScheduledTask } from "node-cron";
 import { PrismaClient } from "@prisma/client";
 import type { Bot } from "grammy";
 import type { BotContext } from "./types";
-import { runDailyClose } from "./cron";
+import { runDailyClose, runMonthlyFee } from "./cron";
 import {
   applyDecay,
   assignAgentToTreeSlot,
@@ -61,6 +61,7 @@ let midnightTask: ScheduledTask | null = null;
 let decayTask: ScheduledTask | null = null;
 let rotationTask: ScheduledTask | null = null;
 let autoScaleTask: ScheduledTask | null = null;
+let monthlyFeeTask: ScheduledTask | null = null;
 
 /**
  * Arranca todos los schedulers.
@@ -144,6 +145,21 @@ export function startScheduler(
   });
   console.log("[Scheduler] 🔄 AutoScaler programado cada 6 horas");
 
+  // ── Cron: 0 0 1 * * (día 1 de cada mes a medianoche) — Cuota mensual ──
+  monthlyFeeTask = cron.schedule("0 0 1 * *", async () => {
+    console.log("[Scheduler] 💰 Día 1 del mes — calculando cuota mensual…");
+    try {
+      const results = await runMonthlyFee(prismaClient, bot);
+      const treesWithFee = results.filter((r) => r.cuota > 0);
+      console.log(
+        `[Scheduler] 💰 Cuota mensual: ${treesWithFee.length} árboles con cuota > 0 de ${results.length} total.`
+      );
+    } catch (err) {
+      console.error("[Scheduler] Error fatal en cuota mensual:", err);
+    }
+  });
+  console.log("[Scheduler] 💰 Cuota mensual programada al día 1 de cada mes a las 00:00");
+
   // ── Dev mode hint ──
   if (process.env.NODE_ENV !== "production") {
     console.log(
@@ -168,7 +184,7 @@ export async function triggerDailyClose(
  */
 export function stopScheduler(): void {
   let stopped = false;
-  for (const task of [midnightTask, decayTask, rotationTask, autoScaleTask]) {
+  for (const task of [midnightTask, decayTask, rotationTask, autoScaleTask, monthlyFeeTask]) {
     if (task) {
       task.stop();
       stopped = true;
@@ -178,6 +194,7 @@ export function stopScheduler(): void {
   decayTask = null;
   rotationTask = null;
   autoScaleTask = null;
+  monthlyFeeTask = null;
   if (stopped) {
     console.log("[Scheduler] ⏹️ Todos los schedulers detenidos.");
   }
