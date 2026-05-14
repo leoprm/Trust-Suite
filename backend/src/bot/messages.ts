@@ -14,7 +14,7 @@ import { extractCommandText } from "./commands";
 // ── Constantes ─────────────────────────────────────────────────────────────
 
 const CONCIERGE_URL = "http://localhost:3100/api/concierge";
-const CONCIERGE_TIMEOUT_MS = 30_000;
+const CONCIERGE_TIMEOUT_MS = 90_000;
 
 // ── Handler ────────────────────────────────────────────────────────────────
 
@@ -52,8 +52,10 @@ export async function handleNaturalMessage(
     };
   }
 
-  // 3. Mostrar "typing"
-  await ctx.replyWithChatAction("typing");
+  // 3. Mostrar "typing" persistente (cada 4s)
+  const typingInterval = setInterval(() => {
+    ctx.replyWithChatAction("typing").catch(() => {});
+  }, 4000);
 
   // 4. Llamar concierge
   const API_SERVER_KEY = process.env.HERMES_API_SERVER_KEY ?? "";
@@ -102,5 +104,6 @@ export async function handleNaturalMessage(
     };
   } finally {
     clearTimeout(timeoutId);
+    clearInterval(typingInterval);
   }
 }
