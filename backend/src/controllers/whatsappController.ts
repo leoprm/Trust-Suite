@@ -1,4 +1,5 @@
 import { Request, Response } from 'express';
+import { sendTextMessage } from '../services/whatsappService';
 
 // ── WhatsApp Cloud API Webhook ─────────────────────────────────────────────
 // Recibe mensajes de WhatsApp Cloud API, verifica el token de validación,
@@ -252,10 +253,13 @@ export const whatsappReceive = async (req: Request, res: Response) => {
 
         // Forward to concierge (fire-and-forget — response already sent)
         forwardToConcierge(normalized, treeId)
-          .then((reply) => {
+          .then(async (reply) => {
             console.log(`[WhatsApp] Concierge reply to ${normalized.sender}: "${reply.slice(0, 80)}"`);
-            // TODO: Send reply back to WhatsApp via Cloud API
-            // For now, replies are logged — WhatsApp Cloud API send integration is a follow-up task.
+            // Send reply back to WhatsApp via Cloud API
+            const result = await sendTextMessage(normalized.sender, reply);
+            if (!result.ok) {
+              console.error(`[WhatsApp] Failed to send reply to ${normalized.sender}: ${result.error}`);
+            }
           })
           .catch((err) => {
             console.error('[WhatsApp] Forward error:', err.message);
