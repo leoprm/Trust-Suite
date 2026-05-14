@@ -159,38 +159,41 @@ async function resolveTelegramUser(
   const tgUser = ctx.from;
   if (!tgUser) return null;
 
-  const telegramId = tgUser.id.toString();
-
-  // Buscar por telegramId en el username (convención: tg_<id>)
-  const username = tgUser.username || `tg_${telegramId}`;
+  const telegramId = BigInt(tgUser.id);
 
   try {
-    const existing = await (prisma as any).user.findUnique({
-      where: { username },
+    // 1. Buscar por telegramUserId (mismo enfoque que voting.ts)
+    const byTgId = await (prisma as any).user.findUnique({
+      where: { telegramUserId: telegramId },
     });
-    if (existing) return existing.id;
+    if (byTgId) return byTgId.id;
 
-    // Crear usuario mínimo
+    // 2. Fallback: buscar por username de Telegram (si tiene)
+    if (tgUser.username) {
+      const byUsername = await (prisma as any).user.findUnique({
+        where: { username: tgUser.username },
+      });
+      if (byUsername) {
+        // Actualizar su telegramUserId para futuros lookups
+        await (prisma as any).user.update({
+          where: { id: byUsername.id },
+          data: { telegramUserId: telegramId },
+        });
+        return byUsername.id;
+      }
+    }
+
+    // 3. Crear nuevo usuario con telegramUserId asignado
     const created = await (prisma as any).user.create({
       data: {
-        username,
+        username: tgUser.username || `tg_${tgUser.id}`,
+        telegramUserId: telegramId,
         role: "USER",
       },
     });
     return created.id;
   } catch {
-    // Si falla (username collision), intentar con tg_ prefijo
-    try {
-      const fallback = await (prisma as any).user.create({
-        data: {
-          username: `tg_${telegramId}`,
-          role: "USER",
-        },
-      });
-      return fallback.id;
-    } catch {
-      return null;
-    }
+    return null;
   }
 }
 
@@ -300,6 +303,11 @@ async function handleVota(
           await (prisma as any).idea.update({
             where: { id: ideaId },
             data: { totalLikes: { increment: 1 } },
+          });
+          // Increment daily votes on the need (only once per user-need)
+          await (prisma as any).need.update({
+            where: { id: needId },
+            data: { dailyVotes: { increment: 1 } },
           });
         }
       }
