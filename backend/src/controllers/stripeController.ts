@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import Stripe from 'stripe';
 import { prisma } from '../index';
+import { logEvent } from '../services/eventLogService';
 
 // ── Stripe initialization ─────────────────────────────────────────────────────
 
@@ -167,6 +168,145 @@ export const getMemberBalance = async (req: any, res: Response) => {
   } catch (error: any) {
     console.error('[getMemberBalance]', error);
     res.status(500).json({ error: error.message || 'Failed to fetch balance' });
+  }
+};
+
+// ── POST /api/members/:id/withdraw ───────────────────────────────────────────
+// Creates a Stripe Payout to the member's linked bank account via Stripe Connect.
+// Body: { amount: number }
+// Requires: Stripe Connect onboarding completed, availableBalance >= amount.
+
+export const withdrawFunds = async (req: any, res: Response) => {
+  try {
+    const memberId = req.params.id;
+    const userId = req.user!.id;
+    const { amount } = req.body;
+
+    // ── Validation ──────────────────────────────────────────────────────
+    if (!amount || typeof amount !== 'number' || amount <= 0) {
+      return res.status(400).json({ error: 'amount (positive integer in CLP) is required' });
+    }
+    if (!Number.isInteger(amount)) {
+      return res.status(400).json({ error: 'amount must be an integer (CLP has no decimal subunit)' });
+    }
+
+    // ── Look up member and verify ownership ─────────────────────────────
+    const member = await prisma.treeMember.findUnique({
+      where: { id: memberId },
+      include: { balance: true, user: { select: { id: true, username: true } }, tree: true },
+    });
+
+    if (!member) {
+      return res.status(404).json({ error: 'Member not found' });
+    }
+
+    // Only the member themselves can withdraw
+    if (member.userId !== userId) {
+      return res.status(403).json({ error: 'You can only withdraw from your own balance' });
+    }
+
+    // ── Balance checks ──────────────────────────────────────────────────
+    if (!member.balance) {
+      return res.status(400).json({ error: 'No balance record found. Complete Stripe Connect onboarding first.' });
+    }
+
+    if (!member.balance.stripeAccountId) {
+      return res.status(400).json({ error: 'Stripe Connect not configured. Complete onboarding first.' });
+    }
+
+    if (member.balance.availableBalance < amount) {
+      return res.status(400).json({
+        error: `Insufficient balance. Available: ${member.balance.availableBalance} CLP, requested: ${amount} CLP`,
+      });
+    }
+
+    // ── Verify Stripe account can receive payouts ───────────────────────
+    try {
+      const account = await stripe().accounts.retrieve(member.balance.stripeAccountId);
+      if (!account.payouts_enabled) {
+        return res.status(400).json({
+          error: 'Stripe account is not fully onboarded. Payouts are not yet enabled.',
+        });
+      }
+    } catch (stripeErr: any) {
+      console.error('[withdrawFunds] Stripe account retrieval failed:', stripeErr.message);
+      return res.status(500).json({ error: 'Failed to verify Stripe account status' });
+    }
+
+    // ── Create Stripe Payout ────────────────────────────────────────────
+    let payout: any;
+    try {
+      payout = await stripe().payouts.create(
+        {
+          amount,
+          currency: 'clp',
+          description: `Withdrawal for ${member.user.username} (tree: ${member.tree.name})`,
+          metadata: {
+            memberId,
+            userId,
+            treeId: member.treeId,
+          },
+        },
+        { stripeAccount: member.balance.stripeAccountId },
+      );
+    } catch (stripeErr: any) {
+      console.error('[withdrawFunds] Stripe payout failed:', stripeErr.message);
+      return res.status(500).json({
+        error: `Stripe payout failed: ${stripeErr.message}`,
+      });
+    }
+
+    // ── Deduct from availableBalance ────────────────────────────────────
+    const updatedBalance = await prisma.memberBalance.update({
+      where: { memberId },
+      data: { availableBalance: { decrement: amount } },
+    });
+
+    // ── Record in TransactionLedger ─────────────────────────────────────
+    await prisma.transactionLedger.create({
+      data: {
+        treeId: member.treeId,
+        memberId,
+        type: 'WITHDRAWAL',
+        amount: -amount,
+        description: `Payout to bank account — ${member.user.username}`,
+        stripeReference: payout.id,
+        metadataJson: JSON.stringify({
+          payoutId: payout.id,
+          payoutStatus: payout.status,
+          payoutArrivalDate: payout.arrival_date,
+        }),
+      },
+    });
+
+    // ── Log event ───────────────────────────────────────────────────────
+    void logEvent({
+      treeId: member.treeId,
+      actorId: userId,
+      action: 'FUNDS_WITHDRAWN',
+      entityType: 'MemberBalance',
+      entityId: member.balance.id,
+      afterJson: {
+        amount,
+        payoutId: payout.id,
+        availableBefore: member.balance.availableBalance,
+        availableAfter: updatedBalance.availableBalance,
+      },
+      source: 'USER',
+      severity: 'INFO',
+    });
+
+    res.json({
+      message: `Successfully withdrawn ${amount} CLP`,
+      payoutId: payout.id,
+      payoutStatus: payout.status,
+      arrivalDate: payout.arrival_date,
+      availableBalance: updatedBalance.availableBalance,
+      pendingBalance: updatedBalance.pendingBalance,
+    });
+  } catch (error: any) {
+    console.error('[withdrawFunds]', error);
+    res.status(500).json({ error: error.message || 'Withdrawal failed' });
   }
 };
 

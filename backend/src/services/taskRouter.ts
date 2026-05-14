@@ -142,8 +142,8 @@ async function findHumanCandidates(
     // Get active task count
     const activeTasks = await prisma.task.count({
       where: {
-        assignedTo: member.id,
-        status: { in: ['OPEN', 'IN_PROGRESS'] },
+        assigneeId: member.id,
+        status: { in: ['PENDING', 'IN_PROGRESS'] },
       },
     });
 
@@ -153,7 +153,7 @@ async function findHumanCandidates(
     // Count tasks assigned this week for rotation
     const tasksThisWeek = await prisma.task.count({
       where: {
-        assignedTo: member.id,
+        assigneeId: member.id,
         createdAt: { gte: oneWeekAgo },
       },
     });
@@ -205,7 +205,7 @@ export async function routeTask(taskId: string): Promise<string | null> {
   // 1. Load task
   const task = await prisma.task.findUnique({
     where: { id: taskId },
-    select: { id: true, treeId: true, title: true, description: true, status: true, assignedTo: true },
+    select: { id: true, treeId: true, title: true, description: true, status: true, assigneeId: true },
   });
 
   if (!task) {
@@ -214,7 +214,7 @@ export async function routeTask(taskId: string): Promise<string | null> {
   }
 
   // Don't re-route already assigned or completed tasks
-  if (task.assignedTo || (task.status !== 'OPEN' && task.status !== 'IN_PROGRESS')) {
+  if (task.assigneeId || (task.status !== 'PENDING' && task.status !== 'IN_PROGRESS')) {
     return null;
   }
 
@@ -261,8 +261,8 @@ export async function routeTask(taskId: string): Promise<string | null> {
 
     const activeTasks = await prisma.task.count({
       where: {
-        assignedTo: tmId,
-        status: { in: ['OPEN', 'IN_PROGRESS'] },
+        assigneeId: tmId,
+        status: { in: ['PENDING', 'IN_PROGRESS'] },
       },
     });
 
@@ -308,7 +308,7 @@ export async function routeTask(taskId: string): Promise<string | null> {
   await prisma.task.update({
     where: { id: taskId },
     data: {
-      assignedTo: best.treeMemberId,
+      assigneeId: best.treeMemberId,
       status: 'IN_PROGRESS',
     },
   });
@@ -320,7 +320,7 @@ export async function routeTask(taskId: string): Promise<string | null> {
     entityType: 'Task',
     entityId: taskId,
     afterJson: {
-      assignedTo: best.treeMemberId,
+      assigneeId: best.treeMemberId,
       agentId: best.agentId ?? null,
       isHuman: best.isHuman,
       role: best.role ?? null,

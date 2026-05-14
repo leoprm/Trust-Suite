@@ -9,6 +9,7 @@ import { logEvent } from '../services/eventLogService';
 import { resolveStoragePath, UPLOAD_ROOT } from '../utils/fileSecurity';
 import { matchAndAwardXp } from '../services/skillMatchingService';
 import { processTaskPayment, previewTaskSplit } from '../services/paymentSplitService';
+import { broadcastDisputeVote } from '../services/telegramBotService';
 
 // ── evaluateAndAssignTask (internal, fire-and-forget) ─────────────────────────
 // Called after task creation. Evaluates difficulty via Hermes Agent,
@@ -22,33 +23,12 @@ export async function evaluateAndAssignTask(
   actorId: string,
 ): Promise<void> {
   try {
-    // ── Step 1: Evaluate difficulty ──────────────────────────────────────
-    const difficulty = await evaluateDifficulty(title, description, treeId);
+    // ── Smart route via TaskRouter ───────────────────────────────────────
+    const assignedToResult = await routeTask(taskId);
 
-    if (difficulty !== null) {
-      await prisma.task.update({
-        where: { id: taskId },
-        data: { difficulty },
-      });
-
-      await logEvent({
-        treeId,
-        actorId,
-        action: 'DIFFICULTY_EVALUATED',
-        entityType: 'Task',
-        entityId: taskId,
-        afterJson: { difficulty },
-        source: 'AUTOMATION',
-        severity: 'INFO',
-      });
-    }
-
-    // ── Step 2: Smart route via TaskRouter ───────────────────────────────
-    const assignedTo = await routeTask(taskId);
-
-    if (assignedTo) {
+    if (assignedToResult) {
       console.log(
-        `[taskController] Task ${taskId} routed to ${assignedTo}`,
+        `[taskController] Task ${taskId} routed to ${assignedToResult}`,
       );
     } else {
       console.warn(
@@ -66,7 +46,7 @@ export async function evaluateAndAssignTask(
 // ── POST /api/tasks ───────────────────────────────────────────────────────────
 export const createTask = async (req: Request, res: Response) => {
   try {
-    const { treeId, needId, title, description, complexity, skills } = req.body;
+    const { treeId, needId, title, description, budget, skills } = req.body;
 
     // ── Validation ───────────────────────────────────────────────────────
     if (!treeId || typeof treeId !== 'string') {
@@ -79,13 +59,10 @@ export const createTask = async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'description (string) is required' });
     }
 
-    // Validate complexity if provided
-    const VALID_COMPLEXITIES = ['simple', 'media', 'compleja'];
-    if (complexity !== undefined && complexity !== null) {
-      if (typeof complexity !== 'string' || !VALID_COMPLEXITIES.includes(complexity)) {
-        return res.status(400).json({
-          error: `complexity must be one of: ${VALID_COMPLEXITIES.join(', ')}`,
-        });
+    // Validate budget if provided
+    if (budget !== undefined && budget !== null) {
+      if (typeof budget !== 'number' || budget < 0) {
+        return res.status(400).json({ error: 'budget must be a non-negative number' });
       }
     }
 
@@ -111,7 +88,7 @@ export const createTask = async (req: Request, res: Response) => {
         title: title.trim(),
         description: description.trim(),
         creatorId: req.user?.id,
-        complexity: complexity || null,
+        budget: budget || 0,
         skills: skills || null,
         status: 'PENDING',
       },
@@ -151,7 +128,7 @@ export const createTask = async (req: Request, res: Response) => {
 // ── GET /api/tasks ────────────────────────────────────────────────────────────
 export const getTasks = async (req: Request, res: Response) => {
   try {
-    const { treeId, status, assignedTo } = req.query;
+    const { treeId, status, assigneeId } = req.query;
 
     if (!treeId || typeof treeId !== 'string') {
       return res.status(400).json({ error: 'treeId query param is required' });
@@ -163,21 +140,21 @@ export const getTasks = async (req: Request, res: Response) => {
       where.status = status;
     }
 
-    if (assignedTo && typeof assignedTo === 'string') {
-      where.assignedTo = assignedTo;
+    if (assigneeId && typeof assigneeId === 'string') {
+      where.assigneeId = assigneeId;
     }
 
     const tasks = await prisma.task.findMany({
       where,
       orderBy: { createdAt: 'desc' },
       include: {
-        assignedAI: {
+        assignee: {
           select: {
             id: true,
-            aiProfile: true,
-            aiProvider: true,
-            aiModel: true,
-            level: true,
+            
+            
+            
+            
           },
         },
       },
@@ -207,7 +184,7 @@ export const routeTaskEndpoint = async (req: Request, res: Response) => {
     }
 
     // Only re-route OPEN or IN_PROGRESS tasks
-    if (task.status !== 'OPEN' && task.status !== 'IN_PROGRESS') {
+    if (task.status !== 'PENDING' && task.status !== 'IN_PROGRESS') {
       return res.status(400).json({
         error: `Cannot re-route task with status '${task.status}'`,
       });
@@ -216,22 +193,22 @@ export const routeTaskEndpoint = async (req: Request, res: Response) => {
     // Clear current assignment so routeTask can re-assign
     await prisma.task.update({
       where: { id: taskId },
-      data: { assignedTo: null, status: 'OPEN' },
+      data: { assigneeId: null, status: 'PENDING' },
     });
 
-    const assignedTo = await routeTask(taskId);
+    const assignedToResult = await routeTask(taskId);
 
-    if (assignedTo) {
+    if (assignedToResult) {
       const updated = await prisma.task.findUnique({
         where: { id: taskId },
         include: {
-          assignedAI: {
+          assignee: {
             select: {
               id: true,
-              aiProfile: true,
-              aiProvider: true,
-              aiModel: true,
-              level: true,
+              
+              
+              
+              
             },
           },
         },
@@ -263,14 +240,14 @@ export const getTask = async (req: Request, res: Response) => {
     const task = await prisma.task.findUnique({
       where: { id: taskId },
       include: {
-        assignedAI: {
+        assignee: {
           select: {
             id: true,
-            aiProfile: true,
-            aiProvider: true,
-            aiModel: true,
-            level: true,
-            xp: true,
+            
+            
+            
+            
+            totalXp: true,
           },
         },
       },
@@ -465,6 +442,7 @@ export const verifyTask = async (req: Request, res: Response) => {
       select: {
         id: true,
         treeId: true,
+        needId: true,
         status: true,
         complexity: true,
         xpAwarded: true,
@@ -473,6 +451,7 @@ export const verifyTask = async (req: Request, res: Response) => {
         title: true,
         description: true,
         skills: true,
+        budget: true,
       },
     });
 
@@ -676,6 +655,9 @@ export const disputeTask = async (req: Request, res: Response) => {
     }
 
     // ── Update task ───────────────────────────────────────────────────────
+    const now = new Date();
+    const expiresAt = new Date(now.getTime() + 48 * 60 * 60 * 1000); // 48h
+
     const updated = await prisma.task.update({
       where: { id: taskId },
       data: {
@@ -683,6 +665,8 @@ export const disputeTask = async (req: Request, res: Response) => {
         disputedById: userId,
         disputeReason: reason.trim(),
         disputeEvidenceUrl: evidence?.trim() || null,
+        disputedAt: now,
+        disputeExpiresAt: expiresAt,
       },
     });
 
@@ -700,6 +684,11 @@ export const disputeTask = async (req: Request, res: Response) => {
       },
       source: 'USER',
       severity: 'WARNING',
+    });
+
+    // ── Broadcast to Telegram (fire-and-forget) ──────────────────────────
+    broadcastDisputeVote(taskId, task.treeId, updated.title).catch((err: Error) => {
+      console.error('[taskController] broadcastDisputeVote error:', err.message);
     });
 
     res.json(updated);

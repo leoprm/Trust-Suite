@@ -115,6 +115,73 @@ export function registerReactionHandler(bot: Bot<BotContext>): void {
         return;
       }
 
+      // ── Try matching message to a DisputeMessage ─────────────────
+      const disputeMsg = await prisma.disputeMessage.findFirst({
+        where: {
+          telegramMessageId: messageId,
+          status: "OPEN",
+        },
+      });
+
+      if (disputeMsg) {
+        const emoji = getReactionEmoji(
+          (update.new_reaction || [])[update.new_reaction?.length - 1],
+        );
+
+        if (!emoji) return;
+
+        let vote: "UP" | "DOWN" | null = null;
+        if (emoji === "👍") vote = "UP";
+        else if (emoji === "👎") vote = "DOWN";
+        if (!vote) return;
+
+        // Upsert vote
+        const existingVote = await prisma.telegramDisputeVote.findUnique({
+          where: {
+            disputeMessageId_telegramUserId: {
+              disputeMessageId: disputeMsg.id,
+              telegramUserId: BigInt(tgUser.id),
+            },
+          },
+        });
+
+        if (existingVote) {
+          await prisma.telegramDisputeVote.update({
+            where: { id: existingVote.id },
+            data: { vote },
+          });
+        } else {
+          await prisma.telegramDisputeVote.create({
+            data: {
+              disputeMessageId: disputeMsg.id,
+              telegramUserId: BigInt(tgUser.id),
+              vote,
+            },
+          });
+        }
+
+        // Update counts
+        const counts = await prisma.telegramDisputeVote.groupBy({
+          by: ["vote"],
+          where: { disputeMessageId: disputeMsg.id },
+          _count: { vote: true },
+        });
+
+        let thumbsUp = 0;
+        let thumbsDown = 0;
+        for (const c of counts) {
+          if (c.vote === "UP") thumbsUp = c._count.vote;
+          if (c.vote === "DOWN") thumbsDown = c._count.vote;
+        }
+
+        await prisma.disputeMessage.update({
+          where: { id: disputeMsg.id },
+          data: { thumbsUp, thumbsDown },
+        });
+
+        return;
+      }
+
       // ── Try matching message to a Need (future: Need voting) ──────
       const need = await prisma.need.findFirst({
         where: { telegramMessageId: messageId },

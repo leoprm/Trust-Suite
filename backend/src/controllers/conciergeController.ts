@@ -364,7 +364,9 @@ async function createTaskFromBot(
       description: budget
         ? `${description}\n\n💰 Presupuesto: ${budget}`
         : description,
-      status: 'OPEN',
+      budget: budget ? parseInt(budget) : 0,
+      creatorId: actorId,
+      status: 'PENDING',
     },
   });
 

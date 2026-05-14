@@ -20,8 +20,8 @@ import { prisma } from '../index';
 
 const STRIPE_SECRET = process.env.STRIPE_SECRET_KEY || '';
 
-let _stripe: Stripe | null = null;
-function stripeClient(): Stripe {
+let _stripe: any = null;
+function stripeClient(): any {
   if (!_stripe) {
     _stripe = new Stripe(STRIPE_SECRET, {
       apiVersion: '2025-03-31.basil' as any,
@@ -66,20 +66,11 @@ interface SplitResult {
 export async function processTaskPayment(taskId: string): Promise<SplitResult> {
   const errors: string[] = [];
 
-  // 1. Fetch task with need, creator, and assignee
+  // 1. Fetch task with need, creator, and assignee (just IDs — we look up TreeMembers separately)
   const task = await prisma.task.findUnique({
     where: { id: taskId },
     include: {
-      need: {
-        include: {
-          creator: {
-            include: { memberships: { where: { status: 'ACTIVE' }, take: 1 } },
-          },
-        },
-      },
-      assignee: {
-        include: { memberships: { where: { status: 'ACTIVE' }, take: 1 } },
-      },
+      need: { select: { id: true, creatorId: true } },
     },
   });
 
@@ -98,12 +89,13 @@ export async function processTaskPayment(taskId: string): Promise<SplitResult> {
   }
 
   // 2. Identify need creator's TreeMember and task executor's TreeMember
+  //    Look up directly by userId + treeId to ensure correct tree scope.
   const treeId = task.treeId;
 
-  const needCreator = task.need?.creator;
-  const taskExecutor = task.assignee;
+  const needCreatorId = task.need?.creatorId;
+  const taskExecutorId = task.assigneeId;
 
-  if (!needCreator) {
+  if (!needCreatorId) {
     return {
       taskId,
       budget,
@@ -112,35 +104,19 @@ export async function processTaskPayment(taskId: string): Promise<SplitResult> {
     };
   }
 
-  // Find TreeMember for need creator
-  let creatorMember = needCreator.memberships?.[0] || null;
-  if (!creatorMember && needCreator.id) {
-    creatorMember = await prisma.treeMember.findUnique({
-      where: { userId_treeId: { userId: needCreator.id, treeId } },
-      include: { balance: true },
-    });
-  } else if (creatorMember) {
-    creatorMember = await prisma.treeMember.findUnique({
-      where: { id: creatorMember.id },
-      include: { balance: true },
-    });
-  }
+  // Find TreeMember for need creator (direct lookup by userId + treeId)
+  const creatorMember = await prisma.treeMember.findUnique({
+    where: { userId_treeId: { userId: needCreatorId, treeId } },
+    include: { balance: true },
+  });
 
   // Find TreeMember for task executor
   let executorMember: any = null;
-  if (taskExecutor) {
-    executorMember = taskExecutor.memberships?.[0] || null;
-    if (!executorMember && taskExecutor.id) {
-      executorMember = await prisma.treeMember.findUnique({
-        where: { userId_treeId: { userId: taskExecutor.id, treeId } },
-        include: { balance: true },
-      });
-    } else if (executorMember) {
-      executorMember = await prisma.treeMember.findUnique({
-        where: { id: executorMember.id },
-        include: { balance: true },
-      });
-    }
+  if (taskExecutorId) {
+    executorMember = await prisma.treeMember.findUnique({
+      where: { userId_treeId: { userId: taskExecutorId, treeId } },
+      include: { balance: true },
+    });
   }
 
   // 3. Build split entries
@@ -150,7 +126,7 @@ export async function processTaskPayment(taskId: string): Promise<SplitResult> {
   if (creatorMember) {
     entries.push({
       memberId: creatorMember.id,
-      memberUserId: needCreator.id,
+      memberUserId: needCreatorId,
       reason: 'need_creator',
       percentage: CREATOR_PERCENTAGE,
       amountClp: Math.round(budget * CREATOR_PERCENTAGE / 100),
@@ -165,7 +141,7 @@ export async function processTaskPayment(taskId: string): Promise<SplitResult> {
   if (executorMember) {
     entries.push({
       memberId: executorMember.id,
-      memberUserId: taskExecutor!.id,
+      memberUserId: taskExecutorId!,
       reason: 'task_executor',
       percentage: EXECUTOR_PERCENTAGE,
       amountClp: Math.round(budget * EXECUTOR_PERCENTAGE / 100),
@@ -230,6 +206,25 @@ export async function processTaskPayment(taskId: string): Promise<SplitResult> {
           data: { availableBalance: { increment: entry.amountClp } },
         });
 
+        // Record transaction in ledger
+        await prisma.transactionLedger.create({
+          data: {
+            treeId: task.treeId,
+            memberId: entry.memberId,
+            type: 'SPLIT_CREDIT',
+            amount: entry.amountClp,
+            description: `Task ${taskId} — ${entry.reason} split (${entry.percentage}%)`,
+            stripeReference: transfer.id,
+            metadataJson: JSON.stringify({
+              taskId,
+              needId: task.needId,
+              reason: entry.reason,
+              percentage: entry.percentage,
+              transferId: transfer.id,
+            }),
+          },
+        });
+
         splitResults.push({
           memberId: entry.memberId,
           reason: entry.reason,
@@ -253,6 +248,24 @@ export async function processTaskPayment(taskId: string): Promise<SplitResult> {
           data: { pendingBalance: { increment: entry.amountClp } },
         });
 
+        // Record pending credit in ledger
+        await prisma.transactionLedger.create({
+          data: {
+            treeId: task.treeId,
+            memberId: entry.memberId,
+            type: 'PENDING_CREDIT',
+            amount: entry.amountClp,
+            description: `Task ${taskId} — ${entry.reason} split (${entry.percentage}%) — pending (Stripe error: ${stripeErr.message})`,
+            metadataJson: JSON.stringify({
+              taskId,
+              needId: task.needId,
+              reason: entry.reason,
+              percentage: entry.percentage,
+              failReason: stripeErr.message,
+            }),
+          },
+        });
+
         splitResults.push({
           memberId: entry.memberId,
           reason: entry.reason,
@@ -270,6 +283,24 @@ export async function processTaskPayment(taskId: string): Promise<SplitResult> {
       await prisma.memberBalance.update({
         where: { memberId: entry.memberId },
         data: { pendingBalance: { increment: entry.amountClp } },
+      });
+
+      // Record pending credit in ledger
+      await prisma.transactionLedger.create({
+        data: {
+          treeId: task.treeId,
+          memberId: entry.memberId,
+          type: 'PENDING_CREDIT',
+          amount: entry.amountClp,
+          description: `Task ${taskId} — ${entry.reason} split (${entry.percentage}%) — pending (no Stripe Connect)`,
+          metadataJson: JSON.stringify({
+            taskId,
+            needId: task.needId,
+            reason: entry.reason,
+            percentage: entry.percentage,
+            reasonPending: 'no_stripe_connect',
+          }),
+        },
       });
 
       splitResults.push({

@@ -48,6 +48,7 @@ import stripeRoutes from './routes/stripeRoutes';
 import whatsappRoutes from './routes/whatsappRoutes';
 import { createBot } from './bot/index';
 import { startScheduler } from './bot/scheduler';
+import { initDisputeService } from './services/telegramBotService';
 import { stripeWebhook, paddleWebhook, createCheckout, cancelSubscription, currentCost, mySubscription } from './controllers/billingController';
 import { whatsappReceive } from './controllers/whatsappController';
 import { getTreeAgents, assignTreeAgent } from './controllers/agentController';
@@ -62,6 +63,9 @@ export const prisma = new PrismaClient();
 // The bot starts polling immediately inside createBot().
 const telegramBot = createBot(prisma);
 
+// ── Initialize dispute broadcast service ──────────────────────────────────────
+initDisputeService(prisma, telegramBot);
+
 // ── Scheduler: cierre diario a medianoche ──────────────────────────────────────
 // El scheduler necesita el bot para enviar resúmenes a los grupos.
 // Si el bot no está configurado (sin TELEGRAM_BOT_TOKEN), el scheduler
@@ -75,7 +79,7 @@ if (telegramBot) {
   startScheduler(prisma, null);
 }
 
-// ── Database Bootstrap ────────────────────────────────────────────────────────
+// ── Scheduler: cierre diario, cuota mensual, resolución de disputas ────────
 async function bootstrapDatabase(): Promise<void> {
   const sqlPath = path.resolve(__dirname, '../../database/init.sql');
   if (!fs.existsSync(sqlPath)) {

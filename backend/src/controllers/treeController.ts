@@ -462,3 +462,94 @@ export const updateMemberPower = async (_req: any, res: Response) => {
 export const inviteAI = async (_req: any, res: Response) => {
   res.status(501).json({ error: 'AI members removed in V3' });
 };
+
+// ── GET /api/tree/:id/ledger ────────────────────────────────────────────────
+// Returns the transaction history for a tree (admin only).
+// Includes all TransactionLedger entries: split credits, withdrawals, etc.
+// Optional query params: memberId, type, limit (default 50), offset (default 0).
+
+export const getTreeLedger = async (req: any, res: Response) => {
+  try {
+    const treeId = req.params.id;
+    const userId = req.user!.id;
+    const { memberId, type, limit = '50', offset = '0' } = req.query;
+
+    // ── Verify tree exists ───────────────────────────────────────────────
+    const tree = await prisma.tree.findUnique({ where: { id: treeId } });
+    if (!tree) {
+      return res.status(404).json({ error: 'Tree not found' });
+    }
+
+    // ── Verify admin role ────────────────────────────────────────────────
+    const member = await prisma.treeMember.findUnique({
+      where: { userId_treeId: { userId, treeId } },
+      select: { role: true, status: true },
+    });
+
+    if (!member || member.status !== 'ACTIVE') {
+      return res.status(403).json({ error: 'Active tree membership required' });
+    }
+
+    if (member.role !== 'ADMIN') {
+      return res.status(403).json({ error: 'Admin role required to view ledger' });
+    }
+
+    // ── Build query filters ──────────────────────────────────────────────
+    const where: any = { treeId };
+    if (memberId && typeof memberId === 'string') {
+      where.memberId = memberId;
+    }
+    if (type && typeof type === 'string') {
+      where.type = type;
+    }
+
+    const take = Math.min(parseInt(limit as string, 10) || 50, 200);
+    const skip = Math.max(parseInt(offset as string, 10) || 0, 0);
+
+    // ── Query ledger with member info ────────────────────────────────────
+    const [entries, total] = await Promise.all([
+      prisma.transactionLedger.findMany({
+        where,
+        orderBy: { createdAt: 'desc' },
+        take,
+        skip,
+        include: {
+          member: {
+            select: {
+              id: true,
+              userId: true,
+              user: { select: { username: true } },
+            },
+          },
+        },
+      }),
+      prisma.transactionLedger.count({ where }),
+    ]);
+
+    // Flatten member info for cleaner response
+    const formattedEntries = entries.map((e) => ({
+      id: e.id,
+      type: e.type,
+      amount: e.amount,
+      description: e.description,
+      stripeReference: e.stripeReference,
+      metadataJson: e.metadataJson,
+      createdAt: e.createdAt,
+      member: {
+        id: e.member.id,
+        userId: e.member.userId,
+        username: e.member.user?.username || 'unknown',
+      },
+    }));
+
+    res.json({
+      entries: formattedEntries,
+      total,
+      limit: take,
+      offset: skip,
+    });
+  } catch (error: any) {
+    console.error('[getTreeLedger]', error);
+    res.status(500).json({ error: error.message || 'Failed to fetch ledger' });
+  }
+};

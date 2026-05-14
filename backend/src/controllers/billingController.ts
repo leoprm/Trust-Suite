@@ -1,5 +1,6 @@
 import { Response } from 'express';
 import * as crypto from 'crypto';
+import Stripe from 'stripe';
 import { prisma } from '../index';
 
 // ── Paddle Config ──
@@ -177,12 +178,18 @@ const STRIPE_WEBHOOK_SECRET = process.env.STRIPE_WEBHOOK_SECRET || '';
 export const stripeWebhook = async (req: any, res: Response) => {
   const sig = req.headers['stripe-signature'] as string;
 
+  const stripeKey = process.env.STRIPE_SECRET_KEY;
+  if (!stripeKey) {
+    console.warn('[stripeWebhook] STRIPE_SECRET_KEY not set — webhook disabled');
+    return res.status(501).json({ error: 'Stripe not configured' });
+  }
+
   if (!STRIPE_WEBHOOK_SECRET) {
     console.warn('[stripeWebhook] STRIPE_WEBHOOK_SECRET not set — skipping verification');
   }
 
-  const Stripe = (await import('stripe')).default;
-  const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || '', {
+  // Construct Stripe inline (same pattern as stripeController.ts)
+  const stripe = new Stripe(stripeKey, {
     apiVersion: '2025-03-31.basil' as any,
   });
 

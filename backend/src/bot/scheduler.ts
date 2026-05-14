@@ -11,6 +11,7 @@ import { PrismaClient } from "@prisma/client";
 import type { Bot } from "grammy";
 import type { BotContext } from "./types";
 import { runDailyClose, runMonthlyFee } from "./cron";
+import { runDisputeResolution } from "./disputeResolutionCron";
 import {
   applyDecay,
   assignAgentToTreeSlot,
@@ -62,6 +63,7 @@ let decayTask: ScheduledTask | null = null;
 let rotationTask: ScheduledTask | null = null;
 let autoScaleTask: ScheduledTask | null = null;
 let monthlyFeeTask: ScheduledTask | null = null;
+let disputeResolutionTask: ScheduledTask | null = null;
 
 /**
  * Arranca todos los schedulers.
@@ -160,6 +162,24 @@ export function startScheduler(
   });
   console.log("[Scheduler] 💰 Cuota mensual programada al día 1 de cada mes a las 00:00");
 
+  // ── Cron: */15 * * * * (cada 15 min) — Resolución de disputas ─────────
+  disputeResolutionTask = cron.schedule("*/15 * * * *", async () => {
+    try {
+      const results = await runDisputeResolution(prismaClient, bot);
+      if (results.length > 0) {
+        console.log(
+          `[Scheduler] ⚖️ Dispute resolution: ${results.length} procesadas. ` +
+            `${results.filter(r => r.outcome === "RESOLVED_ACCEPTED").length} aceptadas, ` +
+            `${results.filter(r => r.outcome === "RESOLVED_REJECTED").length} rechazadas, ` +
+            `${results.filter(r => r.outcome === "EXPIRED").length} expiradas.`,
+        );
+      }
+    } catch (err) {
+      console.error("[Scheduler] Error en resolución de disputas:", err);
+    }
+  });
+  console.log("[Scheduler] ⚖️ Resolución de disputas programada cada 15 minutos");
+
   // ── Dev mode hint ──
   if (process.env.NODE_ENV !== "production") {
     console.log(
@@ -184,7 +204,7 @@ export async function triggerDailyClose(
  */
 export function stopScheduler(): void {
   let stopped = false;
-  for (const task of [midnightTask, decayTask, rotationTask, autoScaleTask, monthlyFeeTask]) {
+  for (const task of [midnightTask, decayTask, rotationTask, autoScaleTask, monthlyFeeTask, disputeResolutionTask]) {
     if (task) {
       task.stop();
       stopped = true;
@@ -195,6 +215,7 @@ export function stopScheduler(): void {
   rotationTask = null;
   autoScaleTask = null;
   monthlyFeeTask = null;
+  disputeResolutionTask = null;
   if (stopped) {
     console.log("[Scheduler] ⏹️ Todos los schedulers detenidos.");
   }

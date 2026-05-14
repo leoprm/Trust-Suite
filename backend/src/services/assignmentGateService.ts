@@ -67,8 +67,8 @@ export async function assignAI(
     eligibleAIs.map(async (ai) => {
       const count = await prisma.task.count({
         where: {
-          assignedTo: ai.id,
-          status: { in: ['OPEN', 'IN_PROGRESS'] },
+          assigneeId: ai.id,
+          status: { in: ['PENDING', 'IN_PROGRESS'] },
         },
       });
       return { aiId: ai.id, count };
