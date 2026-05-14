@@ -18,6 +18,41 @@ const API_SERVER_KEY = process.env.HERMES_API_SERVER_KEY ?? "";
 const SATISFACTION_EMOJIS = ["👍", "❤️", "⭐"];
 const SATISFACTION_LABELS = ["Poco satisfecho", "Satisfecho", "Muy satisfecho"];
 
+// ── In-memory state: track pending comment requests per voter ────────────
+// Map<voterId, { resultId, chatId, pollExpiresAt }>
+// Cleared after comment received or after 10 min.
+const pendingJudgeComments = new Map<
+  number,
+  { resultId: string; chatId: string; expiresAt: number }
+>();
+
+function setPending(voterId: number, resultId: string, chatId: string) {
+  pendingJudgeComments.set(voterId, {
+    resultId,
+    chatId,
+    expiresAt: Date.now() + 10 * 60 * 1000, // 10 min
+  });
+}
+
+function takePending(voterId: number) {
+  const entry = pendingJudgeComments.get(voterId);
+  if (!entry) return null;
+  if (Date.now() > entry.expiresAt) {
+    pendingJudgeComments.delete(voterId);
+    return null;
+  }
+  pendingJudgeComments.delete(voterId);
+  return entry;
+}
+
+// Periodic cleanup every 5 min
+setInterval(() => {
+  const now = Date.now();
+  for (const [key, entry] of pendingJudgeComments) {
+    if (now > entry.expiresAt) pendingJudgeComments.delete(key);
+  }
+}, 5 * 60 * 1000).unref();
+
 // ── Step 1: Send satisfaction poll when a result is delivered ────────────
 
 export async function sendSatisfactionPoll(
@@ -26,7 +61,6 @@ export async function sendSatisfactionPoll(
   resultId: string,
 ): Promise<boolean> {
   try {
-    // Load result with need → tree → telegramChatId
     const result = await (prisma as any).result.findUnique({
       where: { id: resultId },
       include: {
@@ -58,7 +92,6 @@ export async function sendSatisfactionPoll(
       allows_multiple_answers: false,
     });
 
-    // Save mapping
     await (prisma as any).satisfactionPoll.create({
       data: {
         pollId: sentPoll.poll.id,
@@ -68,9 +101,7 @@ export async function sendSatisfactionPoll(
       },
     });
 
-    console.log(
-      `[satisfaction] Poll sent for result ${resultId} → chat ${chatId}`,
-    );
+    console.log(`[satisfaction] Poll sent for result ${resultId} → chat ${chatId}`);
     return true;
   } catch (err: any) {
     console.error(`[satisfaction] Failed to send poll for result ${resultId}:`, err.message);
@@ -87,40 +118,46 @@ export async function handleSatisfactionPollAnswer(
   optionIds: number[],
   voterId: number,
 ): Promise<boolean> {
-  const satisfactionPoll = await (prisma as any).satisfactionPoll.findUnique({
-    where: { pollId },
-  });
+  try {
+    const satisfactionPoll = await (prisma as any).satisfactionPoll.findUnique({
+      where: { pollId },
+    });
 
-  if (!satisfactionPoll) return false; // Not a satisfaction poll
+    if (!satisfactionPoll) return false;
 
-  const satisfaction = optionIds[0] + 1; // 0-indexed → 1-3
+    const satisfaction = optionIds[0] + 1; // 0-indexed → 1-3
 
-  // Save satisfaction score on the result
-  await (prisma as any).result.update({
-    where: { id: satisfactionPoll.resultId },
-    data: {
-      satisfactionScore: { increment: satisfaction },
-      satisfactionCount: { increment: 1 },
-    },
-  });
-
-  // Ask for comment via DM
-  const emoji = SATISFACTION_EMOJIS[satisfaction - 1] ?? "👍";
-  await ctx.api.sendMessage(
-    voterId,
-    `Gracias por tu valoración (${emoji}). ¿Quieres agregar un comentario? La IA jueza lo analizará para mejorar.`,
-    {
-      reply_markup: {
-        force_reply: true,
-        input_field_placeholder: "Escribe tu comentario aquí...",
+    await (prisma as any).result.update({
+      where: { id: satisfactionPoll.resultId },
+      data: {
+        satisfactionScore: { increment: satisfaction },
+        satisfactionCount: { increment: 1 },
       },
-    },
-  );
+    });
 
-  console.log(
-    `[satisfaction] Vote ${satisfaction}/3 on result ${satisfactionPoll.resultId}`,
-  );
-  return true;
+    // Track that this voter was asked for a comment
+    setPending(voterId, satisfactionPoll.resultId, satisfactionPoll.chatId);
+
+    const emoji = SATISFACTION_EMOJIS[satisfaction - 1] ?? "👍";
+    await ctx.api.sendMessage(
+      voterId,
+      `Gracias por tu valoración (${emoji}). ¿Quieres agregar un comentario? La IA jueza lo analizará para mejorar.`,
+      {
+        reply_markup: {
+          force_reply: true,
+          input_field_placeholder: "Escribe tu comentario aquí...",
+        },
+      },
+    );
+
+    console.log(
+      `[satisfaction] Vote ${satisfaction}/3 on result ${satisfactionPoll.resultId} (voter ${voterId})`,
+    );
+    return true;
+  } catch (err: any) {
+    console.error(`[satisfaction] poll_answer error:`, err.message);
+    return false;
+  }
 }
 
 // ── Step 3: Handle comment reply → IA judge analysis ─────────────────────
@@ -139,108 +176,60 @@ export async function handleSatisfactionCommentReply(
   const voterId = msg.from?.id;
   if (!voterId) return false;
 
-  // Find the satisfaction poll associated with the bot's message that
-  // this user is replying to.  We track polls by messageId on the group,
-  // but the force_reply goes to DM — so we search for a result where this
-  // voter was recently asked for feedback.
-  // Strategy: look up the most recent satisfactionPoll for this voter
-  // by correlating with recent poll_answer events.  Since Telegram polls
-  // are anonymous, we can't map voter → poll directly.  Instead, we
-  // search satisfactionPolls ordered by recency and match the voter
-  // via the poll_answer event.
+  // Check if this voter was recently asked for a comment
+  const pending = takePending(voterId);
+  if (!pending) return false;
 
-  // The most reliable approach: the satisfactionPoll is the one where
-  // the bot most recently sent a poll to a group this user is in.
-  // We'll query all recent satisfactionPolls and cross-check with
-  // the user's tree memberships.
-
-  // Simplified: find any satisfactionPoll from the last 5 minutes
-  // where the user might have voted.
-  const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000);
-  const recentPolls = await (prisma as any).satisfactionPoll.findMany({
-    where: { createdAt: { gte: fiveMinutesAgo } },
-    orderBy: { createdAt: "desc" },
-    take: 10,
-  });
-
-  if (recentPolls.length === 0) return false;
-
-  // Try each poll — look up the result and its need creator.
-  // The voter's Telegram ID should match the need creator who evaluated.
-  // Actually, the satisfaction poll is sent to the GROUP, so any
-  // group member can vote. We need to correlate the DM reply with
-  // a poll answer.  The simplest heuristic: use the most recent
-  // satisfactionPoll where this user could have voted.
-
-  // Since polls are anonymous on Telegram, we use a best-effort approach:
-  // pick the most recent satisfactionPoll whose poll was sent to
-  // a group this user is a member of.
-  const tgId = BigInt(voterId);
-  const user = await (prisma as any).user.findUnique({
-    where: { telegramUserId: tgId },
-    select: { id: true },
-  });
-  if (!user) return false;
-
-  for (const poll of recentPolls) {
-    // Check if user is a member of the tree associated with this result
+  // Fetch satisfaction average for context
+  let satisfactionAvg = 0;
+  try {
     const result = await (prisma as any).result.findUnique({
-      where: { id: poll.resultId },
-      select: { need: { select: { treeId: true } }, satisfactionCount: true },
+      where: { id: pending.resultId },
+      select: { satisfactionScore: true, satisfactionCount: true },
     });
-    if (!result?.need?.treeId) continue;
+    if (result && result.satisfactionCount > 0) {
+      satisfactionAvg = Math.round(result.satisfactionScore / result.satisfactionCount);
+    }
+  } catch {
+    // Non-fatal
+  }
 
-    const membership = await (prisma as any).treeMember.findUnique({
-      where: {
-        userId_treeId: { userId: user.id, treeId: result.need.treeId },
-      },
-    });
-    if (!membership) continue;
+  // ── Call IA judge via concierge ──
+  const analysis = await callJudgeAnalysis(
+    pending.resultId,
+    pending.chatId,
+    satisfactionAvg,
+    comment,
+  );
 
-    // Found: this is the right poll. Get satisfaction score.
-    const satisfactionScore = result.satisfactionCount > 0
-      ? Math.round(
-          (await (prisma as any).result.findUnique({
-            where: { id: poll.resultId },
-            select: { satisfactionScore: true, satisfactionCount: true },
-          })).satisfactionScore / 
-          (await (prisma as any).result.findUnique({
-            where: { id: poll.resultId },
-            select: { satisfactionCount: true },
-          })).satisfactionCount
-        )
-      : 0;
-
-    // ── Call IA judge via concierge ──
-    const analysis = await callJudgeAnalysis(
-      poll.resultId,
-      poll.chatId,
-      satisfactionScore,
-      comment,
-    );
-
-    if (analysis) {
+  if (analysis) {
+    try {
       await (prisma as any).result.update({
-        where: { id: poll.resultId },
+        where: { id: pending.resultId },
         data: {
           judgeComment: comment,
           judgeAnalysis: analysis,
         },
       });
-
-      // Notify the voter
-      await ctx.reply(
-        `📊 **IA jueza analizó tu feedback:**\n${analysis}`,
-        { parse_mode: "Markdown" },
-      );
-
-      console.log(`[satisfaction] Judge analysis saved for result ${poll.resultId}`);
+      console.log(`[satisfaction] Judge analysis saved for result ${pending.resultId}`);
+    } catch (err: any) {
+      console.error(`[satisfaction] Failed to save judge analysis:`, err.message);
     }
-
-    return true;
   }
 
-  return false;
+  // Always reply to the user (even if concierge failed, acknowledge receipt)
+  if (analysis) {
+    await ctx.reply(
+      `📊 **IA jueza analizó tu feedback:**\n${analysis}`,
+      { parse_mode: "Markdown" },
+    );
+  } else {
+    await ctx.reply(
+      "✅ Gracias por tu comentario. Será revisado por el equipo.",
+    );
+  }
+
+  return true;
 }
 
 // ── Concierge call for IA judge analysis ─────────────────────────────────
@@ -258,7 +247,7 @@ async function callJudgeAnalysis(
     const prompt = [
       `Analiza este comentario de satisfacción sobre un resultado de Trust Maker:`,
       ``,
-      `Satisfacción: ${satisfaction}/3`,
+      `Satisfacción promedio: ${satisfaction}/3`,
       `Comentario: "${comment}"`,
       ``,
       `Resume en 1-2 frases qué mejorar y si el resultado fue útil.`,

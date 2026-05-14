@@ -693,17 +693,24 @@ Ejemplo: *"@TrustMakerBot necesito que alguien rediseñe el logo del grupo"*
   // ── Reaction handler (votos con reacciones) ─────────────────────────
   registerReactionHandler(bot);
 
-  // ── Satisfaction poll answer handler (T10) ─────────────────────────
+  // ── Unified poll_answer handler (T8: need voting, T10: satisfaction) ──
   bot.on("poll_answer", async (ctx) => {
     const answer = ctx.pollAnswer;
     if (!answer) return;
 
+    // T8: Check if this is a need-voting poll
+    const handled = await handleNeedPollAnswer(prisma, ctx as BotContext);
+    if (handled) return;
+
+    // T10: Fall through to satisfaction
     const pollId = answer.poll_id;
     const optionIds = answer.option_ids;
     const voterId = answer.user?.id;
     if (!voterId || optionIds.length === 0) return;
 
-    handleSatisfactionPollAnswer(prisma, ctx as BotContext, pollId, optionIds, voterId);
+    handleSatisfactionPollAnswer(prisma, ctx as BotContext, pollId, optionIds, voterId).catch(
+      (err: any) => console.error("[satisfaction] poll_answer handler error:", err.message)
+    );
   });
 
   // ── Satisfaction comment reply handler (T10) ────────────────────────
