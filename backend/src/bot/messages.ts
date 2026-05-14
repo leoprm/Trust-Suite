@@ -14,7 +14,7 @@ import { extractCommandText } from "./commands";
 // ── Constantes ─────────────────────────────────────────────────────────────
 
 const CONCIERGE_URL = "http://localhost:3100/api/concierge";
-const CONCIERGE_TIMEOUT_MS = 90_000;
+const CONCIERGE_TIMEOUT_MS = 300_000; // 5 minutos
 
 // ── Handler ────────────────────────────────────────────────────────────────
 
