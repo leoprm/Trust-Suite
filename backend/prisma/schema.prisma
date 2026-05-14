@@ -76,12 +76,13 @@ enum EventSource {
 }
 
 model User {
-  id        String    @id @default(uuid())
-  username  String    @unique
-  email     String?   @unique
-  password  String?
-  role      UserRole  @default(USER)
-  createdAt DateTime  @default(now())
+  id              String    @id @default(uuid())
+  username        String    @unique
+  email           String?   @unique
+  password        String?
+  role            UserRole  @default(USER)
+  telegramUserId  BigInt?   @unique
+  createdAt       DateTime  @default(now())
   memberships    TreeMember[]
   invitedMembers TreeMember[]      @relation("Inviter")
   createdNeeds   Need[]            @relation("NeedCreator")
@@ -104,6 +105,7 @@ model Tree {
   icono           String          @default("🌳")
   creatorId       String?
   admissionPolicy AdmissionPolicy @default(INVITE_ONLY)
+  telegramChatId  String?         @unique
   createdAt       DateTime        @default(now())
   members         TreeMember[]
   agentMemberships AgentMembership[]
@@ -180,14 +182,15 @@ model Rating {
 }
 
 model Need {
-  id          String     @id @default(uuid())
-  treeId      String?
-  creatorId   String
-  title       String
-  description String     @db.Text
-  importance  Int?
-  status      NeedStatus @default(OPEN)
-  createdAt   DateTime   @default(now())
+  id                  String     @id @default(uuid())
+  treeId              String?
+  creatorId           String
+  title               String
+  description         String     @db.Text
+  importance          Int?
+  status              NeedStatus @default(OPEN)
+  telegramMessageId   Int?
+  createdAt           DateTime   @default(now())
   creator  User       @relation("NeedCreator", fields: [creatorId], references: [id])
   tree     Tree?      @relation("TreeNeeds", fields: [treeId], references: [id])
   needIdeas NeedIdea[]
@@ -197,14 +200,15 @@ model Need {
 }
 
 model Idea {
-  id           String   @id @default(uuid())
-  content      String   @db.Text
-  creatorId    String
-  isGlobal     Boolean  @default(false)
-  sourceTreeId String?
-  totalLikes   Int      @default(0)
-  needId       String?
-  createdAt    DateTime @default(now())
+  id                 String   @id @default(uuid())
+  content            String   @db.Text
+  creatorId          String
+  isGlobal           Boolean  @default(false)
+  sourceTreeId       String?
+  totalLikes         Int      @default(0)
+  needId             String?
+  telegramMessageId  Int?
+  createdAt          DateTime @default(now())
   creator  User       @relation(fields: [creatorId], references: [id])
   need     Need?      @relation(fields: [needId], references: [id])
   needIdeas NeedIdea[]
@@ -229,6 +233,7 @@ model IdeaVote {
   ideaId    String
   userId    String
   needId    String
+  weight    Int      @default(1)
   createdAt DateTime @default(now())
   idea Idea @relation(fields: [ideaId], references: [id], onDelete: Cascade)
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)

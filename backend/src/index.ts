@@ -22,12 +22,18 @@ import ratingRoutes from './routes/ratingRoutes';
 import agentRoutes from './routes/agentRoutes';
 import byoRoutes from './routes/byoRoutes';
 import taskRoutes from './routes/taskRoutes';
+import { createBot } from './bot/index';
 import { stripeWebhook, paddleWebhook, createCheckout, cancelSubscription, currentCost, mySubscription } from './controllers/billingController';
 
 const app = express();
 app.disable('x-powered-by');
 const port = process.env.PORT || 3000;
 export const prisma = new PrismaClient();
+
+// ── Telegram Bot ───────────────────────────────────────────────────────────────
+// createBot returns null gracefully when TELEGRAM_BOT_TOKEN is not configured.
+// The bot starts polling immediately inside createBot().
+const telegramBot = createBot(prisma);
 
 // ── Database Bootstrap ────────────────────────────────────────────────────────
 async function bootstrapDatabase(): Promise<void> {

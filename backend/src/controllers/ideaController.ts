@@ -226,9 +226,9 @@ export const voteIdea = async (req: any, res: Response) => {
       return res.status(409).json({ error: 'Already voted for this idea in this need' });
     }
 
-    // Create vote
+    // Create vote with weight=1 (API votes are always standard likes)
     await (prisma as any).ideaVote.create({
-      data: { ideaId: id, userId, needId },
+      data: { ideaId: id, userId, needId, weight: 1 },
     });
 
     // Increment totalLikes
@@ -281,9 +281,9 @@ export const unvoteIdea = async (req: any, res: Response) => {
       where: { id: vote.id },
     });
 
-    // Decrement totalLikes (don't go below 0)
+    // Decrement totalLikes by vote weight (don't go below 0)
     const idea = await (prisma as any).idea.findUnique({ where: { id } });
-    const newTotal = Math.max(0, (idea?.totalLikes || 1) - 1);
+    const newTotal = Math.max(0, (idea?.totalLikes || 0) - vote.weight);
 
     await (prisma as any).idea.update({
       where: { id },
