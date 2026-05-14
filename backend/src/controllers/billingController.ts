@@ -84,7 +84,7 @@ export const paddleWebhook = async (req: any, res: Response) => {
         const sub = eventData, userId = sub?.custom_data?.userId;
         if (!userId) break;
         const status = mapPaddleStatus(sub.status);
-        await (prisma as any).subscription.upsert({
+        await prisma.subscription.upsert({
           where: { paddleSubscriptionId: sub.id },
           create: {
             userId, paddleSubscriptionId: sub.id, status,
@@ -97,17 +97,17 @@ export const paddleWebhook = async (req: any, res: Response) => {
         break;
       }
       case 'subscription.canceled': {
-        await (prisma as any).subscription.updateMany({ where: { paddleSubscriptionId: eventData.id }, data: { status: 'CANCELED' } });
+        await prisma.subscription.updateMany({ where: { paddleSubscriptionId: eventData.id }, data: { status: 'CANCELED' } });
         break;
       }
       case 'transaction.completed': case 'transaction.paid': {
         const subId = eventData?.subscription_id;
         if (subId) {
           // 1. Actualizar Subscription
-          await (prisma as any).subscription.updateMany({ where: { paddleSubscriptionId: subId }, data: { status: 'ACTIVE' } });
+          await prisma.subscription.updateMany({ where: { paddleSubscriptionId: subId }, data: { status: 'ACTIVE' } });
 
           // 2. Activar pago en todos los árboles del usuario (incluye desbloqueo si estaba BLOCKED)
-          const sub = await (prisma as any).subscription.findFirst({ where: { paddleSubscriptionId: subId } });
+          const sub = await prisma.subscription.findFirst({ where: { paddleSubscriptionId: subId } });
           if (sub?.userId) {
             const now = new Date();
             await prisma.treeMember.updateMany({
@@ -130,12 +130,12 @@ export const paddleWebhook = async (req: any, res: Response) => {
 export const cancelSubscription = async (req: any, res: Response) => {
   try {
     const userId = req.user!.id;
-    const sub = await (prisma as any).subscription.findFirst({ where: { userId } });
+    const sub = await prisma.subscription.findFirst({ where: { userId } });
     if (!sub) return res.status(404).json({ error: 'No subscription found' });
     if (sub.status === 'CANCELED') return res.status(400).json({ error: 'Already canceled' });
     try { await paddleRequest('POST', `/subscriptions/${sub.paddleSubscriptionId}/cancel`, { effectiveFrom: 'next_billing_period' }); }
     catch (e: any) { if (!e.message.includes('404')) return res.status(502).json({ error: 'Failed to cancel in Paddle', detail: e.message }); }
-    const updated = await (prisma as any).subscription.update({ where: { id: sub.id }, data: { status: 'CANCELED' } });
+    const updated = await prisma.subscription.update({ where: { id: sub.id }, data: { status: 'CANCELED' } });
     return res.json({ subscription: { id: updated.id, status: updated.status } });
   } catch (err: any) {
     console.error('[billing] cancelSubscription error:', err);
@@ -151,7 +151,7 @@ export const mySubscription = async (req: any, res: Response) => {
   try {
     const userId = req.user?.id;
     if (!userId) return res.status(401).json({ error: 'Authentication required' });
-    const sub = await (prisma as any).subscription.findFirst({ where: { userId } });
+    const sub = await prisma.subscription.findFirst({ where: { userId } });
     if (!sub) return res.json({ hasSubscription: false, status: 'NONE' });
     return res.json({
       hasSubscription: true,

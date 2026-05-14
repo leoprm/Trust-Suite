@@ -1,3 +1,4 @@
+import https from "https";
 import { Bot, session } from "grammy";
 import { PrismaClient } from "@prisma/client";
 import { BotContext, BotSessionData } from "./types";
@@ -8,6 +9,28 @@ import { registerReactionHandler } from "./voting";
 import { checkPaymentAccess } from "./payment";
 import { formatForChannel, sendViaTelegram } from "./channelAdapter";
 import { textToSpeech } from "../services/ttsService";
+
+// ── IPv4 fetch wrapper: undici (Node fetch) no respeta dns.setDefaultResultOrder ─
+// para api.telegram.org. Usamos https.get con family:4 como fallback.
+function httpsDownload(url: string): Promise<Buffer> {
+  return new Promise((resolve, reject) => {
+    const req = https.get(url, (res) => {
+      if (res.statusCode && res.statusCode >= 400) {
+        reject(new Error(`HTTP ${res.statusCode}`));
+        return;
+      }
+      const chunks: Buffer[] = [];
+      res.on("data", (chunk: Buffer) => chunks.push(chunk));
+      res.on("end", () => resolve(Buffer.concat(chunks)));
+      res.on("error", reject);
+    });
+    req.on("error", reject);
+    req.setTimeout(30_000, () => {
+      req.destroy();
+      reject(new Error("Request timeout"));
+    });
+  });
+}
 
 // ── TTS: generate voice buffer for a text response ──────────────────────
 
@@ -270,11 +293,9 @@ export function createBot(prisma: PrismaClient): Bot<BotContext> | null {
       const result = await handleMessage(prisma, ctx);
 
       if (result) {
-        // Generate voice (non-blocking)
-        const voiceBuffer = await generateVoice(result.text);
-        // Route through channel adapter (T27)
+        // Send text immediately (non-blocking for voice)
         const messages = formatForChannel(
-          { text: result.text, react: result.react, voiceBuffer: voiceBuffer ?? undefined },
+          { text: result.text, react: result.react },
           "telegram",
         );
         await sendViaTelegram(ctx, messages);
@@ -286,19 +307,33 @@ export function createBot(prisma: PrismaClient): Bot<BotContext> | null {
             // React API may not be available (older Telegram clients / bot API)
           }
         }
+
+        // Voice generation: fire-and-forget (don't block text delivery)
+        generateVoice(result.text).then((vb) => {
+          if (vb) {
+            const vmsgs = formatForChannel({ text: "", voiceBuffer: vb }, "telegram");
+            sendViaTelegram(ctx, vmsgs).catch(() => {});
+          }
+        });
       }
     } else {
       // ── Modo conversación natural (SPEC-2) ──
       const naturalResult = await handleNaturalMessage(prisma, ctx);
       if (naturalResult) {
-        // Generate voice (non-blocking)
-        const voiceBuffer = await generateVoice(naturalResult.text);
-        // Route through channel adapter (T27)
+        // Send text immediately (non-blocking for voice)
         const messages = formatForChannel(
-          { text: naturalResult.text, voiceBuffer: voiceBuffer ?? undefined },
+          { text: naturalResult.text },
           "telegram",
         );
         await sendViaTelegram(ctx, messages);
+
+        // Voice generation: fire-and-forget (don't block text delivery)
+        generateVoice(naturalResult.text).then((vb) => {
+          if (vb) {
+            const vmsgs = formatForChannel({ text: "", voiceBuffer: vb }, "telegram");
+            sendViaTelegram(ctx, vmsgs).catch(() => {});
+          }
+        });
       }
     }
   });
@@ -326,19 +361,14 @@ export function createBot(prisma: PrismaClient): Bot<BotContext> | null {
       }
 
       const tgUrl = `https://api.telegram.org/file/bot${process.env.TELEGRAM_BOT_TOKEN}/${fileInfo.file_path}`;
-      const fileResp = await fetch(tgUrl);
-      if (!fileResp.ok) {
-        console.error("[Voice] Failed to download from Telegram:", fileResp.status);
-        return;
-      }
-      const fileBuffer = Buffer.from(await fileResp.arrayBuffer());
+      const fileBuffer = await httpsDownload(tgUrl);
 
       // 2. POST to /api/audio/transcribe
       const blob = new Blob([fileBuffer], {
         type: msg.voice.mime_type || "audio/ogg",
       });
       const formData = new FormData();
-      formData.append("file", blob, "voice.ogg");
+      formData.append("audio", blob, "voice.ogg");
 
       const apiKey = process.env.HERMES_API_SERVER_KEY ?? "";
       const transcribeResp = await fetch(
@@ -362,18 +392,16 @@ export function createBot(prisma: PrismaClient): Bot<BotContext> | null {
       const transcribedText: string = data?.text ?? "";
       if (!transcribedText.trim()) return;
 
-      // 3. Check if the text mentions @TrustMakerBot
-      const mentionMatch = transcribedText.match(/@(TrustMakerBot|TrustMaker)\b/i);
-      if (!mentionMatch) {
+      // 3. Solo responder si el audio menciona a Ari.
+      //    "Ari" es corto y la transcripción lo captura bien con variaciones mínimas.
+      const ariMatch = transcribedText.match(/\b(ari|ari[,!?]?|Ari)\b/i);
+      if (!ariMatch) {
         console.log(
-          `[Voice] No bot mention in transcription — ignoring. Text: "${transcribedText.substring(0, 80)}"`,
+          `[Voice] No "Ari" mention — ignoring. Text: "${transcribedText.substring(0, 80)}"`,
         );
-        return; // Not addressed to the bot → ignore
+        return;
       }
-
-      // 4. Extract clean text after the mention
-      const mentionEnd = (mentionMatch.index ?? 0) + mentionMatch[0].length;
-      const cleanText = transcribedText.slice(mentionEnd).trim();
+      const cleanText = transcribedText.trim();
       if (!cleanText) return;
 
       console.log(
@@ -395,9 +423,11 @@ export function createBot(prisma: PrismaClient): Bot<BotContext> | null {
         }
       }
 
-      // 5b. Simulate a text message so the existing handlers work
+      // 5b. Simulate a text message so the existing handlers work.
+      //     Prepend @TrustMakerBot mention so extractCommandText + handleNaturalMessage
+      //     can parse it (they require a leading mention to identify the message as addressed).
       const originalText = (msg as any).text;
-      (msg as any).text = cleanText;
+      (msg as any).text = `@TrustMakerBot ${cleanText}`;
 
       try {
         const isCommand = cleanText.startsWith("/");
@@ -406,25 +436,39 @@ export function createBot(prisma: PrismaClient): Bot<BotContext> | null {
         if (isCommand || isHelpAlias) {
           const result = await handleMessage(prisma, ctx);
           if (result) {
-            const voiceBuffer = await generateVoice(result.text);
+            // Send text immediately
             const messages = formatForChannel(
-              { text: result.text, react: result.react, voiceBuffer: voiceBuffer ?? undefined },
+              { text: result.text, react: result.react },
               "telegram",
             );
             await sendViaTelegram(ctx, messages);
             if (result.react) {
               try { await ctx.react("❤"); } catch {}
             }
+            // Voice: fire-and-forget
+            generateVoice(result.text).then((vb) => {
+              if (vb) {
+                const vmsgs = formatForChannel({ text: "", voiceBuffer: vb }, "telegram");
+                sendViaTelegram(ctx, vmsgs).catch(() => {});
+              }
+            });
           }
         } else {
           const naturalResult = await handleNaturalMessage(prisma, ctx);
           if (naturalResult) {
-            const voiceBuffer = await generateVoice(naturalResult.text);
+            // Send text immediately
             const messages = formatForChannel(
-              { text: naturalResult.text, voiceBuffer: voiceBuffer ?? undefined },
+              { text: naturalResult.text },
               "telegram",
             );
             await sendViaTelegram(ctx, messages);
+            // Voice: fire-and-forget
+            generateVoice(naturalResult.text).then((vb) => {
+              if (vb) {
+                const vmsgs = formatForChannel({ text: "", voiceBuffer: vb }, "telegram");
+                sendViaTelegram(ctx, vmsgs).catch(() => {});
+              }
+            });
           }
         }
       } finally {
@@ -468,12 +512,7 @@ export function createBot(prisma: PrismaClient): Bot<BotContext> | null {
 
       // 2. Download file from Telegram
       const tgUrl = `https://api.telegram.org/file/bot${process.env.TELEGRAM_BOT_TOKEN}/${fileInfo.file_path}`;
-      const fileResp = await fetch(tgUrl);
-      if (!fileResp.ok) {
-        console.error("[Evidence] Failed to download from Telegram:", fileResp.status);
-        return null;
-      }
-      const fileBuffer = Buffer.from(await fileResp.arrayBuffer());
+      const fileBuffer = await httpsDownload(tgUrl);
 
       // 3. POST to evidence endpoint as multipart
       const formData = new FormData();
@@ -590,6 +629,26 @@ export function createBot(prisma: PrismaClient): Bot<BotContext> | null {
 
   // ── Reaction handler (votos con reacciones) ─────────────────────────
   registerReactionHandler(bot);
+
+  // ── Global error boundary: evita que el polling muera silenciosamente ─
+  bot.catch((err) => {
+    console.error(
+      `[Telegram Bot] Unhandled error:`,
+      err.message,
+      err.error_code ? `(code: ${err.error_code})` : "",
+    );
+  });
+
+  // ── Telegram API errors: log + recovery ──────────────────────────────
+  bot.api.config.use((prev, method, payload) => {
+    return prev(method, payload).catch((err: any) => {
+      console.error(
+        `[Telegram Bot] API error: ${method}`,
+        err.error_code || err.message,
+      );
+      throw err;
+    });
+  });
 
   // ── Iniciar polling ────────────────────────────────────────────────────
   bot.start({

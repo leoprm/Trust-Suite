@@ -532,7 +532,7 @@ export const conciergeHandler = async (req: Request, res: Response) => {
 
     contextLines.push('');
     contextLines.push(
-      'Respond in Spanish. Be concise, helpful, and action-oriented.',
+      'Respond in neutral Spanish (no voseo, no regionalisms like "ché", "vos", "andá", "tenés"). Use "tú" or "usted" consistently. Be concise, helpful, and action-oriented.',
     );
     contextLines.push(
       'When the user asks about tasks, prioritize open needs from this tree.',

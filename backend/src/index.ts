@@ -1,22 +1,58 @@
 import dotenv from 'dotenv';
 dotenv.config();
 
-// ── Fix: force IPv4 for HTTPS connections ─────────────────────────────────
+// ── Fix: force IPv4 for all outbound connections ─────────────────────────
 // Node.js defaults to IPv6 for api.telegram.org, which is unreachable.
-// This monkey-patch forces family:4 on all https.request/get calls.
+// This sets IPv4-first for both the https module (Grammy) and undici (fetch).
+import dns from 'dns';
+dns.setDefaultResultOrder('ipv4first');
+
 import https from 'https';
 const origRequest = https.request;
+
+// Helper: convert URL string or object to a plain options object
+function urlToOpts(u: string | URL): Record<string, any> {
+  const url = typeof u === 'string' ? new URL(u) : u;
+  return {
+    protocol: url.protocol,
+    hostname: url.hostname,
+    port: url.port || (url.protocol === 'https:' ? 443 : 80),
+    path: url.pathname + url.search,
+  };
+}
+
 (https as any).request = function(opts: any, ...args: any[]) {
-  if (typeof opts === 'string') opts = new URL(opts);
-  opts = { ...opts, family: 4 };
-  return origRequest.call(this, opts, ...args);
-};
-(https as any).get = function(opts: any, ...args: any[]) {
   if (typeof opts === 'string' || opts instanceof URL) {
-    opts = { ...(typeof opts === 'string' ? new URL(opts) : opts) };
+    opts = urlToOpts(opts);
   }
   opts = { ...opts, family: 4 };
   return origRequest.call(this, opts, ...args);
+};
+
+// https.get(url, options?, callback) — Node.js accepts 1-3 args
+(https as any).get = function(opts: any, ...args: any[]) {
+  // Separate options object from callback
+  let options: any = {};
+  let callback: any;
+  if (args.length === 2) {
+    options = args[0] || {};
+    callback = args[1];
+  } else if (args.length === 1) {
+    if (typeof args[0] === 'function') {
+      callback = args[0];
+    } else {
+      options = args[0] || {};
+    }
+  }
+
+  if (typeof opts === 'string' || opts instanceof URL) {
+    opts = urlToOpts(opts);
+  }
+  opts = { ...opts, ...options, family: 4 };
+
+  const req = origRequest.call(this, opts, callback as any);
+  req.end();
+  return req;
 };
 // ──────────────────────────────────────────────────────────────────────────
 

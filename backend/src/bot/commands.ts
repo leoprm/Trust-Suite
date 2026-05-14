@@ -52,8 +52,8 @@ export type ParsedCommand =
 // ── Parser ─────────────────────────────────────────────────────────────────
 
 const BOT_USERNAME = "TrustMakerBot";
-// Match @TrustMakerBot or the short form @TrustMaker (both work)
-const MENTION_REGEX = new RegExp(`^@(TrustMakerBot|TrustMaker)\\b\\s*`, "i");
+// Match @TrustMakerBot, @TrustMaker, @Ari, or @ari (the bot's display name is "Ari")
+const MENTION_REGEX = new RegExp(`^@(TrustMakerBot|TrustMaker|[Aa]ri)\\b\\s*`, "i");
 
 /**
  * Extrae el texto después de @TrustMaker del mensaje.

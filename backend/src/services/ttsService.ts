@@ -8,12 +8,32 @@
  */
 
 import { execFile } from "child_process";
-import { existsSync, unlinkSync } from "fs";
-import { tmpdir } from "os";
+import { existsSync, readFileSync, unlinkSync } from "fs";
+import { homedir, tmpdir } from "os";
 import { join } from "path";
 import { randomUUID } from "crypto";
 
-const EDGE_TTS_BIN = "/home/leo/.hermes/hermes-agent/venv/bin/edge-tts";
+// ── Edge-TTS binary resolution ──────────────────────────────────────────────
+
+function resolveEdgeTtsPath(): string {
+  // 1. Explicit env var override
+  if (process.env.EDGE_TTS_PATH) return process.env.EDGE_TTS_PATH;
+
+  // 2. Check common install locations
+  const candidates = [
+    `${homedir()}/.hermes/hermes-agent/venv/bin/edge-tts`, // Hermes Agent venv
+    `${homedir()}/.local/bin/edge-tts`,                     // pip --user
+    "/usr/local/bin/edge-tts",                              // system pip
+  ];
+  for (const p of candidates) {
+    if (existsSync(p)) return p;
+  }
+
+  // 3. Fallback: assume it's on PATH
+  return "edge-tts";
+}
+
+const EDGE_TTS_BIN = resolveEdgeTtsPath();
 const VOICE = "es-MX-DaliaNeural";
 const TIMEOUT_MS = 15_000; // 15s max for TTS generation
 
@@ -44,7 +64,6 @@ export async function textToSpeech(text: string): Promise<Buffer> {
     await convertToOggOpus(mp3Path, oggPath);
 
     // 3. Read buffer
-    const { readFileSync } = await import("fs");
     const buffer = readFileSync(oggPath);
 
     return buffer;
@@ -69,8 +88,9 @@ export async function textToSpeech(text: string): Promise<Buffer> {
  */
 function sanitizeText(text: string): string {
   return text
-    .replace(/[*_~`\[\]()]/g, "") // strip markdown
-    .replace(/\n+/g, ". ")        // newlines → pauses
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1") // [text](url) → text
+    .replace(/[*_~`]/g, "")                   // strip markdown formatting chars
+    .replace(/\n+/g, ". ")                    // newlines → pauses
     .replace(/\s+/g, " ")
     .trim()
     .slice(0, 500);
