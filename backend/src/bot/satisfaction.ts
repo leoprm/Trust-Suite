@@ -217,18 +217,9 @@ export async function handleSatisfactionCommentReply(
     }
   }
 
-  // Always reply to the user (even if concierge failed, acknowledge receipt)
-  if (analysis) {
-    await ctx.reply(
-      `📊 **IA jueza analizó tu feedback:**\n${analysis}`,
-      { parse_mode: "Markdown" },
-    );
-  } else {
-    await ctx.reply(
-      "✅ Gracias por tu comentario. Será revisado por el equipo.",
-    );
-  }
-
+  // Reply to the user — analysis is INTERNAL only (stored in DB for audit).
+  // Per Leo: IA judge analysis is never shared with users or groups.
+  await ctx.reply("✅ Gracias por tu comentario. Será revisado por el equipo.");
   return true;
 }
 
