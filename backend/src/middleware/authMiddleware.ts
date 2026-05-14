@@ -33,6 +33,12 @@ export const authenticateJWT = (req: Request, res: Response, next: NextFunction)
   if (authHeader) {
     const token = authHeader.split(' ')[1];
 
+    // API Key auth: el bot de Telegram usa HERMES_API_SERVER_KEY como token de sistema
+    if (token === process.env.HERMES_API_SERVER_KEY) {
+      req.user = { id: 'telegram-bot', role: 'SYSTEM' };
+      return next();
+    }
+
     jwt.verify(token, process.env.JWT_SECRET as string, (err, payload) => {
       if (err) {
         return res.status(403).json({ error: 'invalid token' });

@@ -1,11 +1,14 @@
 import { Router } from 'express';
-import { createTask, getTasks, getTask } from '../controllers/taskController';
+import { createTask, getTasks, getTask, routeTaskEndpoint } from '../controllers/taskController';
 import { authenticateJWT } from '../middleware/authMiddleware';
 
 const router = Router();
 
-// POST /api/tasks — create task (auto-evaluates difficulty + assigns AI)
+// POST /api/tasks — create task (auto-evaluates difficulty + routes via TaskRouter)
 router.post('/', authenticateJWT, createTask);
+
+// POST /api/tasks/:id/route — manual re-routing (JWT required)
+router.post('/:id/route', authenticateJWT, routeTaskEndpoint);
 
 // GET /api/tasks — list tasks (filter by treeId, status, assignedTo)
 router.get('/', authenticateJWT, getTasks);

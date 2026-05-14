@@ -1,7 +1,11 @@
 /**
  * Parser de comandos @TrustMaker para Telegram.
  *
- * Formato: @TrustMaker comando [args]
+ * Formato: @TrustMaker /comando [args]
+ *
+ * SPEC-1: solo se procesan como comandos los mensajes donde el texto
+ * post-mención empieza con "/". Si no, se delega a handleNaturalMessage
+ * (conversación natural vía concierge).
  *
  * Comandos:
  *   crea necesidad "título" — descripción
@@ -14,6 +18,7 @@
 
 import { Context } from "grammy";
 import { PrismaClient } from "@prisma/client";
+import { findTreeByChat, TreeInfo } from "./treeResolver";
 import {
   helpMessage,
   noTreeError,
@@ -41,8 +46,9 @@ export type ParsedCommand =
 
 // ── Parser ─────────────────────────────────────────────────────────────────
 
-const BOT_USERNAME = "TrustMaker";
-const MENTION_REGEX = new RegExp(`^@${BOT_USERNAME}\\b\\s*`, "i");
+const BOT_USERNAME = "TrustMakerBot";
+// Match @TrustMakerBot or the short form @TrustMaker (both work)
+const MENTION_REGEX = new RegExp(`^@(TrustMakerBot|TrustMaker)\\b\\s*`, "i");
 
 /**
  * Extrae el texto después de @TrustMaker del mensaje.
@@ -99,58 +105,6 @@ export function parseCommand(raw: string): ParsedCommand {
 
 // ── Handlers ───────────────────────────────────────────────────────────────
 
-/** Busca el árbol asociado al chat de Telegram. */
-async function findTreeByChat(
-  prisma: PrismaClient,
-  telegramChatId: string
-): Promise<{
-  id: string;
-  name: string;
-  icono: string;
-  description: string | null;
-  admissionPolicy: string;
-  memberCount: number;
-  needCount: number;
-  openNeedCount: number;
-  ideaCount: number;
-} | null> {
-  const tree = await (prisma as any).tree.findUnique({
-    where: { telegramChatId },
-    include: {
-      _count: {
-        select: {
-          members: true,
-          needs: true,
-          ratings: true,
-        },
-      },
-    },
-  });
-
-  if (!tree) return null;
-
-  const openNeedCount = await (prisma as any).need.count({
-    where: { treeId: tree.id, status: "OPEN" },
-  });
-
-  // Count ideas linked to needs in this tree
-  const ideaCount = await (prisma as any).needIdea.count({
-    where: { need: { treeId: tree.id } },
-  });
-
-  return {
-    id: tree.id,
-    name: tree.name,
-    icono: tree.icono,
-    description: tree.description,
-    admissionPolicy: tree.admissionPolicy,
-    memberCount: tree._count.members,
-    needCount: tree._count.needs,
-    openNeedCount,
-    ideaCount,
-  };
-}
-
 /** Busca o crea un usuario basado en la info de Telegram. */
 async function resolveTelegramUser(
   prisma: PrismaClient,
@@ -201,7 +155,7 @@ async function resolveTelegramUser(
 async function handleInfo(
   prisma: PrismaClient,
   ctx: Context,
-  tree: Awaited<ReturnType<typeof findTreeByChat>>
+  tree: TreeInfo | null
 ): Promise<string> {
   if (!tree) return noTreeError();
   return formatTreeInfo(tree);
@@ -211,7 +165,7 @@ async function handleInfo(
 async function handleLista(
   prisma: PrismaClient,
   ctx: Context,
-  tree: Awaited<ReturnType<typeof findTreeByChat>>
+  tree: TreeInfo | null
 ): Promise<string> {
   if (!tree) return noTreeError();
 
@@ -231,7 +185,7 @@ async function handleLista(
 async function handleCrea(
   prisma: PrismaClient,
   ctx: Context,
-  tree: Awaited<ReturnType<typeof findTreeByChat>>,
+  tree: TreeInfo | null,
   titulo: string,
   descripcion: string
 ): Promise<string> {
@@ -261,7 +215,7 @@ async function handleCrea(
 async function handleVota(
   prisma: PrismaClient,
   ctx: Context,
-  tree: Awaited<ReturnType<typeof findTreeByChat>>,
+  tree: TreeInfo | null,
   needId: string
 ): Promise<{ text: string; react: boolean }> {
   if (!tree) return { text: noTreeError(), react: false };
@@ -323,7 +277,7 @@ async function handleVota(
 async function handleIdeas(
   prisma: PrismaClient,
   ctx: Context,
-  tree: Awaited<ReturnType<typeof findTreeByChat>>,
+  tree: TreeInfo | null,
   query: string
 ): Promise<string> {
   if (!tree) return noTreeError();
@@ -340,7 +294,7 @@ async function handleIdeas(
 
   if (needs.length === 0) {
     return `❌ No se encontraron necesidades que coincidan con *"${query}"*.\n\n` +
-      `Usa \`@TrustMaker lista necesidades\` para ver todas.`;
+      `Usa \`@TrustMakerBot /lista necesidades\` para ver todas.`;
   }
 
   if (needs.length === 1) {
@@ -379,7 +333,7 @@ async function handleIdeas(
   }
   lines.push(
     "",
-    `Para ver ideas, usa \`@TrustMaker ideas para "título exacto"\``
+    `Para ver ideas, usa \`@TrustMakerBot /ideas para "título exacto"\``
   );
 
   return lines.join("\n");
@@ -401,7 +355,15 @@ export async function handleMessage(
   const cmdText = extractCommandText(msg.text);
   if (cmdText === null) return null;
 
-  const parsed = parseCommand(cmdText);
+  // SPEC-1: solo procesar como comando si el texto post-mención empieza con "/"
+  // Backward compat: "help"/"ayuda" sin "/" como alias temporal
+  const isCommand = cmdText.startsWith("/");
+  const isHelpAlias = /^(help|ayuda)$/i.test(cmdText);
+  if (!isCommand && !isHelpAlias) return null;
+
+  // Quitar el "/" inicial si lo tiene, o usar el texto tal cual para alias
+  const cmdWithoutSlash = isCommand ? cmdText.slice(1).trim() : cmdText;
+  const parsed = parseCommand(cmdWithoutSlash);
   const chatId = ctx.chat?.id.toString();
 
   if (!chatId) {
@@ -413,7 +375,7 @@ export async function handleMessage(
     return { text: createNeedHelp() };
   }
 
-  let tree: Awaited<ReturnType<typeof findTreeByChat>> = null;
+  let tree: TreeInfo | null = null;
 
   // Only look up tree for commands that need it
   const needsTree: ParsedCommand["type"][] = [

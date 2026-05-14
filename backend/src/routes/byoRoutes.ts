@@ -1,8 +1,11 @@
 import { Router } from 'express';
-import { createKey, listKeys, deleteKey, decryptKey } from '../controllers/byoController';
+import { createKey, listKeys, deleteKey, decryptKey, register } from '../controllers/byoController';
 import { authenticateJWT } from '../middleware/authMiddleware';
 
 const router = Router();
+
+// POST /api/byo/register — register a BYO AI model (creates Agent + AgentProfile)
+router.post('/register', authenticateJWT, register);
 
 // POST /api/byo/keys — create a new BYO API key
 router.post('/keys', authenticateJWT, createKey);

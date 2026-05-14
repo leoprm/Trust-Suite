@@ -1,7 +1,9 @@
 import { Bot, session } from "grammy";
 import { PrismaClient } from "@prisma/client";
 import { BotContext, BotSessionData } from "./types";
-import { handleMessage } from "./commands";
+import { handleMessage, extractCommandText } from "./commands";
+import { handleNaturalMessage } from "./messages";
+import { analyzeMessage } from "./analyzer";
 import { registerReactionHandler } from "./voting";
 
 export function createBot(prisma: PrismaClient): Bot<BotContext> | null {
@@ -40,33 +42,96 @@ export function createBot(prisma: PrismaClient): Bot<BotContext> | null {
         "/start — Iniciar el bot\n" +
         "/login — Vincular tu cuenta de Trust Maker\n" +
         "/help — Mostrar esta ayuda\n\n" +
-        "En grupos, menciona @TrustMaker:\n" +
-        "  @TrustMaker info\n" +
-        "  @TrustMaker lista necesidades\n" +
-        "  @TrustMaker crea necesidad \"título\" — descripción\n" +
-        "  @TrustMaker ideas para \"título\"\n" +
-        "  @TrustMaker vota <id>"
+        "En grupos, menciona @TrustMakerBot:\n" +
+        "  @TrustMakerBot /info\n" +
+        "  @TrustMakerBot /lista necesidades\n" +
+        "  @TrustMakerBot /crea necesidad \"título\" — descripción\n" +
+        "  @TrustMakerBot /ideas para \"título\"\n" +
+        "  @TrustMakerBot /vota <id>\n\n" +
+        "También puedes conversar naturalmente mencionando al bot."
     );
   });
 
-  // ── Mensajes de texto: comandos @TrustMaker ────────────────────────────
-  bot.on("message:text", async (ctx) => {
-    const result = await handleMessage(prisma, ctx);
+  // ── Grupo: auto-crear árbol cuando el bot es agregado ─────────────────
+  bot.on("my_chat_member", async (ctx) => {
+    const chat = ctx.chat;
+    const newStatus = ctx.update.my_chat_member.new_chat_member.status;
 
-    if (result) {
-      await ctx.reply(result.text, { parse_mode: "Markdown" });
-
-      // React with heart if the command requested it
-      if (result.react) {
+    if (chat.type === "group" || chat.type === "supergroup") {
+      if (newStatus === "member" || newStatus === "administrator") {
+        const chatId = chat.id.toString();
         try {
-          await ctx.react("❤");
-        } catch {
-          // React API may not be available (older Telegram clients / bot API)
-          // Silently ignore — the reply text already confirms the vote
+          // Check if tree already exists for this group
+          const existing = await (prisma as any).tree.findUnique({
+            where: { telegramChatId: chatId },
+          });
+          if (!existing) {
+            const tree = await (prisma as any).tree.create({
+              data: {
+                name: chat.title || `Grupo ${chatId}`,
+                telegramChatId: chatId,
+                description: `Árbol automático para el grupo de Telegram "${chat.title || chatId}"`,
+                icono: "💬",
+                admissionPolicy: "OPEN",
+              },
+            });
+            console.log(
+              `[Telegram Bot] Árbol creado: "${tree.name}" (${tree.id}) para grupo ${chatId}`
+            );
+          }
+        } catch (err: any) {
+          console.error(`[Telegram Bot] Error al crear árbol para grupo ${chatId}:`, err.message);
         }
       }
     }
-    // If result is null, the message wasn't for the bot — ignore silently
+  });
+
+  // ── Mensajes de texto: comandos @TrustMakerBot + conversación natural ──
+  bot.on("message:text", async (ctx) => {
+    const msg = ctx.message;
+    if (!msg || !("text" in msg) || !msg.text) return;
+
+    const chatId = ctx.chat?.id.toString();
+
+    // 1. Análisis pasivo: fire-and-forget para todo mensaje de grupo
+    if (chatId) {
+      analyzeMessage(prisma, ctx, chatId).catch((err: Error) => {
+        console.error("[analyzer] Unhandled rejection:", err.message);
+      });
+    }
+
+    // 2. Verificar si el mensaje menciona al bot (SPEC-1)
+    const cmdText = extractCommandText(msg.text);
+
+    // 3. Si no menciona → solo análisis pasivo, no responder
+    if (cmdText === null) return;
+
+    // 4. Si menciona — rutear a comando o conversación natural
+    const isCommand = cmdText.startsWith("/");
+    const isHelpAlias = /^(help|ayuda)$/i.test(cmdText);
+
+    if (isCommand || isHelpAlias) {
+      // ── Modo comando ──
+      const result = await handleMessage(prisma, ctx);
+
+      if (result) {
+        await ctx.reply(result.text, { parse_mode: "Markdown" });
+
+        if (result.react) {
+          try {
+            await ctx.react("❤");
+          } catch {
+            // React API may not be available (older Telegram clients / bot API)
+          }
+        }
+      }
+    } else {
+      // ── Modo conversación natural (SPEC-2) ──
+      const naturalResult = await handleNaturalMessage(prisma, ctx);
+      if (naturalResult) {
+        await ctx.reply(naturalResult.text);
+      }
+    }
   });
 
   // ── Reaction handler (votos con reacciones) ─────────────────────────
@@ -79,6 +144,8 @@ export function createBot(prisma: PrismaClient): Bot<BotContext> | null {
         `[Telegram Bot] @${botInfo.username} iniciado en modo polling`
       );
     },
+  }).catch((err) => {
+    console.error("[Telegram Bot] ERROR al iniciar polling:", err.message);
   });
 
   return bot;

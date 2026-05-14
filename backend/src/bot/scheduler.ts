@@ -1,8 +1,8 @@
 /**
- * Scheduler: node-cron para el cierre diario a medianoche.
+ * Scheduler: node-cron para el cierre diario, XP decay, y rotación semanal.
  *
- * Usa node-cron para disparar cron.ts cada día a las 00:00 (hora local).
- * También expone una función manual `triggerDailyClose()` para testing.
+ * Usa node-cron para disparar jobs a horas fijas (hora local).
+ * También expone triggerDailyClose() para testing manual.
  */
 
 import cron from "node-cron";
@@ -11,41 +11,143 @@ import { PrismaClient } from "@prisma/client";
 import type { Bot } from "grammy";
 import type { BotContext } from "./types";
 import { runDailyClose } from "./cron";
+import {
+  applyDecay,
+  assignAgentToTreeSlot,
+  releaseAgent,
+} from "../services/agentProfileService";
+import { autoScale } from "../services/autoScaler";
+import { prisma } from "../index";
 
-let task: ScheduledTask | null = null;
+// ── Constantes ─────────────────────────────────────────────────────────────────
+
+const ROLES = ["analyst", "researcher", "implementer", "reviewer", "mediator"] as const;
+
+// ── Helpers ────────────────────────────────────────────────────────────────────
 
 /**
- * Arranca el scheduler de medianoche.
- * Solo registra la tarea si hay árboles con telegramChatId.
+ * Calcula el promedio de estrellas de un agente en un árbol
+ * durante los últimos 7 días. Retorna 0 si no hay ratings.
+ */
+async function avgStarsLast7Days(
+  agentId: string,
+  treeId: string,
+): Promise<number> {
+  const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+  const result = await prisma.rating.aggregate({
+    where: { agentId, treeId, createdAt: { gte: sevenDaysAgo } },
+    _avg: { stars: true },
+  });
+  return result._avg.stars ?? 0;
+}
+
+/**
+ * Encuentra el agente actualmente asignado a un rol en un árbol.
+ * Retorna null si el slot está vacío.
+ */
+async function findCurrentAgent(
+  treeId: string,
+  role: string,
+): Promise<{ agentId: string } | null> {
+  return prisma.agentRoleHistory.findFirst({
+    where: { treeId, role, releasedAt: null },
+    select: { agentId: true },
+  });
+}
+
+// ── Tareas programadas ─────────────────────────────────────────────────────────
+
+let midnightTask: ScheduledTask | null = null;
+let decayTask: ScheduledTask | null = null;
+let rotationTask: ScheduledTask | null = null;
+let autoScaleTask: ScheduledTask | null = null;
+
+/**
+ * Arranca todos los schedulers.
+ * Solo registra tareas si hay árboles con telegramChatId.
  */
 export function startScheduler(
-  prisma: PrismaClient,
+  prismaClient: PrismaClient,
   bot: Bot<BotContext> | null
 ): void {
-  // ── Detener scheduler previo si existe ──
-  if (task) {
-    task.stop();
-    task = null;
-  }
+  // ── Detener schedulers previos si existen ──
+  stopScheduler();
 
-  // ── Cron: 0 0 * * * (medianoche, hora local del servidor) ──
-  task = cron.schedule("0 0 * * *", async () => {
+  // ── Cron: 0 0 * * * (medianoche) ──
+  midnightTask = cron.schedule("0 0 * * *", async () => {
     console.log("[Scheduler] ⏰ Medianoche — ejecutando cierre diario…");
-
     try {
-      await runDailyClose(prisma, bot);
+      await runDailyClose(prismaClient, bot);
     } catch (err) {
       console.error("[Scheduler] Error fatal en cierre diario:", err);
     }
   });
-
   console.log("[Scheduler] ⏰ Cierre diario programado a las 00:00 (hora local)");
 
-  // ── Run initial close if there are existing votes to clear ──
-  // (Only in dev — in prod, the cron will handle it)
+  // ── Cron: 0 3 * * * (XP decay diario) ──
+  decayTask = cron.schedule("0 3 * * *", async () => {
+    const lambda = parseFloat(process.env.XP_DECAY_LAMBDA || "0.05");
+    console.log(`[Scheduler] 📉 XP decay iniciado (λ=${lambda})…`);
+    try {
+      const updated = await applyDecay(lambda);
+      console.log(`[Scheduler] 📉 XP decay: ${updated} perfiles actualizados.`);
+    } catch (err) {
+      console.error("[Scheduler] Error en XP decay:", err);
+    }
+  });
+  console.log("[Scheduler] 📉 XP decay programado a las 03:00 (diario)");
+
+  // ── Cron: 0 0 * * 0 (rotación semanal — domingo 00:00) ──
+  rotationTask = cron.schedule("0 0 * * 0", async () => {
+    console.log("[Scheduler] 🔄 Rotación semanal iniciada…");
+    try {
+      const trees = await prisma.tree.findMany();
+      let rotated = 0;
+
+      for (const tree of trees) {
+        for (const role of ROLES) {
+          const current = await findCurrentAgent(tree.id, role);
+
+          if (current) {
+            const avg = await avgStarsLast7Days(current.agentId, tree.id);
+            if (avg < 2) {
+              await releaseAgent(current.agentId, tree.id, role);
+              console.log(
+                `[Scheduler] 🔻 ${current.agentId} removido de ${tree.name} / ${role} (avg=${avg.toFixed(1)})`,
+              );
+              rotated++;
+              await assignAgentToTreeSlot(tree.id, role);
+            }
+          } else {
+            await assignAgentToTreeSlot(tree.id, role);
+          }
+        }
+      }
+
+      console.log(
+        `[Scheduler] 🔄 Rotación semanal completada — ${rotated} agentes reemplazados.`,
+      );
+    } catch (err) {
+      console.error("[Scheduler] Error en rotación semanal:", err);
+    }
+  });
+  console.log("[Scheduler] 🔄 Rotación semanal programada a domingo 00:00");
+
+  // ── Cron: 0 */6 * * * (cada 6 horas) — AutoScaler ──
+  autoScaleTask = cron.schedule("0 */6 * * *", async () => {
+    console.log("[Scheduler] 🔄 AutoScaler ejecutándose…");
+    try {
+      await autoScale();
+    } catch (err) {
+      console.error("[Scheduler] Error en AutoScaler:", err);
+    }
+  });
+  console.log("[Scheduler] 🔄 AutoScaler programado cada 6 horas");
+
+  // ── Dev mode hint ──
   if (process.env.NODE_ENV !== "production") {
     console.log(
-      "[Scheduler] 🧪 Entorno dev — usa triggerDailyClose() para simular el cierre."
+      "[Scheduler] 🧪 Entorno dev — usa triggerDailyClose() para simular el cierre.",
     );
   }
 }
@@ -54,20 +156,29 @@ export function startScheduler(
  * Dispara el cierre diario manualmente (para testing / desarrollo).
  */
 export async function triggerDailyClose(
-  prisma: PrismaClient,
+  prismaClient: PrismaClient,
   bot: Bot<BotContext> | null
 ) {
   console.log("[Scheduler] 🔧 Cierre diario manual disparado…");
-  return runDailyClose(prisma, bot);
+  return runDailyClose(prismaClient, bot);
 }
 
 /**
- * Detiene el scheduler (para shutdown graceful).
+ * Detiene todos los schedulers (para shutdown graceful).
  */
 export function stopScheduler(): void {
-  if (task) {
-    task.stop();
-    task = null;
-    console.log("[Scheduler] ⏹️ Scheduler detenido.");
+  let stopped = false;
+  for (const task of [midnightTask, decayTask, rotationTask, autoScaleTask]) {
+    if (task) {
+      task.stop();
+      stopped = true;
+    }
+  }
+  midnightTask = null;
+  decayTask = null;
+  rotationTask = null;
+  autoScaleTask = null;
+  if (stopped) {
+    console.log("[Scheduler] ⏹️ Todos los schedulers detenidos.");
   }
 }

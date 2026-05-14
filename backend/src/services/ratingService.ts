@@ -29,6 +29,7 @@ export async function applyRatings(
   treeId: string,
   taskId: string,
   ratings: RatingInput[],
+  crossTreeContribution: boolean = true,
 ): Promise<RatingResult> {
   // Get current membership state
   const membership = await prisma.agentMembership.findUnique({
@@ -60,6 +61,7 @@ export async function applyRatings(
           taskId,
           role: r.role,
           stars: r.stars,
+          crossTreeContribution,
         },
       }),
     ),

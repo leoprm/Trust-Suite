@@ -1,5 +1,6 @@
 import { Response } from 'express';
 import { applyRatings, getAgentStats } from '../services/ratingService';
+import { updateProfileFromRating } from '../services/agentProfileService';
 import { getRequestContext, getRequestMetadata, logEvent } from '../services/eventLogService';
 
 /**
@@ -9,7 +10,7 @@ import { getRequestContext, getRequestMetadata, logEvent } from '../services/eve
  */
 export const createRating = async (req: any, res: Response) => {
   try {
-    const { agentId, treeId, taskId, ratings } = req.body;
+    const { agentId, treeId, taskId, ratings, crossTreeContribution } = req.body;
 
     if (!agentId || !treeId || !taskId) {
       return res.status(400).json({ error: 'agentId, treeId, and taskId are required' });
@@ -28,7 +29,15 @@ export const createRating = async (req: any, res: Response) => {
       }
     }
 
-    const result = await applyRatings(agentId, treeId, taskId, ratings);
+    const shouldCrossTree = crossTreeContribution !== false; // default true
+    const result = await applyRatings(agentId, treeId, taskId, ratings, shouldCrossTree);
+
+    // Update cross-tree profile if applicable
+    if (shouldCrossTree) {
+      for (const r of ratings) {
+        await updateProfileFromRating(agentId, r.role, r.stars);
+      }
+    }
 
     void logEvent({
       ...getRequestContext(req),

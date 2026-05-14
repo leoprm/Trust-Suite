@@ -18,11 +18,11 @@ export function helpMessage(): string {
   return [
     "🌳 *TrustMaker* — comandos disponibles:",
     "",
-    "• `@TrustMaker info` — stats del árbol",
-    "• `@TrustMaker lista necesidades` — necesidades abiertas",
-    "• `@TrustMaker crea necesidad \"título\" — descripción` — crear necesidad",
-    "• `@TrustMaker ideas para \"título\"` — ver ideas de una necesidad",
-    "• `@TrustMaker vota <id>` — votar por una necesidad",
+    "• `@TrustMakerBot /info` — stats del árbol",
+    "• `@TrustMakerBot /lista necesidades` — necesidades abiertas",
+    "• `@TrustMakerBot /crea necesidad \"título\" — descripción` — crear necesidad",
+    "• `@TrustMakerBot /ideas para \"título\"` — ver ideas de una necesidad",
+    "• `@TrustMakerBot /vota <id>` — votar por una necesidad",
     "",
     "_Responde en el grupo mencionando @TrustMaker._",
   ].join("\n");
@@ -81,7 +81,7 @@ export function formatNeedsList(
 ): string {
   if (needs.length === 0) {
     return "📋 No hay necesidades en este árbol todavía.\n\n" +
-      "Crea una con: `@TrustMaker crea necesidad \"título\" — descripción`";
+      "Crea una con: `@TrustMakerBot /crea necesidad \"título\" — descripción`";
   }
 
   const openNeeds = needs.filter(n => n.status === "OPEN");
@@ -162,9 +162,9 @@ export function needNotFound(needId: string): string {
 
 export function createNeedHelp(): string {
   return [
-    "❓ Formato: `@TrustMaker crea necesidad \"título\" — descripción`",
+    "❓ Formato: `@TrustMakerBot /crea necesidad \"título\" — descripción`",
     "",
     "Ejemplo:",
-    "`@TrustMaker crea necesidad \"Mejorar onboarding\" — Crear un tutorial interactivo para nuevos miembros`",
+    "`@TrustMakerBot /crea necesidad \"Mejorar onboarding\" — Crear un tutorial interactivo para nuevos miembros`",
   ].join("\n");
 }

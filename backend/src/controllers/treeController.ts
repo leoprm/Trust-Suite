@@ -2,6 +2,7 @@ import { Request, Response } from 'express';
 import { prisma } from '../index';
 import { randomBytes } from 'crypto';
 import { getRequestContext, getRequestMetadata, logEvent } from '../services/eventLogService';
+import { onTreeCreated } from '../services/genesisService';
 
 // ── Tree CRUD ────────────────────────────────────────────────────────────────
 
@@ -56,6 +57,15 @@ export const createTree = async (req: any, res: Response) => {
       metadataJson: getRequestMetadata(req, { invitedCount: inviteUserIds?.length || 0, result: 'success' }),
       source: 'USER',
     });
+
+    // SPEC-1: auto-provisioning — non-blocking, fire-and-forget
+    try {
+      onTreeCreated(tree).catch(err => {
+        console.error('[genesisService] onTreeCreated failed:', err?.message || err);
+      });
+    } catch {
+      // Non-blocking: import or top-level sync error
+    }
 
     res.status(201).json(tree);
   } catch (error: any) {

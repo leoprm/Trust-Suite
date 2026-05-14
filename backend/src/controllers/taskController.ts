@@ -1,12 +1,12 @@
 import { Request, Response } from 'express';
 import { prisma } from '../index';
 import { evaluateDifficulty } from '../services/difficultyService';
-import { assignAI } from '../services/assignmentGateService';
+import { routeTask } from '../services/taskRouter';
 import { logEvent } from '../services/eventLogService';
 
 // ── evaluateAndAssignTask (internal, fire-and-forget) ─────────────────────────
 // Called after task creation. Evaluates difficulty via Hermes Agent,
-// then assigns the best AI via AssignmentGate. Updates the task row
+// then routes to the best agent via TaskRouter. Updates the task row
 // and logs events. Designed to run asynchronously — caller does NOT await.
 export async function evaluateAndAssignTask(
   taskId: string,
@@ -37,32 +37,16 @@ export async function evaluateAndAssignTask(
       });
     }
 
-    // ── Step 2: Assign AI ────────────────────────────────────────────────
-    const effectiveDifficulty = difficulty ?? 5; // default mid if evaluation failed
-    const assignedAIId = await assignAI(treeId, effectiveDifficulty);
+    // ── Step 2: Smart route via TaskRouter ───────────────────────────────
+    const assignedTo = await routeTask(taskId);
 
-    if (assignedAIId) {
-      await prisma.task.update({
-        where: { id: taskId },
-        data: {
-          assignedTo: assignedAIId,
-          status: 'IN_PROGRESS',
-        },
-      });
-
-      await logEvent({
-        treeId,
-        actorId,
-        action: 'TASK_ASSIGNED_TO_AI',
-        entityType: 'Task',
-        entityId: taskId,
-        afterJson: { assignedTo: assignedAIId, difficulty: effectiveDifficulty },
-        source: 'AUTOMATION',
-        severity: 'INFO',
-      });
+    if (assignedTo) {
+      console.log(
+        `[taskController] Task ${taskId} routed to ${assignedTo}`,
+      );
     } else {
       console.warn(
-        `[taskController] No AI assigned for task ${taskId} (difficulty=${effectiveDifficulty})`,
+        `[taskController] No agent matched for task ${taskId} — broadcast (unassigned)`,
       );
     }
   } catch (error: any) {
@@ -187,7 +171,73 @@ export const getTasks = async (req: Request, res: Response) => {
   }
 };
 
-// ── GET /api/tasks/:id ────────────────────────────────────────────────────────
+// ── POST /api/tasks/:id/route ─────────────────────────────────────────────────
+// Manual re-routing — forces the task through TaskRouter again.
+// Requires JWT authentication.
+export const routeTaskEndpoint = async (req: Request, res: Response) => {
+  try {
+    const taskId = req.params.id as string;
+
+    const task = await prisma.task.findUnique({
+      where: { id: taskId },
+      select: { id: true, status: true, treeId: true },
+    });
+
+    if (!task) {
+      return res.status(404).json({ error: 'Task not found' });
+    }
+
+    // Only re-route OPEN or IN_PROGRESS tasks
+    if (task.status !== 'OPEN' && task.status !== 'IN_PROGRESS') {
+      return res.status(400).json({
+        error: `Cannot re-route task with status '${task.status}'`,
+      });
+    }
+
+    // Clear current assignment so routeTask can re-assign
+    await prisma.task.update({
+      where: { id: taskId },
+      data: { assignedTo: null, status: 'OPEN' },
+    });
+
+    const assignedTo = await routeTask(taskId);
+
+    if (assignedTo) {
+      const updated = await prisma.task.findUnique({
+        where: { id: taskId },
+        include: {
+          assignedAI: {
+            select: {
+              id: true,
+              aiProfile: true,
+              aiProvider: true,
+              aiModel: true,
+              level: true,
+            },
+          },
+        },
+      });
+
+      return res.json({
+        message: 'Task re-routed successfully',
+        task: updated,
+      });
+    }
+
+    // No agent matched — task broadcast (unassigned)
+    const unassigned = await prisma.task.findUnique({
+      where: { id: taskId },
+    });
+
+    return res.json({
+      message: 'No agent available — task broadcast to all agents',
+      task: unassigned,
+    });
+  } catch (error: any) {
+    console.error('[taskController] routeTask error:', error.message || error);
+    res.status(500).json({ error: 'Failed to re-route task' });
+  }
+};
 export const getTask = async (req: Request, res: Response) => {
   try {
     const taskId = req.params.id as string;

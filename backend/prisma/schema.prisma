@@ -76,6 +76,12 @@ enum EventSource {
   AUTOMATION
 }
 
+enum AssignmentReason {
+  EXPLORATION
+  EXPLOITATION
+  MANUAL
+}
+
 model User {
   id              String    @id @default(uuid())
   username        String    @unique
@@ -110,6 +116,7 @@ model Tree {
   createdAt       DateTime        @default(now())
   members         TreeMember[]
   agentMemberships AgentMembership[]
+  agentRoleHistory AgentRoleHistory[]
   needs            Need[]            @relation("TreeNeeds")
   tasks            Task[]
   eventLogs        EventLog[]
@@ -149,6 +156,8 @@ model Agent {
   createdAt   DateTime           @default(now())
   memberships AgentMembership[]
   ratings     Rating[]
+  profile     AgentProfile?
+  roleHistory AgentRoleHistory[]
 }
 
 model AgentMembership {
@@ -167,14 +176,46 @@ model AgentMembership {
   @@unique([agentId, treeId])
 }
 
+model AgentProfile {
+  agentId             String   @id
+  totalRatings        Int      @default(0)
+  avgStars            Float    @default(0)
+  xpByRole            Json     @default("{}")
+  primaryRole         String?
+  secondaryRole       String?
+  confidenceScore     Float    @default(0)
+  lastActiveAt        DateTime?
+  explorationEligible Boolean  @default(true)
+  currentTreeCount    Int      @default(0)
+  updatedAt           DateTime @updatedAt
+  agent               Agent    @relation(fields: [agentId], references: [id], onDelete: Cascade)
+}
+
+model AgentRoleHistory {
+  id                String           @id @default(uuid())
+  agentId           String
+  treeId            String
+  role              String
+  assignedAt        DateTime         @default(now())
+  releasedAt        DateTime?
+  assignmentReason  AssignmentReason
+  performanceScore  Float?
+  agent             Agent            @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  tree              Tree             @relation(fields: [treeId], references: [id], onDelete: Cascade)
+  @@index([agentId])
+  @@index([treeId])
+  @@index([agentId, treeId])
+}
+
 model Rating {
-  id        String   @id @default(uuid())
-  agentId   String
-  treeId    String
-  taskId    String
-  role      String
-  stars     Int
-  createdAt DateTime @default(now())
+  id                     String   @id @default(uuid())
+  agentId                String
+  treeId                 String
+  taskId                 String
+  role                   String
+  stars                  Int
+  crossTreeContribution  Boolean  @default(true)
+  createdAt              DateTime @default(now())
   agent     Agent @relation(fields: [agentId], references: [id], onDelete: Cascade)
   tree      Tree  @relation(fields: [treeId], references: [id], onDelete: Cascade)
   membership AgentMembership @relation(fields: [agentId, treeId], references: [agentId, treeId])

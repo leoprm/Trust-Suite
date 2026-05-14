@@ -1,6 +1,25 @@
 import dotenv from 'dotenv';
 dotenv.config();
 
+// ── Fix: force IPv4 for HTTPS connections ─────────────────────────────────
+// Node.js defaults to IPv6 for api.telegram.org, which is unreachable.
+// This monkey-patch forces family:4 on all https.request/get calls.
+import https from 'https';
+const origRequest = https.request;
+(https as any).request = function(opts: any, ...args: any[]) {
+  if (typeof opts === 'string') opts = new URL(opts);
+  opts = { ...opts, family: 4 };
+  return origRequest.call(this, opts, ...args);
+};
+(https as any).get = function(opts: any, ...args: any[]) {
+  if (typeof opts === 'string' || opts instanceof URL) {
+    opts = { ...(typeof opts === 'string' ? new URL(opts) : opts) };
+  }
+  opts = { ...opts, family: 4 };
+  return origRequest.call(this, opts, ...args);
+};
+// ──────────────────────────────────────────────────────────────────────────
+
 import express from 'express';
 import path from 'path';
 import fs from 'fs';
@@ -22,9 +41,11 @@ import ratingRoutes from './routes/ratingRoutes';
 import agentRoutes from './routes/agentRoutes';
 import byoRoutes from './routes/byoRoutes';
 import taskRoutes from './routes/taskRoutes';
+import analyticsRoutes from './routes/analyticsRoutes';
 import { createBot } from './bot/index';
 import { startScheduler } from './bot/scheduler';
 import { stripeWebhook, paddleWebhook, createCheckout, cancelSubscription, currentCost, mySubscription } from './controllers/billingController';
+import { getTreeAgents, assignTreeAgent } from './controllers/agentController';
 
 const app = express();
 app.disable('x-powered-by');
@@ -152,6 +173,11 @@ app.use('/api/ratings', ratingRoutes);
 app.use('/api/agents', agentRoutes);
 app.use('/api/byo', byoRoutes);
 app.use('/api/tasks', taskRoutes);
+app.use('/api/analytics', analyticsRoutes);
+
+// Tree-scoped agent endpoints
+app.get('/api/trees/:id/agents', getTreeAgents);
+app.post('/api/trees/:id/agents/assign', authenticateJWT, assignTreeAgent);
 
 // ── Global Error Handler ──────────────────────────────────────────────────────
 app.use((err: any, _req: express.Request, res: express.Response, _next: express.NextFunction) => {

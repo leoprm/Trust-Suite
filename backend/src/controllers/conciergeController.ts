@@ -86,6 +86,37 @@ export const conciergeHandler = async (req: Request, res: Response) => {
       'When the user asks about tasks, prioritize open needs from this tree.',
     );
 
+    // ── Trust Maker tools available to the agent ──────────────────────────
+    contextLines.push('');
+    contextLines.push('## Trust Maker Tools');
+    contextLines.push('Tienes acceso a estas operaciones sobre el árbol:');
+    contextLines.push(
+      '- list_trees() — árboles disponibles',
+    );
+    contextLines.push(
+      '- get_needs(treeId) — necesidades del árbol (usa el treeId del contexto)',
+    );
+    contextLines.push('- get_ideas(needId) — ideas para una necesidad');
+    contextLines.push(
+      '- get_top_ideas(needId, limit) — mejores ideas por votos',
+    );
+    contextLines.push(
+      '- propose_idea(content, treeId) — proponer idea (auto-match a necesidades)',
+    );
+    contextLines.push(
+      '- vote_on_idea(ideaId, needId) — votar por una idea',
+    );
+    contextLines.push(
+      '- register_result(needId, ideaId, summary, evaluation) — registrar resultado',
+    );
+    contextLines.push('');
+    contextLines.push(
+      'Cuando el usuario pregunte por datos del árbol, CONSULTA las herramientas.',
+    );
+    contextLines.push(
+      'NO inventes información. Usa datos reales del árbol.',
+    );
+
     const systemPrompt = contextLines.join('\n');
 
     // ── Build user messages array ──────────────────────────────────────────
