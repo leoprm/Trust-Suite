@@ -32,16 +32,23 @@ Cada tarea es independiente y verificable (~2h máx).
 
 - [ ] T15: Campo TreeMember.monthlyFee + paymentStatus en schema
 - [ ] T16: Cron job día 1 del mes: calcular y persistir cuota
-- [ ] T17: Notificación de cuota vía bot (DM o grupo)
 
 ## Fase 6: Gate de Pago (depende de: Fase 5)
 
+- [ ] T17: Notificación de cuota vía bot (DM o grupo)
 - [ ] T18: Middleware de pago en bot/index.ts (GRACE → DELINQUENT → BLOCKED)
 - [ ] T19: Comando /pagar — genera link de pago Paddle/Stripe
 - [ ] T20: Webhook de pago → actualizar paymentStatus a ACTIVE
 
-> **Fase 7 (Árboles Privados) ya está en progreso → t_18294caf**
+## Fase 7: Split de Pagos con Stripe Connect (depende de: Fase 6)
+
+- [ ] T21: Schema PaymentSplit + MemberBalance + migración Prisma
+- [ ] T22: Stripe Connect — onboarding endpoint para miembros (connected accounts)
+- [ ] T23: Lógica de split en webhook de pago: calcular porcentajes por necesidad ganadora y distribuir
+- [ ] T24: GET /api/members/:id/balance y POST /api/members/:id/withdraw
+
+> **Fase 8 (Árboles Privados) ya está en progreso → t_18294caf**
 
 ---
 
-**Total**: 20 tareas, 6 fases. ~40 horas de trabajo.
+**Total**: 24 tareas, 7 fases. ~48 horas de trabajo.

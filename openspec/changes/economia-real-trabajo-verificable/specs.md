@@ -158,3 +158,79 @@ enum PaymentStatus { GRACE, ACTIVE, DELINQUENT, BLOCKED }
 ---
 
 ## 6. Árboles Privados → Ya en progreso (t_18294caf)
+
+---
+
+## 7. Split de Pagos con Stripe Connect
+
+### Modelo de reparto
+
+Cada necesidad ganadora define un **creador** que recibe un porcentaje del presupuesto. Al pagar la cuota mensual, el sistema fracciona el pago automáticamente:
+
+```
+Ejemplo: Necesidad "Rediseñar landing" — presupuesto $100, creador Juan (20%)
+Cuota total del árbol: $300/mes (10 miembros)
+
+Cuando Pedro paga $30:
+  → $6 (20%) a la cuenta Stripe Connect de Juan
+  → $24 al pool del árbol
+```
+
+### Schema
+
+```prisma
+model PaymentSplit {
+  id          String   @id @default(uuid())
+  needId      String
+  memberId    String   // quien recibe el split
+  percentage  Float    // 0.0 a 100.0
+  reason      String   // "need_creator", "task_executor"
+  createdAt   DateTime @default(now())
+
+  need   Need       @relation(fields: [needId], references: [id])
+  member TreeMember @relation(fields: [memberId], references: [id])
+}
+
+model MemberBalance {
+  id            String   @id @default(uuid())
+  memberId      String   @unique
+  availableBalance Int   @default(0)  // CLP, retirable
+  pendingBalance   Int   @default(0)  // CLP, en período de clearing
+  stripeAccountId String?  // Stripe Connect account ID
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  member TreeMember @relation(fields: [memberId], references: [id])
+}
+```
+
+### Stripe Connect Flow
+
+1. **Onboarding**: `POST /api/members/me/stripe-onboard` → devuelve URL de Stripe Connect onboarding
+2. **Return**: Stripe redirige a `/api/stripe/onboard/return?memberId=X` → guarda `stripeAccountId`
+3. **Split en pago**: Webhook `checkout.session.completed`:
+   - Calcula `PaymentSplit` para cada necesidad activa
+   - Crea Stripe Transfer a la connected account de cada beneficiario
+   - El resto va a la cuenta platform del árbol
+4. **Retiro**: `POST /api/members/:id/withdraw` → Stripe Payout a cuenta bancaria vinculada
+
+### Cálculo de porcentajes
+
+- **Creador de necesidad**: 20% del presupuesto total de sus necesidades activas
+- **Ejecutor de task**: 80% del presupuesto de la task cuando se marca VERIFIED
+- El porcentaje lo define el creador al abrir la necesidad (máx 50%)
+
+### Ledger interno
+
+Aunque el split es en tiempo real vía Stripe Connect, se mantiene un ledger en `MemberBalance` para:
+- Auditoría y transparencia
+- Reversiones en caso de disputa ganada
+- Historial de transacciones
+
+### Endpoints nuevos
+
+- `POST /api/members/me/stripe-onboard` — iniciar onboarding Stripe Connect
+- `GET /api/stripe/onboard/return?memberId=X` — callback de Stripe
+- `GET /api/members/:id/balance` — consultar balance
+- `POST /api/members/:id/withdraw` — retirar a cuenta bancaria
+- `GET /api/tree/:id/ledger` — historial de transacciones del árbol (admin)
