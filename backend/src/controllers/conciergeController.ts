@@ -599,6 +599,48 @@ export const conciergeHandler = async (req: Request, res: Response) => {
       data?.reply ??
       '';
 
+    // ── Track API usage ──────────────────────────────────────────────────
+    const usage = data?.usage;
+    if (usage && telegramUserId) {
+      const tgId = BigInt(telegramUserId);
+      try {
+        // Detectar el provider/model de la respuesta o usar defaults
+        const model = data?.model || 'deepseek-v4-pro';
+        const provider = model.includes('gpt') ? 'openai' 
+          : model.includes('claude') ? 'anthropic' 
+          : 'deepseek';
+
+        // Intentar leer precios de PlatformConfig
+        let priceInput = 0.27, priceOutput = 1.10;
+        try {
+          const configInput = await (prisma as any).platformConfig.findUnique({ where: { key: 'cost_api_input_1m' } });
+          const configOutput = await (prisma as any).platformConfig.findUnique({ where: { key: 'cost_api_output_1m' } });
+          if (configInput) priceInput = parseFloat(JSON.parse(configInput.value));
+          if (configOutput) priceOutput = parseFloat(JSON.parse(configOutput.value));
+        } catch {}
+
+        const costInput = (usage.prompt_tokens || 0) * priceInput / 1_000_000;
+        const costOutput = (usage.completion_tokens || 0) * priceOutput / 1_000_000;
+        const cost = costInput + costOutput;
+
+        await (prisma as any).apiUsage.create({
+          data: {
+            userId: tgId,
+            treeId,
+            provider,
+            model,
+            tokensIn: usage.prompt_tokens || 0,
+            tokensOut: usage.completion_tokens || 0,
+            cost,
+            messagePreview: message.trim().slice(0, 100),
+          },
+        });
+      } catch (usageErr) {
+        // Non-fatal — don't fail the request if usage tracking fails
+        console.error('[concierge] Failed to track API usage:', usageErr);
+      }
+    }
+
     // ── Task creation: parse JSON and create task ──────────────────────────
     if (isTaskCreation && reply) {
       const extractedTask = parseTaskJson(reply);
