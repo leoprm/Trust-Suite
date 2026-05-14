@@ -7,12 +7,12 @@ Cada tarea es independiente y verificable (~2h máx).
 - [ ] T1: Schema Task + migración Prisma
 - [ ] T2: CRUD endpoints /api/tasks (crear, listar, asignar, cambiar estado)
 - [ ] T3: TaskRouter extendido a humanos (skills query + asignación)
-- [ ] T4: Comandos del bot: /creatask, /mistasks, /asignartask
+- [ ] T4: Crear task vía conversación natural con @TrustMakerBot (lenguaje natural, no comandos rígidos)
 
 ## Fase 2: Skills por Trabajo (depende de: Fase 1)
 
 - [ ] T5: Extender User.skills (JSON) + User.totalXp en schema
-- [ ] T6: Skill inference al verificar task (keyword → categoría)
+- [ ] T6: Al verificar task, matchear con skills existentes del usuario. Si calza → XP a esa skill. Si no → crear nueva skill. Evitar listas interminables.
 - [ ] T7: XP assignment (10-50 XP según complejidad)
 - [ ] T8: GET /api/users/:id/skills + /api/users/:id/xp
 
@@ -40,12 +40,8 @@ Cada tarea es independiente y verificable (~2h máx).
 - [ ] T19: Comando /pagar — genera link de pago Paddle/Stripe
 - [ ] T20: Webhook de pago → actualizar paymentStatus a ACTIVE
 
-## Fase 7: Árboles Privados (depende de: nada)
-
-- [ ] T21: Cambiar default admissionPolicy a CLOSED en bot/index.ts (auto-creación)
-- [ ] T22: Filtrar handleTreeListQuery: solo OPEN + trees del usuario
-- [ ] T23: Comando /invitar @username para agregar miembros a árboles privados
+> **Fase 7 (Árboles Privados) ya está en progreso → t_18294caf**
 
 ---
 
-**Total**: 23 tareas, 7 fases. Tiempo estimado: 46 horas de trabajo.
+**Total**: 20 tareas, 6 fases. ~40 horas de trabajo.

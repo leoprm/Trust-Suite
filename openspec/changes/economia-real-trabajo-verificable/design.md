@@ -6,13 +6,26 @@
 
 **Por qué**: Las tasks actuales son para AI agents. Las tasks humanas tienen presupuesto, evidencia, disputas — un lifecycle distinto. Mantenerlas separadas evita contaminar el pipeline de AI.
 
-## 2. Skills inferidas, no declaradas
+## 1.5. Tasks creadas por conversación natural
 
-**Decisión**: El sistema infiere skills del contenido de la task, no el usuario las declara.
+**Decisión**: El método principal para crear tasks es lenguaje natural con @TrustMakerBot, no comandos rígidos.
 
-**Por qué**: Principio Trust DNA — "XP se gana con trabajo verificado, no se compra ni se declara". Evita inflación de skills auto-reportadas.
+**Por qué**: Reduce fricción. Decir "@TrustMakerBot necesito que alguien rediseñe el hero, 15 lucas" es más natural que recordar sintaxis de comandos.
 
-**Implementación**: Al verificar una task, se extraen keywords del título + descripción y se mapean a categorías predefinidas (design, frontend, backend, data, ops, writing, research, coordination).
+**Implementación**: El mensaje se envía al concierge (Hermes Agent), que extrae: título, descripción, presupuesto, necesidad relacionada. Si falta algún campo, el bot pregunta.
+
+## 2. Skills matcheadas con existentes, no inferencia libre
+
+**Decisión**: Al verificar una task, el bot primero revisa las skills que el usuario YA tiene. Si la task calza con una → suma XP ahí. Si no calza con ninguna → crea UNA nueva skill.
+
+**Por qué**: Evita listas interminables de skills por usuario. Principio Trust DNA: "XP se gana con trabajo verificado". Un usuario que hace 50 tasks de frontend debe tener `frontend: 500`, no 50 skills distintas.
+
+**Implementación**: 
+- 10 categorías predefinidas: design, frontend, backend, data, ops, writing, research, coordination, marketing, finance
+- Al verificar task, se extraen keywords del título + descripción
+- Se comparan contra las skills existentes del usuario
+- Si hay match semántico → XP a esa skill
+- Si no → se crea una nueva (máx ~8-10 skills por usuario)
 
 ## 3. Votación para disputas, no arbitraje central
 

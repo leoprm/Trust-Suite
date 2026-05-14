@@ -40,8 +40,16 @@ enum TaskStatus {
 }
 ```
 
+### Creación de tasks
+- **Cualquier miembro del árbol** puede crear tasks
+- **Método principal**: conversación natural con @TrustMakerBot
+  - Ej: "@TrustMakerBot necesito que alguien rediseñe el hero de la landing, presupuesto 15 lucas"
+  - El bot parsea con Hermes Agent y crea la task automáticamente
+- **Método alternativo**: comando `/creatask "título" --presupuesto 15000 --need "Landing page"`
+- El creador del árbol puede modificar presupuesto y asignar prioridad
+
 ### Endpoints
-- `POST /api/tasks` — crear task (creador del árbol o admin)
+- `POST /api/tasks` — crear task (cualquier miembro)
 - `GET /api/tasks?treeId=X` — listar tasks del árbol
 - `PATCH /api/tasks/:id/assign` — asignar a un miembro (TaskRouter o manual)
 - `PATCH /api/tasks/:id/status` — cambiar estado
@@ -57,22 +65,32 @@ enum TaskStatus {
 ```prisma
 model User {
   // ... existente ...
-  skills      String?  // JSON: {"design": 45, "frontend": 72, "backend": 30}
+  skills      String?  // JSON: {"design": 45, "frontend": 72}
   totalXp     Int      @default(0)
 }
 ```
 
-### Lógica
-- Al verificar una task, se infieren skills del título + descripción
-- Se suman 10-50 XP según complejidad de la task
-- Skills se acumulan incrementalmente (sin decaimiento para humanos)
-- TaskRouter prioriza miembros con skills relevantes y menos carga actual
+### Match con skills existentes (NO inferir skills nuevas cada vez)
+- Al verificar una task, el bot analiza título + descripción
+- **Primero revisa las skills que el usuario YA tiene**
+- Si la task calza con una skill existente → suma XP a esa skill
+- Si no calza con ninguna → crea UNA nueva skill (no una lista)
+- Esto evita inflación de skills — máximo ~8-10 skills por usuario
+
+### Categorías de skills predefinidas
+`design`, `frontend`, `backend`, `data`, `ops`, `writing`, `research`, `coordination`, `marketing`, `finance`
+
+### XP
+- Tasks simples (≤2h): 10-20 XP
+- Tasks medias (2-8h): 20-35 XP  
+- Tasks complejas (>8h): 35-50 XP
+- La complejidad la estima el creador al crear la task
 
 ### TaskRouter extendido
 - Ya existe para AI agents — extender a humanos
 - Query: miembros del árbol con skills que matchean, ordenados por XP en esa skill
 - Excluir miembros con tasks activas > 3
-- Rotación semanal para evitar monopolio
+- Rotación: si un miembro ya tiene 2 tasks asignadas esta semana, baja prioridad
 
 ---
 
@@ -139,11 +157,4 @@ enum PaymentStatus { GRACE, ACTIVE, DELINQUENT, BLOCKED }
 
 ---
 
-## 6. Árboles Privados
-
-### Cambios
-- `Tree.admissionPolicy` default: CLOSED (antes OPEN)
-- `handleTreeListQuery` filtra: solo OPEN + trees donde el usuario es miembro
-- `findTreeByChat` sigue funcionando para todos los trees (el bot está en el grupo)
-- Auto-join solo para trees OPEN
-- Invitación: comando `/invitar @username` que agrega al usuario como miembro
+## 6. Árboles Privados → Ya en progreso (t_18294caf)
