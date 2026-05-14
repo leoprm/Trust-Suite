@@ -10,6 +10,7 @@
 
 import { Channel, ChannelMessage, BotResponse } from "./channel";
 import { formatForWhatsApp } from "./whatsappFormatter";
+import { InputFile } from "grammy";
 
 // ── Telegram (passthrough) ─────────────────────────────────────────────────
 
@@ -19,6 +20,11 @@ function formatForTelegram(response: BotResponse): ChannelMessage[] {
   // Telegram keeps text as-is (Markdown parse_mode applied by sender)
   if (response.text) {
     messages.push({ kind: "text", text: response.text });
+  }
+
+  // Voice note (TTS-generated)
+  if (response.voiceBuffer) {
+    messages.push({ kind: "voice", voiceBuffer: response.voiceBuffer });
   }
 
   // Media via Telegram's native file sending (handled by the caller)
@@ -82,6 +88,15 @@ export async function sendViaTelegram(
         case "text":
           if (msg.text) {
             await ctx.reply(msg.text, { parse_mode: "Markdown" });
+            sent = true;
+          }
+          break;
+
+        case "voice":
+          if (msg.voiceBuffer) {
+            await ctx.replyWithVoice(
+              new InputFile(msg.voiceBuffer, "voice.ogg"),
+            );
             sent = true;
           }
           break;

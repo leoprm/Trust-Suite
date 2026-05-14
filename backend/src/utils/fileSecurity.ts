@@ -17,6 +17,11 @@ export const ALLOWED_UPLOAD_TYPES: Record<string, { extensions: string[]; maxByt
   'text/csv': { extensions: ['.csv'], maxBytes: 10 * 1024 * 1024, inline: false },
   'application/vnd.openxmlformats-officedocument.wordprocessingml.document': { extensions: ['.docx'], maxBytes: 10 * 1024 * 1024, inline: false },
   'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': { extensions: ['.xlsx'], maxBytes: 10 * 1024 * 1024, inline: false },
+  'audio/ogg': { extensions: ['.ogg', '.oga'], maxBytes: 25 * 1024 * 1024, inline: false },
+  'audio/opus': { extensions: ['.opus'], maxBytes: 25 * 1024 * 1024, inline: false },
+  'audio/wav': { extensions: ['.wav'], maxBytes: 25 * 1024 * 1024, inline: false },
+  'audio/mpeg': { extensions: ['.mp3'], maxBytes: 25 * 1024 * 1024, inline: false },
+  'audio/webm': { extensions: ['.webm'], maxBytes: 25 * 1024 * 1024, inline: false },
 };
 
 export const BLOCKED_EXTENSIONS = new Set([

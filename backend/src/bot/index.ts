@@ -7,6 +7,18 @@ import { analyzeMessage } from "./analyzer";
 import { registerReactionHandler } from "./voting";
 import { checkPaymentAccess } from "./payment";
 import { formatForChannel, sendViaTelegram } from "./channelAdapter";
+import { textToSpeech } from "../services/ttsService";
+
+// ── TTS: generate voice buffer for a text response ──────────────────────
+
+async function generateVoice(text: string): Promise<Buffer | null> {
+  try {
+    return await textToSpeech(text);
+  } catch (err: any) {
+    console.warn("[TTS] Voice generation failed:", err.message);
+    return null; // non-blocking — text still gets sent
+  }
+}
 
 export function createBot(prisma: PrismaClient): Bot<BotContext> | null {
   const token = process.env.TELEGRAM_BOT_TOKEN || "";
@@ -171,24 +183,47 @@ export function createBot(prisma: PrismaClient): Bot<BotContext> | null {
     if (chat.type === "group" || chat.type === "supergroup") {
       if (newStatus === "member" || newStatus === "administrator") {
         const chatId = chat.id.toString();
+        const adderId = ctx.update.my_chat_member.from.id.toString();
         try {
           // Check if tree already exists for this group
-          const existing = await (prisma as any).tree.findUnique({
+          let tree = await (prisma as any).tree.findUnique({
             where: { telegramChatId: chatId },
           });
-          if (!existing) {
-            const tree = await (prisma as any).tree.create({
+          if (!tree) {
+            tree = await (prisma as any).tree.create({
               data: {
                 name: chat.title || `Grupo ${chatId}`,
                 telegramChatId: chatId,
                 description: `Árbol automático para el grupo de Telegram "${chat.title || chatId}"`,
                 icono: "💬",
-                admissionPolicy: "CLOSED",
+                admissionPolicy: "INVITE_ONLY",
               },
             });
             console.log(
               `[Telegram Bot] Árbol creado: "${tree.name}" (${tree.id}) para grupo ${chatId}`
             );
+          }
+
+          // Auto-add the user who invited the bot
+          try {
+            // Resolve or create user by telegram ID
+            const tgId = BigInt(adderId);
+            let user = await prisma.user.findUnique({ where: { telegramUserId: tgId } });
+            if (!user) {
+              user = await prisma.user.create({
+                data: { username: `tg_${adderId}`, telegramUserId: tgId },
+              });
+            }
+            await prisma.treeMember.upsert({
+              where: { userId_treeId: { userId: user.id, treeId: tree.id } },
+              update: { status: "ACTIVE" },
+              create: { userId: user.id, treeId: tree.id, status: "ACTIVE", role: "ADMIN" },
+            });
+            console.log(
+              `[Telegram Bot] Miembro agregado: ${user.username || adderId} al árbol ${tree.id}`
+            );
+          } catch (memberErr: any) {
+            console.error(`[Telegram Bot] Error al agregar miembro ${adderId}:`, memberErr.message);
           }
         } catch (err: any) {
           console.error(`[Telegram Bot] Error al crear árbol para grupo ${chatId}:`, err.message);
@@ -235,9 +270,11 @@ export function createBot(prisma: PrismaClient): Bot<BotContext> | null {
       const result = await handleMessage(prisma, ctx);
 
       if (result) {
+        // Generate voice (non-blocking)
+        const voiceBuffer = await generateVoice(result.text);
         // Route through channel adapter (T27)
         const messages = formatForChannel(
-          { text: result.text, react: result.react },
+          { text: result.text, react: result.react, voiceBuffer: voiceBuffer ?? undefined },
           "telegram",
         );
         await sendViaTelegram(ctx, messages);
@@ -254,13 +291,150 @@ export function createBot(prisma: PrismaClient): Bot<BotContext> | null {
       // ── Modo conversación natural (SPEC-2) ──
       const naturalResult = await handleNaturalMessage(prisma, ctx);
       if (naturalResult) {
+        // Generate voice (non-blocking)
+        const voiceBuffer = await generateVoice(naturalResult.text);
         // Route through channel adapter (T27)
         const messages = formatForChannel(
-          { text: naturalResult.text },
+          { text: naturalResult.text, voiceBuffer: voiceBuffer ?? undefined },
           "telegram",
         );
         await sendViaTelegram(ctx, messages);
       }
+    }
+  });
+
+  // ── Mensajes de voz: transcribir + detectar interpelación ──────────────
+  // T29: El bot escucha todo pero solo responde si lo mencionan.
+  // Flujo: 1) Descargar .ogg vía getFile 2) POST /api/audio/transcribe
+  // 3) Verificar si el texto contiene @TrustMakerBot 4) Si sí → pipeline concierge
+  bot.on("message:voice", async (ctx) => {
+    const msg = ctx.message;
+    if (!msg?.voice) return;
+
+    const chatId = ctx.chat?.id.toString();
+    const fileId = msg.voice.file_id;
+
+    // Show typing indicator while transcribing
+    ctx.replyWithChatAction("typing").catch(() => {});
+
+    try {
+      // 1. Download .ogg from Telegram
+      const fileInfo = await ctx.api.getFile(fileId);
+      if (!fileInfo.file_path) {
+        console.error("[Voice] Telegram returned no file_path for", fileId);
+        return;
+      }
+
+      const tgUrl = `https://api.telegram.org/file/bot${process.env.TELEGRAM_BOT_TOKEN}/${fileInfo.file_path}`;
+      const fileResp = await fetch(tgUrl);
+      if (!fileResp.ok) {
+        console.error("[Voice] Failed to download from Telegram:", fileResp.status);
+        return;
+      }
+      const fileBuffer = Buffer.from(await fileResp.arrayBuffer());
+
+      // 2. POST to /api/audio/transcribe
+      const blob = new Blob([fileBuffer], {
+        type: msg.voice.mime_type || "audio/ogg",
+      });
+      const formData = new FormData();
+      formData.append("file", blob, "voice.ogg");
+
+      const apiKey = process.env.HERMES_API_SERVER_KEY ?? "";
+      const transcribeResp = await fetch(
+        "http://localhost:3100/api/audio/transcribe",
+        {
+          method: "POST",
+          headers: { Authorization: `Bearer ${apiKey}` },
+          body: formData,
+        },
+      );
+
+      if (!transcribeResp.ok) {
+        console.error(
+          "[Voice] Transcription endpoint returned:",
+          transcribeResp.status,
+        );
+        return;
+      }
+
+      const data = (await transcribeResp.json()) as any;
+      const transcribedText: string = data?.text ?? "";
+      if (!transcribedText.trim()) return;
+
+      // 3. Check if the text mentions @TrustMakerBot
+      const mentionMatch = transcribedText.match(/@(TrustMakerBot|TrustMaker)\b/i);
+      if (!mentionMatch) {
+        console.log(
+          `[Voice] No bot mention in transcription — ignoring. Text: "${transcribedText.substring(0, 80)}"`,
+        );
+        return; // Not addressed to the bot → ignore
+      }
+
+      // 4. Extract clean text after the mention
+      const mentionEnd = (mentionMatch.index ?? 0) + mentionMatch[0].length;
+      const cleanText = transcribedText.slice(mentionEnd).trim();
+      if (!cleanText) return;
+
+      console.log(
+        `[Voice] Transcribed + detected mention → routing: "${cleanText.substring(0, 80)}"`,
+      );
+
+      // 5. Route through concierge pipeline (same as text messages)
+      // 5a. Payment check
+      if (chatId) {
+        const paymentResult = await checkPaymentAccess(
+          prisma,
+          ctx,
+          chatId,
+          cleanText,
+        );
+        if (paymentResult.blocked) {
+          await ctx.reply(paymentResult.reply, { parse_mode: "Markdown" });
+          return;
+        }
+      }
+
+      // 5b. Simulate a text message so the existing handlers work
+      const originalText = (msg as any).text;
+      (msg as any).text = cleanText;
+
+      try {
+        const isCommand = cleanText.startsWith("/");
+        const isHelpAlias = /^(help|ayuda)$/i.test(cleanText);
+
+        if (isCommand || isHelpAlias) {
+          const result = await handleMessage(prisma, ctx);
+          if (result) {
+            const messages = formatForChannel(
+              { text: result.text, react: result.react },
+              "telegram",
+            );
+            await sendViaTelegram(ctx, messages);
+            if (result.react) {
+              try { await ctx.react("❤"); } catch {}
+            }
+          }
+        } else {
+          const naturalResult = await handleNaturalMessage(prisma, ctx);
+          if (naturalResult) {
+            const messages = formatForChannel(
+              { text: naturalResult.text },
+              "telegram",
+            );
+            await sendViaTelegram(ctx, messages);
+          }
+        }
+      } finally {
+        // Restore original message state (voice messages have no text)
+        if (originalText === undefined) {
+          delete (msg as any).text;
+        } else {
+          (msg as any).text = originalText;
+        }
+      }
+    } catch (err: any) {
+      console.error("[Voice] Handler error:", err.message || err);
     }
   });
 

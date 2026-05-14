@@ -23,6 +23,8 @@ export interface BotResponse {
   react?: boolean;
   media?: BotMedia[];
   interactive?: BotInteractive;
+  /** OGG Opus buffer for Telegram voice note (sendVoice). */
+  voiceBuffer?: Buffer;
 }
 
 /** Media attachment (image, audio, video, document). */
@@ -69,8 +71,10 @@ export interface InteractiveRow {
 
 /** A single message ready to be sent via the channel API. */
 export interface ChannelMessage {
-  kind: "text" | "media" | "interactive";
+  kind: "text" | "media" | "interactive" | "voice";
   text?: string;
   media?: BotMedia;
   interactive?: BotInteractive;
+  /** OGG Opus buffer for Telegram replyWithVoice. */
+  voiceBuffer?: Buffer;
 }
