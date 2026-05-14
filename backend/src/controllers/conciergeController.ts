@@ -22,6 +22,7 @@ const FACTUAL_PATTERNS: Array<{ regex: RegExp; handler: string }> = [
   { regex: /(cuántas|cuantas|cuántos|cuantos)\s+(necesidades|needs|ideas|miembros|members)/i, handler: 'stats' },
   { regex: /(qui[eé]n|quien)\s+(soy|eres)/i, handler: 'whoami' },
   { regex: /(mis|mis\s+datos|mi\s+perfil|mi\s+cuenta)/i, handler: 'profile' },
+  { regex: /(cu[aá]nto|cuanto|costos|costes|cobro|pago|precio|factura|gasto|financia|transparencia)/i, handler: 'costs' },
 ];
 
 function detectFactualQuestion(message: string): string | null {
@@ -256,6 +257,63 @@ async function handleWhoAmI(telegramUserId: string): Promise<string> {
   return lines.join('\n');
 }
 
+// ── Cost transparency query ─────────────────────────────────────────────
+
+async function handleCostQuery(): Promise<string> {
+  const configs = await (prisma as any).platformConfig.findMany();
+  const getVal = (key: string): string => {
+    const c = configs.find((c: any) => c.key === key);
+    return c?.value ?? '0';
+  };
+
+  const salaries = parseFloat(getVal('cost_salaries'));
+  const infra = parseFloat(getVal('cost_infrastructure'));
+  const fixed = parseFloat(getVal('cost_fixed'));
+  const margin = parseFloat(getVal('growth_margin_pct'));
+
+  const startOfMonth = new Date();
+  startOfMonth.setDate(1);
+  startOfMonth.setHours(0, 0, 0, 0);
+
+  const usage = await (prisma as any).apiUsage.findMany({
+    where: { createdAt: { gte: startOfMonth } },
+  });
+
+  const byProvider: Record<string, number> = {};
+  let totalApi = 0;
+  for (const u of usage) {
+    const p = u.provider || 'unknown';
+    if (!byProvider[p]) byProvider[p] = 0;
+    byProvider[p] += u.cost;
+    totalApi += u.cost;
+  }
+
+  const totalFixed = salaries + infra + fixed;
+  const users = new Set(usage.map((u: any) => u.userId.toString())).size || 1;
+  const avgTotal = (totalApi + totalFixed) / users;
+
+  return [
+    '📊 **Transparencia de costos — Trust Maker**',
+    '',
+    '🏢 **Costos fijos mensuales:**',
+    `• Sueldos del equipo: $${salaries.toLocaleString()}/mes`,
+    `• Infraestructura (servidores, APIs, hosting): $${infra.toLocaleString()}/mes`,
+    `• Gastos fijos (electricidad, internet, oficina): $${fixed.toLocaleString()}/mes`,
+    `• **Total fijo: $${totalFixed.toLocaleString()}/mes**`,
+    '',
+    '🤖 **Uso de APIs este mes:**',
+    ...Object.entries(byProvider).map(([p, c]) => `• ${p}: $${c.toFixed(2)}`),
+    `• **Total APIs: $${totalApi.toFixed(2)}**`,
+    '',
+    '👤 **Costo promedio por usuario:**',
+    `• $${avgTotal.toFixed(2)}/mes (${users} usuarios activos)`,
+    `• Margen de crecimiento: ${margin}%`,
+    '',
+    `💰 Cada usuario paga solo lo que consume en APIs + su parte de costos fijos.`,
+    `Si tienes dudas sobre tu factura específica, puedes consultarme.`,
+  ].join('\n');
+}
+
 // ── Extract Telegram user from session header ──────────────────────────────
 
 function extractTelegramUserId(req: Request): string | null {
@@ -424,6 +482,9 @@ export const conciergeHandler = async (req: Request, res: Response) => {
         case 'whoami':
         case 'profile':
           reply = await handleWhoAmI(tgId);
+          break;
+        case 'costs':
+          reply = await handleCostQuery();
           break;
         default:
           reply = 'No pude interpretar tu pregunta.';
@@ -603,8 +664,17 @@ export const conciergeHandler = async (req: Request, res: Response) => {
     const usage = data?.usage;
     if (usage && telegramUserId) {
       const tgId = BigInt(telegramUserId);
-      try {
-        // Detectar el provider/model de la respuesta o usar defaults
+
+      // Skip usage tracking for platform admins
+      const isAdmin = await (prisma as any).user.findUnique({
+        where: { telegramUserId: tgId },
+        select: { isPlatformAdmin: true },
+      });
+      if (isAdmin?.isPlatformAdmin) {
+        console.log('[concierge] Skipping usage tracking for platform admin');
+      } else {
+        try {
+          // Detectar el provider/model de la respuesta o usar defaults
         const model = data?.model || 'deepseek-v4-pro';
         const provider = model.includes('gpt') ? 'openai' 
           : model.includes('claude') ? 'anthropic' 
@@ -638,6 +708,7 @@ export const conciergeHandler = async (req: Request, res: Response) => {
       } catch (usageErr) {
         // Non-fatal — don't fail the request if usage tracking fails
         console.error('[concierge] Failed to track API usage:', usageErr);
+      }
       }
     }
 

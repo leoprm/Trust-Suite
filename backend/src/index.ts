@@ -83,6 +83,8 @@ import memberRoutes from './routes/memberRoutes';
 import stripeRoutes from './routes/stripeRoutes';
 import whatsappRoutes from './routes/whatsappRoutes';
 import audioRoutes from './routes/audioRoutes';
+import sandboxRoutes from './routes/sandboxRoutes';
+import costRoutes from './routes/costRoutes';
 import { createBot } from './bot/index';
 import { startScheduler } from './bot/scheduler';
 import { initDisputeService } from './services/telegramBotService';
@@ -91,6 +93,7 @@ import { whatsappReceive } from './controllers/whatsappController';
 import { getTreeAgents, assignTreeAgent } from './controllers/agentController';
 
 const app = express();
+export { app }; // exported for integration tests
 app.disable('x-powered-by');
 const port = process.env.PORT || 3000;
 export const prisma = new PrismaClient();
@@ -224,6 +227,7 @@ app.use(globalLimiter);
 // ── Routes ────────────────────────────────────────────────────────────────────
 app.use('/api/auth', authRoutes);
 app.use('/api/trees', treeRoutes);
+app.use('/api/trees', sandboxRoutes); // sandbox sub-routes: GET/DELETE /:id/sandbox
 app.use('/api/needs', needRoutes);
 app.use('/api/ideas', ideaRoutes);
 app.use('/api/results', resultRoutes);
@@ -239,6 +243,7 @@ app.use('/api/members', memberRoutes);
 app.use('/api/stripe', stripeRoutes);
 app.use('/api/whatsapp', whatsappRoutes);
 app.use('/api/audio', audioRoutes);
+app.use('/api/costs', costRoutes);
 
 // Tree-scoped agent endpoints
 app.get('/api/trees/:id/agents', getTreeAgents);
@@ -258,8 +263,10 @@ app.use((err: any, _req: express.Request, res: express.Response, _next: express.
 });
 
 // ── Start ─────────────────────────────────────────────────────────────────────
-bootstrapDatabase().then(() => {
-  app.listen(Number(port), '0.0.0.0', () => {
-    console.log(`Server is running on http://0.0.0.0:${port}`);
+if (process.env.NODE_ENV !== 'test') {
+  bootstrapDatabase().then(() => {
+    app.listen(Number(port), '0.0.0.0', () => {
+      console.log(`Server is running on http://0.0.0.0:${port}`);
+    });
   });
-});
+}
