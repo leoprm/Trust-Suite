@@ -39,6 +39,53 @@ export const getUserSkills = async (req: Request, res: Response) => {
   }
 };
 
+// ── GET /api/users/me/skills ──────────────────────────────────────────────────
+// Returns the authenticated user's skills + level + top 3.
+// Response: { skills: { design: 45, frontend: 72 }, totalXp: 117, level: 3, topSkills: [...] }
+export const getMySkills = async (req: Request, res: Response) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({ error: 'Authentication required' });
+    }
+
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { skills: true, totalXp: true },
+    });
+
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    let skills: Record<string, number> = {};
+    try {
+      skills = user.skills ? JSON.parse(user.skills as string) : {};
+    } catch {
+      skills = {};
+    }
+
+    // Nivel basado en XP total (escala sqrt)
+    const level = Math.floor(Math.sqrt(user.totalXp || 0) / 10) + 1;
+
+    // Top 3 habilidades
+    const topSkills = Object.entries(skills)
+      .sort(([, a], [, b]) => b - a)
+      .slice(0, 3)
+      .map(([name, xp]) => ({ name, xp }));
+
+    res.json({
+      skills,
+      totalXp: user.totalXp,
+      level,
+      topSkills,
+    });
+  } catch (error: any) {
+    console.error('[getMySkills] ERROR:', error?.message || error);
+    res.status(500).json({ error: 'Failed to fetch skills' });
+  }
+};
+
 // ── GET /api/users/:id/xp ────────────────────────────────────────────────────
 // Returns XP history — tasks completed by the user, derived from
 // tasks where the user is assignee and status is VERIFIED or PAID.

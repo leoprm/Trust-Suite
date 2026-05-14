@@ -4,6 +4,7 @@ import { PrismaClient } from "@prisma/client";
 import { BotContext, BotSessionData } from "./types";
 import { handleMessage, extractCommandText } from "./commands";
 import { handleNaturalMessage } from "./messages";
+import { handleDM, handleProfileCallback } from "./dm";
 import { analyzeMessage } from "./analyzer";
 import { registerReactionHandler, handleNeedPollAnswer } from "./voting";
 import {
@@ -319,10 +320,23 @@ Ejemplo: *"@TrustMakerBot necesito que alguien rediseñe el logo del grupo"*
     }
   });
 
+  // ── DM: Mensajes privados (perfil personal, comandos, concierge) ────
+  bot.on("message:text", async (ctx, next) => {
+    const chatType = ctx.chat?.type;
+    if (chatType !== "private") return next();
+
+    await handleDM(prisma, ctx as BotContext);
+    // Don't call next() — DM handled, group handler won't fire
+  });
+
   // ── Mensajes de texto: comandos @TrustMakerBot + conversación natural ──
   bot.on("message:text", async (ctx) => {
     const msg = ctx.message;
     if (!msg || !("text" in msg) || !msg.text) return;
+
+    const chatType = ctx.chat?.type;
+    // Skip DM — already handled above
+    if (chatType === "private") return;
 
     const chatId = ctx.chat?.id.toString();
 
@@ -693,6 +707,15 @@ Ejemplo: *"@TrustMakerBot necesito que alguien rediseñe el logo del grupo"*
 
   // ── Reaction handler (votos con reacciones) ─────────────────────────
   registerReactionHandler(bot);
+
+  // ── DM: Inline button callbacks (perfil skills/tasks/costs) ─────────
+  bot.on("callback_query", async (ctx) => {
+    const handled = await handleProfileCallback(prisma, ctx as BotContext);
+    if (!handled) {
+      // Unknown callback — acknowledge silently
+      await ctx.answerCallbackQuery();
+    }
+  });
 
   // ── Unified poll_answer handler (T8: need voting, T10: satisfaction) ──
   bot.on("poll_answer", async (ctx) => {

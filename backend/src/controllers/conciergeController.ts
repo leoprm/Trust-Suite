@@ -638,8 +638,60 @@ export const conciergeHandler = async (req: Request, res: Response) => {
       }
     }
 
+    // ── Fetch member skills for organize intent ─────────────────────────────
+    let memberSkillsContext = '';
+    if (isOrganize) {
+      const members = await (prisma as any).treeMember.findMany({
+        where: { treeId, status: 'ACTIVE' },
+        include: {
+          user: { select: { id: true, username: true, skills: true, totalXp: true } },
+        },
+      });
+
+      const skillLines: string[] = [];
+      let membersWithSkills = 0;
+      for (const m of members) {
+        const username = m.user?.username || '(anónimo)';
+        if (m.user?.skills) {
+          try {
+            const skills = JSON.parse(m.user.skills as string);
+            if (typeof skills === 'object' && skills !== null) {
+              const entries = Object.entries(skills as Record<string, number>);
+              if (entries.length > 0) {
+                const skillStr = entries.map(([k, v]) => `${k}(${v})`).join(', ');
+                skillLines.push(`- ${username}: ${skillStr}`);
+                membersWithSkills++;
+                continue;
+              }
+            }
+          } catch {
+            // JSON inválido — tratar como sin habilidades
+          }
+        }
+        skillLines.push(`- ${username}: (sin habilidades registradas)`);
+      }
+
+      memberSkillsContext = [
+        '',
+        '## Miembros del árbol y sus habilidades (REAL, de DB)',
+        skillLines.length > 0 ? skillLines.join('\n') : '(ningún miembro tiene habilidades registradas)',
+        '',
+        `Total miembros activos: ${members.length} — con habilidades: ${membersWithSkills}`,
+        '',
+        'Asigna roles basados en estas habilidades reales. Si nadie califica para un rol, dilo honestamente.',
+      ].join('\n');
+    }
+
     // ── Build system prompt with real tree context ─────────────────────────
-    const contextLines: string[] = isTaskCreation
+    const contextLines: string[] = isOrganize
+      ? [
+          ORGANIZE_SYSTEM_PROMPT,
+          '',
+          `Árbol: "${tree.name}" (${tree.icono})`,
+          `Descripción: ${tree.description || 'Sin descripción'}`,
+          `Creado: ${tree.createdAt.toLocaleDateString('es-CL')}`,
+        ]
+      : isTaskCreation
       ? [buildTaskCreationSystemPrompt(tree.name, tree.icono)]
       : [
           `You are the Tree Agent for "${tree.name}" (${tree.icono}) — a Trust Maker community.`,
@@ -654,8 +706,8 @@ export const conciergeHandler = async (req: Request, res: Response) => {
 
     const memberCount = (tree as any)._count?.members ?? 0;
     const needCount = (tree as any)._count?.needs ?? 0;
-    contextLines.push(`  Members: ${memberCount}`);
-    contextLines.push(`  Total needs: ${needCount}`);
+    contextLines.push(isOrganize ? `Miembros: ${memberCount}` : `  Members: ${memberCount}`);
+    contextLines.push(isOrganize ? `Necesidades totales: ${needCount}` : `  Total needs: ${needCount}`);
 
     // If needId provided, fetch that specific need for extra orientation
     if (needId && typeof needId === 'string') {
@@ -680,6 +732,11 @@ export const conciergeHandler = async (req: Request, res: Response) => {
 
     // Add user context
     contextLines.push(userContext);
+
+    // Add member skills for organize mode
+    if (memberSkillsContext) {
+      contextLines.push(memberSkillsContext);
+    }
 
     contextLines.push('');
     contextLines.push(

@@ -8,6 +8,7 @@ import { routeTask } from '../services/taskRouter';
 import { logEvent } from '../services/eventLogService';
 import { resolveStoragePath, UPLOAD_ROOT } from '../utils/fileSecurity';
 import { matchAndAwardXp } from '../services/skillMatchingService';
+import { onTaskVerified } from '../services/skillSyncService';
 import { processTaskPayment, previewTaskSplit } from '../services/paymentSplitService';
 import { broadcastDisputeVote } from '../services/telegramBotService';
 
@@ -515,6 +516,18 @@ export const verifyTask = async (req: Request, res: Response) => {
       }
     }
 
+    // ── Cross-tree skill sync: sync explicit task skills → User.skills ────
+    let skillSyncTags: string[] = [];
+    if (task.assigneeId && xp > 0) {
+      try {
+        skillSyncTags = await onTaskVerified(taskId, task.assigneeId, xp);
+      } catch (syncErr: any) {
+        console.warn(
+          `[taskController] Skill sync failed for task ${taskId}: ${syncErr.message}`,
+        );
+      }
+    }
+
     // ── Log event ─────────────────────────────────────────────────────────
     await logEvent({
       treeId: task.treeId,
@@ -532,6 +545,9 @@ export const verifyTask = async (req: Request, res: Response) => {
               newSkillCreated: skillResult.newSkillCreated,
               skillsAfter: skillResult.skillsAfter,
             }
+          : null,
+        skillSync: skillSyncTags.length > 0
+          ? { syncedTags: skillSyncTags }
           : null,
       },
       source: 'USER',
@@ -580,6 +596,9 @@ export const verifyTask = async (req: Request, res: Response) => {
             skillsAfter: skillResult.skillsAfter,
             totalXpAfter: skillResult.totalXpAfter,
           }
+        : null,
+      skillSync: skillSyncTags.length > 0
+        ? { syncedTags: skillSyncTags }
         : null,
     });
   } catch (error: any) {

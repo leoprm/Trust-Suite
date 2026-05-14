@@ -2,15 +2,14 @@ import { prisma } from '../index';
 
 /**
  * Sincroniza XP hacia una skill específica del User (cross-tree).
- * Acumula xpGained en User.skills[skillTag] y recalcula totalXp.
- * Se llama después de completar/verificar una tarea.
+ * Acumula xpGained en User.skills[skillTag].
+ * No modifica totalXp — el caller (verifyTask) ya lo incrementa.
  */
-export async function syncSkillsToUser(
+async function syncSkillsToUser(
   userId: string,
   skillTag: string,
   xpGained: number,
 ): Promise<void> {
-  // 1. Leer skills actuales del usuario
   const user = await prisma.user.findUnique({
     where: { id: userId },
     select: { skills: true },
@@ -23,28 +22,21 @@ export async function syncSkillsToUser(
     skills = {};
   }
 
-  // 2. Acumular XP en la skill
   skills[skillTag] = (skills[skillTag] || 0) + xpGained;
 
-  // 3. Recalcular totalXp desde las skills
-  const totalXp = Object.values(skills).reduce((sum, v) => sum + v, 0);
-
-  // 4. Guardar
   await prisma.user.update({
     where: { id: userId },
-    data: {
-      skills: JSON.stringify(skills),
-      totalXp,
-    },
+    data: { skills: JSON.stringify(skills) },
   });
 }
 
 /**
  * Al verificar una tarea, sincroniza las skills explícitas de la tarea
- * hacia User.skills (cross-tree).
+ * (campo `skills`: JSON array ["design","frontend"]) hacia User.skills.
  *
- * La task tiene un campo `skills` (JSON array: ["design","frontend"]).
- * Se distribuye el XP equitativamente entre todas las skills.
+ * Distribuye el XP total equitativamente entre todas las skills de la tarea.
+ * Es complementario a matchAndAwardXp (keyword matching): este usa los tags
+ * explícitos que el creador asignó a la tarea.
  */
 export async function onTaskVerified(
   taskId: string,
@@ -67,7 +59,6 @@ export async function onTaskVerified(
 
   if (!Array.isArray(skillTags) || skillTags.length === 0) return [];
 
-  // Distribuir XP equitativamente entre las skills
   const xpPerSkill = Math.floor(xpAwarded / skillTags.length);
   const remainder = xpAwarded - xpPerSkill * skillTags.length;
 
@@ -77,7 +68,6 @@ export async function onTaskVerified(
     const tag = skillTags[i].toLowerCase().trim();
     if (!tag) continue;
 
-    // La primera skill recibe el remainder
     const xp = i === 0 ? xpPerSkill + remainder : xpPerSkill;
     await syncSkillsToUser(assigneeId, tag, xp);
     synced.push(tag);
