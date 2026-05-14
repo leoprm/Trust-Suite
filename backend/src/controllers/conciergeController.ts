@@ -30,14 +30,48 @@ function detectFactualQuestion(message: string): string | null {
   return null;
 }
 
+// ── User resolution with auto-registration ─────────────────────────────────
+
+/**
+ * Busca o crea un usuario basado en su telegramUserId.
+ * Si el usuario no existe, lo crea automáticamente con role USER.
+ * Retorna el usuario (id, username, role) o null si no hay telegramUserId.
+ */
+async function resolveOrCreateUser(telegramUserId: string): Promise<{ id: string; username: string; role: string; createdAt: Date } | null> {
+  if (!telegramUserId) return null;
+
+  const tgId = BigInt(telegramUserId);
+
+  // 1. Buscar existente
+  const existing = await (prisma as any).user.findUnique({
+    where: { telegramUserId: tgId },
+    select: { id: true, username: true, role: true, createdAt: true },
+  });
+  if (existing) return existing;
+
+  // 2. Auto-registrar
+  try {
+    const created = await (prisma as any).user.create({
+      data: {
+        username: `tg_${telegramUserId}`,
+        telegramUserId: tgId,
+        role: 'USER',
+      },
+      select: { id: true, username: true, role: true, createdAt: true },
+    });
+    console.log(`[concierge] Auto-registrado usuario: ${created.username} (${created.id})`);
+    return created;
+  } catch (err: any) {
+    console.error('[concierge] Failed to auto-register user:', err.message);
+    return null;
+  }
+}
+
 // ── DB-backed responses for factual questions ──────────────────────────────
 
 async function handleMembershipQuery(treeId: string, telegramUserId: string): Promise<string> {
-  // Find user by telegramUserId
-  const user = await (prisma as any).user.findUnique({
-    where: { telegramUserId: BigInt(telegramUserId) },
-    select: { id: true, username: true },
-  });
+  // Auto-register if needed
+  const user = await resolveOrCreateUser(telegramUserId);
 
   if (!user) {
     return `No estás registrado en Trust Maker. Usa el comando /login en el grupo para crear tu cuenta.`;
@@ -77,10 +111,7 @@ async function handleTreeListQuery(telegramUserId: string): Promise<string> {
   // Find user's trees
   let userTrees: string[] = [];
   if (telegramUserId) {
-    const user = await (prisma as any).user.findUnique({
-      where: { telegramUserId: BigInt(telegramUserId) },
-      select: { id: true },
-    });
+    const user = await resolveOrCreateUser(telegramUserId);
     if (user) {
       const memberships = await prisma.treeMember.findMany({
         where: { userId: user.id },
@@ -126,10 +157,7 @@ async function handleStatsQuery(treeId: string): Promise<string> {
 async function handleWhoAmI(telegramUserId: string): Promise<string> {
   if (!telegramUserId) return 'No pude identificar tu usuario de Telegram.';
 
-  const user = await (prisma as any).user.findUnique({
-    where: { telegramUserId: BigInt(telegramUserId) },
-    select: { id: true, username: true, role: true, createdAt: true },
-  });
+  const user = await resolveOrCreateUser(telegramUserId);
 
   if (!user) {
     return `No estás registrado. Usa /login en el grupo para crear tu cuenta.`;
@@ -226,10 +254,7 @@ export const conciergeHandler = async (req: Request, res: Response) => {
     // ── Fetch user context from DB ─────────────────────────────────────────
     let userContext = '';
     if (telegramUserId) {
-      const user = await (prisma as any).user.findUnique({
-        where: { telegramUserId: BigInt(telegramUserId) },
-        select: { id: true, username: true, role: true },
-      });
+      const user = await resolveOrCreateUser(telegramUserId);
       if (user) {
         const isMember = await prisma.treeMember.findUnique({
           where: { userId_treeId: { userId: user.id, treeId } },
