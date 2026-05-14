@@ -120,14 +120,8 @@ async function handleMembershipQuery(treeId: string, telegramUserId: string): Pr
 }
 
 async function handleTreeListQuery(telegramUserId: string): Promise<string> {
-  const trees = await prisma.tree.findMany({
-    select: { id: true, name: true, icono: true, description: true, _count: { select: { members: true, needs: true } } },
-    orderBy: { createdAt: 'desc' },
-    take: 10,
-  });
-
-  // Find user's trees
-  let userTrees: string[] = [];
+  // Find user's tree IDs first
+  let userTreeIds: string[] = [];
   if (telegramUserId) {
     const user = await resolveOrCreateUser(telegramUserId);
     if (user) {
@@ -135,17 +129,32 @@ async function handleTreeListQuery(telegramUserId: string): Promise<string> {
         where: { userId: user.id },
         select: { treeId: true },
       });
-      userTrees = memberships.map(m => m.treeId);
+      userTreeIds = memberships.map(m => m.treeId);
     }
   }
 
+  // Only show OPEN trees + trees where the user is a member
+  const trees = await prisma.tree.findMany({
+    where: userTreeIds.length > 0
+      ? {
+          OR: [
+            { admissionPolicy: 'OPEN' },
+            { id: { in: userTreeIds } },
+          ],
+        }
+      : { admissionPolicy: 'OPEN' },
+    select: { id: true, name: true, icono: true, description: true, _count: { select: { members: true, needs: true } } },
+    orderBy: { createdAt: 'desc' },
+    take: 10,
+  });
+
   if (trees.length === 0) {
-    return 'No hay árboles aún. ¡Sé el primero en crear uno!';
+    return 'No hay árboles disponibles aún. ¡Sé el primero en crear uno!';
   }
 
   const lines = ['🌳 **Árboles disponibles:**\n'];
   for (const t of trees) {
-    const marker = userTrees.includes(t.id) ? '👤' : '🌐';
+    const marker = userTreeIds.includes(t.id) ? '👤' : '🌐';
     lines.push(`${t.icono} **${t.name}** ${marker} — ${t._count.members} miembros, ${t._count.needs} necesidades`);
     if (t.description) lines.push(`  _${t.description.slice(0, 100)}_`);
   }

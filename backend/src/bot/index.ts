@@ -72,7 +72,7 @@ export function createBot(prisma: PrismaClient): Bot<BotContext> | null {
                 telegramChatId: chatId,
                 description: `Árbol automático para el grupo de Telegram "${chat.title || chatId}"`,
                 icono: "💬",
-                admissionPolicy: "OPEN",
+                admissionPolicy: "CLOSED",
               },
             });
             console.log(
