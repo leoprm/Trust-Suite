@@ -9,6 +9,10 @@ import { prisma } from '../index';
 //
 // Rate-limited at 30 req/min via conciergeLimiter (applied in index.ts).
 // Imports prisma from index.ts (singleton) — same pattern as all other controllers.
+
+const HERMES_API = 'http://127.0.0.1:8642/v1/chat/completions';
+const API_SERVER_KEY = process.env.HERMES_API_SERVER_KEY ?? '';
+
 export const conciergeHandler = async (req: Request, res: Response) => {
   try {
     const { message, treeId, needId, agentId } = req.body;
@@ -18,7 +22,10 @@ export const conciergeHandler = async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'message (string) is required' });
     }
     if (!treeId || typeof treeId !== 'string') {
-      return res.status(400).json({ error: 'treeId (string) is required' });
+      return res.status(400).json({
+        error: 'treeId (string) is required',
+        hint: 'Debes unirte a un árbol para usar el concierge. Crea uno o únete a uno existente.',
+      });
     }
 
     // ── Fetch tree context from DB ─────────────────────────────────────────
@@ -36,6 +43,7 @@ export const conciergeHandler = async (req: Request, res: Response) => {
     // ── Build system prompt with real tree context ─────────────────────────
     const contextLines: string[] = [
       `You are the Tree Agent for "${tree.name}" (${tree.icono}) — a Trust Maker community.`,
+      'You are the Hermes Agent integrated into Trust Maker, responding in Spanish.',
       '',
       `Tree metadata:`,
       `  Name: ${tree.name}`,
@@ -90,14 +98,19 @@ export const conciergeHandler = async (req: Request, res: Response) => {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 30_000);
 
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+      'X-Hermes-Session-Key': `tree-agent-${treeId}`,
+    };
+    if (API_SERVER_KEY) {
+      headers['Authorization'] = `Bearer ${API_SERVER_KEY}`;
+    }
+
     let response: globalThis.Response;
     try {
-      response = await fetch('http://127.0.0.1:8642/v1/chat/completions', {
+      response = await fetch(HERMES_API, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-Hermes-Session-Key': `tree-agent-${treeId}`,
-        },
+        headers,
         body: JSON.stringify({
           messages,
           stream: false,
@@ -131,6 +144,50 @@ export const conciergeHandler = async (req: Request, res: Response) => {
       data?.reply ??
       '';
 
+    // ── Persist chat messages ─────────────────────────────────────────────
+    const userId = req.user?.id;
+    if (userId) {
+      try {
+        // Store user message and assistant reply in a single transaction
+        await prisma.$transaction([
+          prisma.chatMessage.create({
+            data: {
+              userId,
+              treeId,
+              agentId: agentId || null,
+              role: 'user',
+              content: message.trim(),
+            },
+          }),
+          prisma.chatMessage.create({
+            data: {
+              userId,
+              treeId,
+              agentId: agentId || null,
+              role: 'assistant',
+              content: reply,
+            },
+          }),
+        ]);
+
+        // Keep only the last 10 messages per user+tree
+        const oldMessages = await prisma.chatMessage.findMany({
+          where: { userId, treeId },
+          orderBy: { createdAt: 'desc' },
+          select: { id: true },
+          skip: 10,
+        });
+        if (oldMessages.length > 0) {
+          await prisma.chatMessage.deleteMany({
+            where: { id: { in: oldMessages.map(m => m.id) } },
+          });
+        }
+      } catch (dbErr) {
+        // Non-fatal: don't fail the request if persistence fails
+        console.error('[concierge] Failed to persist chat messages:', dbErr);
+      }
+    }
+
     res.json({ reply, agentId: agentId || null, treeId });
   } catch (error: any) {
     // Distinguish timeout from other errors
@@ -160,5 +217,48 @@ export const conciergeHandler = async (req: Request, res: Response) => {
 
     console.error('[concierge] Unexpected error:', error.message || error);
     res.status(500).json({ error: 'Failed to process concierge request' });
+  }
+};
+
+// ── GET /api/concierge/history ────────────────────────────────────────────────
+// Returns paginated chat history for a tree, scoped to the authenticated user
+// and sorted by createdAt asc (oldest first).
+// Query: ?treeId=X&limit=100&before=ISO_TIMESTAMP
+export const getHistoryHandler = async (req: Request, res: Response) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({ error: 'Authentication required' });
+    }
+
+    const treeId = req.query.treeId as string;
+    if (!treeId || typeof treeId !== 'string') {
+      return res.status(400).json({ error: 'treeId (query string) is required' });
+    }
+
+    const limit = Math.min(parseInt(req.query.limit as string) || 10, 200);
+    const before = req.query.before as string | undefined;
+
+    const where: any = { userId, treeId };
+    if (before) {
+      where.createdAt = { lt: new Date(before) };
+    }
+
+    const messages = await prisma.chatMessage.findMany({
+      where,
+      orderBy: { createdAt: 'asc' },
+      take: limit,
+      select: {
+        id: true,
+        role: true,
+        content: true,
+        createdAt: true,
+      },
+    });
+
+    res.json({ messages });
+  } catch (error: any) {
+    console.error('[concierge] History fetch error:', error.message || error);
+    res.status(500).json({ error: 'Failed to fetch chat history' });
   }
 };

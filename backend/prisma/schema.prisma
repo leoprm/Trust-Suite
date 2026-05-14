@@ -94,6 +94,7 @@ model User {
   createdTokens  TokenInvitacion[] @relation("TokenCreator")
   evaluatedResults Result[]
   byoApiKeys ByoApiKey[]
+  chatMessages ChatMessage[]
 }
 
 model Tree {
@@ -111,6 +112,7 @@ model Tree {
   eventLogs        EventLog[]
   tokens           TokenInvitacion[] @relation("TokenTree")
   ratings          Rating[]
+  chatMessages     ChatMessage[]
 }
 
 model TreeMember {
@@ -341,6 +343,20 @@ model ByoApiKey {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
   @@index([userId])
   @@index([userId, provider])
+}
+
+model ChatMessage {
+  id        String   @id @default(uuid())
+  userId    String
+  treeId    String
+  agentId   String?
+  role      String   // "user" | "assistant"
+  content   String   @db.Text
+  createdAt DateTime @default(now())
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade, map: "chatmessage_user_fk")
+  tree Tree @relation(fields: [treeId], references: [id], onDelete: Cascade, map: "chatmessage_tree_fk")
+  @@index([userId, treeId, createdAt])
+  @@index([treeId, agentId, createdAt])
 }
 
 model EventLog {
