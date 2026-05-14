@@ -47,8 +47,14 @@ Cada tarea es independiente y verificable (~2h máx).
 - [ ] T23: Lógica de split en webhook de pago: calcular porcentajes por necesidad ganadora y distribuir
 - [ ] T24: GET /api/members/:id/balance y POST /api/members/:id/withdraw
 
+## Fase 9: WhatsApp (independiente)
+
+- [ ] T25: Webhook WhatsApp + normalización a formato interno de mensajes
+- [ ] T26: Registro en WhatsApp Cloud API (Meta) o Twilio sandbox
+- [ ] T27: Adaptar respuestas del bot para WhatsApp (límites, media, formato)
+
 > **Fase 8 (Árboles Privados) ya está en progreso → t_18294caf**
 
 ---
 
-**Total**: 24 tareas, 7 fases. ~48 horas de trabajo.
+**Total**: 27 tareas, 8 fases. ~52 horas de trabajo.
