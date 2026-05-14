@@ -256,9 +256,25 @@ export const conciergeHandler = async (req: Request, res: Response) => {
     if (telegramUserId) {
       const user = await resolveOrCreateUser(telegramUserId);
       if (user) {
-        const isMember = await prisma.treeMember.findUnique({
+        let isMember = await prisma.treeMember.findUnique({
           where: { userId_treeId: { userId: user.id, treeId } },
         });
+
+        // Auto-join: si el árbol es OPEN y el usuario no es miembro, agregarlo
+        if (!isMember && tree.admissionPolicy === 'OPEN') {
+          try {
+            await prisma.treeMember.create({
+              data: { userId: user.id, treeId, status: 'ACTIVE' },
+            });
+            isMember = { userId: user.id, treeId, status: 'ACTIVE', joinedAt: new Date() } as any;
+            console.log(`[concierge] Auto-joined user ${user.username} to tree ${tree.name}`);
+          } catch (err: any) {
+            // Si ya existe (race condition), ignorar
+            if (!err.message?.includes('Unique constraint')) {
+              console.error('[concierge] Auto-join failed:', err.message);
+            }
+          }
+        }
         const allMemberships = await prisma.treeMember.findMany({
           where: { userId: user.id },
           include: { tree: { select: { id: true, name: true, icono: true } } },
