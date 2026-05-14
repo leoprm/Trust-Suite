@@ -87,9 +87,20 @@ export function formatNeedsList(
   }
 
   const openNeeds = needs.filter(n => n.status === "OPEN");
-  const otherNeeds = needs.filter(n => n.status !== "OPEN");
+  const pendingNeeds = needs.filter(n => n.status === "PENDING_APPROVAL");
+  const otherNeeds = needs.filter(n => n.status !== "OPEN" && n.status !== "PENDING_APPROVAL");
 
-  const lines: string[] = [`📋 *Necesidades* (${needs.length} total, ${openNeeds.length} abiertas):\n`];
+  const lines: string[] = [
+    `📋 *Necesidades* (${needs.length} total, ${openNeeds.length} abiertas, ${pendingNeeds.length} en revisión):\n`,
+  ];
+
+  // Pending approval needs first (awaiting vote)
+  for (const n of pendingNeeds) {
+    const creator = n.creator?.username ? ` por @${n.creator.username}` : "";
+    lines.push(
+      `⏳ *${n.title}* — en votación | 💡 ${n._count.ideas} ideas${creator}\n  \`${n.id}\``
+    );
+  }
 
   for (const n of openNeeds) {
     const creator = n.creator?.username ? ` por @${n.creator.username}` : "";
@@ -114,6 +125,19 @@ export function formatNeedCreated(need: { id: string; title: string; importance:
     "✅ Necesidad creada:",
     `*${need.title}*`,
     `Importancia: ${need.importance}/10`,
+    `ID: \`${need.id}\``,
+  ].join("\n");
+}
+
+export function formatNeedPendingApproval(need: {
+  id: string;
+  title: string;
+}): string {
+  return [
+    "⏳ **Necesidad compleja en revisión:**",
+    `*${need.title}*`,
+    "",
+    "El grupo tiene 24h para votar si se desarrolla.",
     `ID: \`${need.id}\``,
   ].join("\n");
 }

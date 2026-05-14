@@ -26,6 +26,7 @@ import {
   formatTreeInfo,
   formatNeedsList,
   formatNeedCreated,
+  formatNeedPendingApproval,
   formatIdeasList,
   formatVoteAck,
   needNotFound,
@@ -34,6 +35,7 @@ import {
   formatCuota,
   formatPagar,
 } from "./formatters";
+import { isComplexNeed, sendApprovalPoll, scheduleApprovalClose } from "./approval";
 
 // ── Tipos ──────────────────────────────────────────────────────────────────
 
@@ -207,6 +209,7 @@ async function handleCrea(
 
   // Random importance 1-10 (same as needV3Controller)
   const importance = Math.floor(Math.random() * 10) + 1;
+  const complex = isComplexNeed(descripcion);
 
   const need = await (prisma as any).need.create({
     data: {
@@ -215,59 +218,76 @@ async function handleCrea(
       treeId: tree.id,
       creatorId: userId || "telegram-bot",
       importance,
-      status: "OPEN",
+      isComplex: complex,
+      status: complex ? "PENDING_APPROVAL" : "OPEN",
     },
   });
 
-  // T8: Send anonymous poll to group chat
   const chatId = ctx.chat?.id;
-  if (chatId) {
-    try {
-      const desc = descripcion.length > 200
-        ? descripcion.slice(0, 200) + "..."
-        : descripcion;
+  if (!chatId) return formatNeedCreated(need);
 
-      const pollMessage = await ctx.api.sendPoll(
-        chatId,
-        `📋 ${titulo}\n\n${desc}\n\n¿Qué importancia tiene?`,
-        [
-          { text: "👍 Baja" },
-          { text: "❤️ Media" },
-          { text: "⭐ Alta / Urgente" },
-        ],
-        {
-          is_anonymous: true,
-          allows_multiple_answers: false,
-          reply_markup: {
-            inline_keyboard: [[
-              {
-                text: "🔗 Ver necesidad",
-                url: `https://t.me/TrustMakerBot?start=need_${need.id}`,
-              },
-            ]],
-          },
-        },
-      );
+  if (complex) {
+    // ── Necesidad compleja → encuesta de aprobación ──
+    const sent = await sendApprovalPoll(
+      ctx.api as any, // grammy Api has sendPoll/stopPoll
+      prisma,
+      need.id,
+      chatId,
+    );
 
-      // Save poll_id → need_id mapping
-      await (prisma as any).pollMapping.create({
-        data: {
-          pollId: pollMessage.poll.id,
-          needId: need.id,
-          chatId: chatId.toString(),
-          messageId: pollMessage.message_id,
-        },
-      });
-
-      // Optionally store the poll message ID on the need for reference
-      await (prisma as any).need.update({
-        where: { id: need.id },
-        data: { telegramMessageId: pollMessage.message_id },
-      });
-    } catch (err: any) {
-      console.error("[handleCrea] Failed to send poll:", err.message);
-      // Non-fatal: still return the created confirmation
+    if (sent) {
+      scheduleApprovalClose(ctx.api as any, prisma, need.id);
     }
+
+    return formatNeedPendingApproval(need);
+  }
+
+  // ── Necesidad simple → encuesta de importancia (T8) ──
+  try {
+    const desc = descripcion.length > 200
+      ? descripcion.slice(0, 200) + "..."
+      : descripcion;
+
+    const pollMessage = await ctx.api.sendPoll(
+      chatId,
+      `📋 ${titulo}\n\n${desc}\n\n¿Qué importancia tiene?`,
+      [
+        { text: "👍 Baja" },
+        { text: "❤️ Media" },
+        { text: "⭐ Alta / Urgente" },
+      ],
+      {
+        is_anonymous: true,
+        allows_multiple_answers: false,
+        reply_markup: {
+          inline_keyboard: [[
+            {
+              text: "🔗 Ver necesidad",
+              url: `https://t.me/TrustMakerBot?start=need_${need.id}`,
+            },
+          ]],
+        },
+      },
+    );
+
+    // Save poll_id → need_id mapping
+    await (prisma as any).pollMapping.create({
+      data: {
+        pollId: pollMessage.poll.id,
+        needId: need.id,
+        chatId: chatId.toString(),
+        messageId: pollMessage.message_id,
+      },
+    });
+
+    // Optionally store the poll message ID on the need for reference
+    await (prisma as any).need.update({
+      where: { id: need.id },
+      data: { telegramMessageId: pollMessage.message_id },
+    });
+  } catch (err: any) {
+    console.error("[handleCrea] Failed to send poll:", err.message);
+    // Non-fatal: still return the created confirmation
   }
 
   return formatNeedCreated(need);

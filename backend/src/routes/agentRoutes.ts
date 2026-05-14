@@ -4,6 +4,7 @@ import {
   getAgentLeaderboard,
   getAgentProfile,
   getAgentById,
+  getAgentRanking,
 } from '../controllers/agentController';
 import { getAgentTreeStats } from '../controllers/ratingController';
 
@@ -14,6 +15,9 @@ router.get('/', getAgents);
 
 // GET /api/agents/leaderboard?role=analyst — top 20 by confidenceScore
 router.get('/leaderboard', getAgentLeaderboard);
+
+// GET /api/agents/ranking?treeId=X — top 20 by confidenceScore, optional tree filter
+router.get('/ranking', getAgentRanking);
 
 // GET /api/agents/:id — simple agent + profile + recent ratings
 router.get('/:id', getAgentById);

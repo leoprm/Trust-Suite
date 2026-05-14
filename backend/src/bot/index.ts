@@ -11,6 +11,7 @@ import {
   handleSatisfactionPollAnswer,
   handleSatisfactionCommentReply,
 } from "./satisfaction";
+import { recoverPendingApprovals } from "./approval";
 import { checkPaymentAccess } from "./payment";
 import { formatForChannel, sendViaTelegram } from "./channelAdapter";
 import { textToSpeech } from "../services/ttsService";
@@ -754,6 +755,10 @@ Ejemplo: *"@TrustMakerBot necesito que alguien rediseñe el logo del grupo"*
     onStart(botInfo) {
       console.log(
         `[Telegram Bot] @${botInfo.username} iniciado en modo polling`
+      );
+      // T13: Recuperar encuestas de aprobación pendientes tras reinicio
+      recoverPendingApprovals(bot, prisma).catch((err) =>
+        console.error("[approval] Recovery error:", err.message)
       );
     },
   }).catch((err) => {

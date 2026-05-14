@@ -188,3 +188,48 @@ export const assignTreeAgent = async (req: any, res: Response) => {
     res.status(500).json({ error: 'Failed to assign agent', detail: error?.message || String(error) });
   }
 };
+
+/**
+ * GET /api/agents/ranking?treeId=X
+ * Top 20 agentes por confidenceScore, opcionalmente filtrados por árbol.
+ * Devuelve rank, nombre, tipo, estrellas promedio, total de ratings,
+ * confianza (0-100), y XP por rol.
+ */
+export const getAgentRanking = async (req: any, res: Response) => {
+  try {
+    const { treeId } = req.query;
+
+    const where: any = {};
+    if (treeId && typeof treeId === 'string') {
+      where.agent = { memberships: { some: { treeId } } };
+    }
+
+    const profiles = await prisma.agentProfile.findMany({
+      where,
+      orderBy: { confidenceScore: 'desc' },
+      take: 20,
+      include: {
+        agent: {
+          select: { name: true, type: true, description: true },
+        },
+      },
+    });
+
+    res.json({
+      ranking: profiles.map((p, i) => ({
+        rank: i + 1,
+        agentId: p.agentId,
+        name: p.agent.name,
+        type: p.agent.type,
+        description: p.agent.description,
+        avgStars: Math.round(p.avgStars * 10) / 10,
+        totalRatings: p.totalRatings,
+        confidence: Math.round(p.confidenceScore),
+        xpByRole: p.xpByRole as Record<string, number>,
+      })),
+    });
+  } catch (error: any) {
+    console.error('[getAgentRanking] ERROR:', error?.message || error);
+    res.status(500).json({ error: 'Failed to fetch agent ranking' });
+  }
+};

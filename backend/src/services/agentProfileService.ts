@@ -24,17 +24,18 @@ export async function updateProfileFromRating(
 
   const sorted = Object.entries(xpByRole).sort((a, b) => b[1] - a[1]);
   const newTotalRatings = profile.totalRatings + 1;
+  const newAvgStars =
+    (profile.avgStars * profile.totalRatings + stars) / newTotalRatings;
 
   await prisma.agentProfile.update({
     where: { agentId },
     data: {
       totalRatings: newTotalRatings,
-      avgStars:
-        (profile.avgStars * profile.totalRatings + stars) / newTotalRatings,
+      avgStars: newAvgStars,
       xpByRole,
       primaryRole: sorted[0]?.[0] || null,
       secondaryRole: sorted[1]?.[0] || null,
-      confidenceScore: Math.min(1, newTotalRatings / 100),
+      confidenceScore: recalculateConfidence(newTotalRatings, newAvgStars),
       lastActiveAt: new Date(),
       explorationEligible: newTotalRatings < 20,
     },
@@ -170,6 +171,51 @@ export async function releaseAgent(
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
+
+/** Confidence = f(totalRatings, avgStars). Maxes at 50 ratings, 3 stars. */
+function recalculateConfidence(totalRatings: number, avgStars: number): number {
+  const ratingsWeight = Math.min(totalRatings / 50, 1); // max at 50 ratings
+  const starsWeight = avgStars / 3; // 0-1
+  return Math.round((ratingsWeight * 0.4 + starsWeight * 0.6) * 100);
+}
+
+/**
+ * Awards XP to an agent based on satisfaction vote (T14).
+ * XP map: 1★=5XP, 2★=15XP, 3★=30XP.
+ * Updates xpByRole, lastActiveAt, and recalculates confidenceScore.
+ */
+export async function awardSatisfactionXp(
+  agentId: string,
+  role: string,
+  satisfaction: number,
+): Promise<void> {
+  const xpMap: Record<number, number> = { 1: 5, 2: 15, 3: 30 };
+  const xpEarned = xpMap[satisfaction] || 0;
+
+  const profile = await prisma.agentProfile.upsert({
+    where: { agentId },
+    create: { agentId },
+    update: {},
+  });
+
+  const xpByRole = (profile.xpByRole as Record<string, number>) || {};
+  xpByRole[role] = (xpByRole[role] || 0) + xpEarned;
+
+  const newConfidence = recalculateConfidence(profile.totalRatings, profile.avgStars);
+
+  await prisma.agentProfile.update({
+    where: { agentId },
+    data: {
+      xpByRole,
+      lastActiveAt: new Date(),
+      confidenceScore: newConfidence,
+    },
+  });
+
+  console.log(
+    `[satisfaction] Agent ${agentId} earned ${xpEarned} XP (${satisfaction}★)`,
+  );
+}
 
 async function doAssign(
   agentId: string,

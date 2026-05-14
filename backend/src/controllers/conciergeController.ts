@@ -77,6 +77,41 @@ function detectTaskCreationIntent(message: string): boolean {
   return matches >= 2;
 }
 
+// ── Organize intent detection ────────────────────────────────────────────
+
+const ORGANIZE_PATTERNS: RegExp[] = [
+  /organiza[r]?\s+(un|una|el|la)\s+(asado|evento|reuni[oó]n|fiesta|proyecto|pyme)/i,
+  /organiza[r]?\s+(el\s+)?(trabajo|equipo|tareas|gente|gremio)/i,
+  /repart[ií]\s+(las\s+)?tareas/i,
+  /asigna[r]?\s+(roles|tareas|responsabilidades)/i,
+  /arma[r]?\s+(un\s+)?equipo/i,
+  /(c[oó]mo|qui[eé]n)\s+(reparto|distribuyo|asigno|organizo)\s+/i,
+];
+
+function detectOrganizeIntent(message: string): boolean {
+  const trimmed = message.trim();
+  for (const pattern of ORGANIZE_PATTERNS) {
+    if (pattern.test(trimmed)) return true;
+  }
+  return false;
+}
+
+const ORGANIZE_SYSTEM_PROMPT = [
+  'Eres un organizador de equipos para Trust Maker. Tu tarea es:',
+  '',
+  '1. Analizar la solicitud del usuario y entender qué tipo de evento o proyecto quiere organizar.',
+  '2. Revisar las habilidades de los miembros del árbol (abajo te paso la lista REAL de la base de datos).',
+  '3. Dividir el trabajo en roles concretos necesarios para la tarea.',
+  '4. Asignar cada rol al miembro más calificado según sus habilidades.',
+  '5. Si hay empate (misma puntuación), elegir al que tenga menos carga de trabajo o al azar.',
+  '6. Presentar el plan en formato de tabla clara con emojis.',
+  '',
+  'Responde en español neutro, con emojis para hacerlo visual y motivador.',
+  'No inventes habilidades ni miembros — usa SOLO los datos reales que te paso.',
+  'Si ningún miembro tiene las habilidades necesarias, dilo con honestidad y sugiere qué habilidades harían falta.',
+  'Si hay pocos miembros (menos de 3), sugiere invitar a más personas al árbol.',
+].join('\n');
+
 // ── User resolution with auto-registration ─────────────────────────────────
 
 /**
@@ -259,7 +294,7 @@ async function handleWhoAmI(telegramUserId: string): Promise<string> {
 
 // ── Cost transparency query ─────────────────────────────────────────────
 
-async function handleCostQuery(): Promise<string> {
+async function handleCostQuery(telegramUserId: string): Promise<string> {
   const configs = await (prisma as any).platformConfig.findMany();
   const getVal = (key: string): string => {
     const c = configs.find((c: any) => c.key === key);
@@ -270,6 +305,7 @@ async function handleCostQuery(): Promise<string> {
   const infra = parseFloat(getVal('cost_infrastructure'));
   const fixed = parseFloat(getVal('cost_fixed'));
   const margin = parseFloat(getVal('growth_margin_pct'));
+  const totalFixed = salaries + infra + fixed;
 
   const startOfMonth = new Date();
   startOfMonth.setDate(1);
@@ -288,38 +324,80 @@ async function handleCostQuery(): Promise<string> {
     totalApi += u.cost;
   }
 
-  const totalFixed = salaries + infra + fixed;
-  const users = new Set(usage.map((u: any) => u.userId.toString())).size || 1;
-  const avgTotal = (totalApi + totalFixed) / users;
-
   // Free period: users in trial + absorbed cost
   const freeUsersSet = new Set(usage.filter((u: any) => u.isFreePeriod).map((u: any) => u.userId.toString()));
   const freeUserCount = freeUsersSet.size;
   const absorbed = usage.filter((u: any) => u.isFreePeriod).reduce((sum: number, u: any) => sum + (u.absorbedByPlatform || 0), 0);
 
+  // ── Per-tree costs for this user ──────────────────────────────────────
+  let treeLines: string[] = [];
+
+  if (telegramUserId) {
+    const user = await resolveOrCreateUser(telegramUserId);
+    if (user) {
+      const memberships = await (prisma as any).treeMember.findMany({
+        where: { userId: user.id, status: 'ACTIVE' },
+        include: { tree: { select: { id: true, name: true } } },
+      });
+
+      if (memberships.length > 0) {
+        // Active trees total (for fixed cost division)
+        const activeTrees = await (prisma as any).treeMember.groupBy({
+          by: ['treeId'],
+          where: { status: 'ACTIVE' },
+        });
+        const fixedPerTree = totalFixed / (activeTrees.length || 1);
+
+        treeLines = ['', '🌳 **Tus árboles este mes:**'];
+
+        for (const m of memberships) {
+          const treeId = m.treeId;
+
+          // API usage for this tree this month (excluding free period)
+          const apiUsage = await (prisma as any).apiUsage.aggregate({
+            where: {
+              treeId,
+              createdAt: { gte: startOfMonth },
+              isFreePeriod: false,
+            },
+            _sum: { cost: true },
+          });
+
+          const apiCost = apiUsage._sum?.cost || 0;
+
+          // Active members in this tree
+          const memberCount = await (prisma as any).treeMember.count({
+            where: { treeId, status: 'ACTIVE' },
+          });
+
+          const treeTotal = apiCost + fixedPerTree;
+          const perPerson = treeTotal / (memberCount || 1);
+
+          treeLines.push(
+            `• ${m.tree.name} (${memberCount} miembros): $${treeTotal.toFixed(2)} → **$${perPerson.toFixed(2)} por persona**`
+          );
+        }
+      }
+    }
+  }
+
   return [
-    '📊 **Transparencia de costos — Trust Maker**',
+    '📊 **Costos — Trust Maker**',
     '',
-    '🏢 **Costos fijos mensuales:**',
-    `• Sueldos del equipo: $${salaries.toLocaleString()}/mes`,
-    `• Infraestructura (servidores, APIs, hosting): $${infra.toLocaleString()}/mes`,
-    `• Gastos fijos (electricidad, internet, oficina): $${fixed.toLocaleString()}/mes`,
-    `• **Total fijo: $${totalFixed.toLocaleString()}/mes**`,
+    `🏢 **Costos fijos mensuales: $${totalFixed.toLocaleString()}** (divididos entre todos los árboles activos)`,
     '',
     '🤖 **Uso de APIs este mes:**',
     ...Object.entries(byProvider).map(([p, c]) => `• ${p}: $${c.toFixed(2)}`),
     `• **Total APIs: $${totalApi.toFixed(2)}**`,
+    ...treeLines,
     '',
-    '👤 **Costo promedio por usuario:**',
-    `• $${avgTotal.toFixed(2)}/mes (${users} usuarios activos)`,
+    '💸 Los costos se dividen por igual entre todos los miembros del árbol.',
+    'Los primeros 2 meses son gratis para nuevos usuarios.',
     `• Margen de crecimiento: ${margin}%`,
     '',
     '🎁 **Período gratuito activo:**',
     `• Usuarios en período de prueba: ${freeUserCount}`,
     `• Costo absorbido por la plataforma este mes: $${absorbed.toFixed(2)}`,
-    '',
-    `💰 Cada usuario paga solo lo que consume en APIs + su parte de costos fijos.`,
-    `Si tienes dudas sobre tu factura específica, puedes consultarme.`,
   ].join('\n');
 }
 
@@ -493,7 +571,7 @@ export const conciergeHandler = async (req: Request, res: Response) => {
           reply = await handleWhoAmI(tgId);
           break;
         case 'costs':
-          reply = await handleCostQuery();
+          reply = await handleCostQuery(tgId);
           break;
         default:
           reply = 'No pude interpretar tu pregunta.';
@@ -504,6 +582,9 @@ export const conciergeHandler = async (req: Request, res: Response) => {
 
     // ── Detect task creation intent ────────────────────────────────────────
     const isTaskCreation = detectTaskCreationIntent(message.trim());
+
+    // ── Detect organize intent ─────────────────────────────────────────────
+    const isOrganize = detectOrganizeIntent(message.trim());
 
     // ── Fetch tree context from DB ─────────────────────────────────────────
     const tree = await prisma.tree.findUnique({

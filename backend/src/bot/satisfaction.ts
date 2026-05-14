@@ -11,7 +11,7 @@ import { Bot } from "grammy";
 import { PrismaClient } from "@prisma/client";
 import { BotContext } from "./types";
 import { applyRatings } from "../services/ratingService";
-import { updateProfileFromRating } from "../services/agentProfileService";
+import { updateProfileFromRating, awardSatisfactionXp } from "../services/agentProfileService";
 
 const CONCIERGE_URL = "http://localhost:3100/api/concierge";
 const CONCIERGE_TIMEOUT_MS = 120_000; // 2 min for judge analysis
@@ -249,6 +249,12 @@ async function createRatingsFromSatisfaction(
         { role: membership.role, stars: satisfaction },
       ]);
       await updateProfileFromRating(
+        membership.agentId,
+        membership.role,
+        satisfaction,
+      );
+      // T14: Award bonus XP based on satisfaction (5/15/30)
+      await awardSatisfactionXp(
         membership.agentId,
         membership.role,
         satisfaction,

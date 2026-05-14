@@ -42,6 +42,8 @@ enum AIMemberStatus {
 
 enum NeedStatus {
   OPEN
+  PENDING_APPROVAL
+  REJECTED
   IN_PROGRESS
   SATISFIED
   CLOSED
@@ -267,6 +269,9 @@ model Need {
   importance          Int?
   dailyVotes          Int        @default(0)
   status              NeedStatus @default(OPEN)
+  isComplex           Boolean    @default(false)
+  approvalPollId      String?
+  approvalMessageId   Int?
   telegramMessageId   Int?
   createdAt           DateTime   @default(now())
   creator  User       @relation("NeedCreator", fields: [creatorId], references: [id])

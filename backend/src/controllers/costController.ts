@@ -1,9 +1,11 @@
 import { Request, Response } from 'express';
 import { prisma } from '../index';
 
-// GET /api/costs/summary — desglose público de costos
-export const getCostSummary = async (_req: Request, res: Response) => {
+// GET /api/costs/summary — desglose de costos por árbol (autenticado)
+export const getCostSummary = async (req: Request, res: Response) => {
   try {
+    const userId = req.user!.id;
+
     // 1. Leer costos fijos de PlatformConfig
     const configs = await (prisma as any).platformConfig.findMany();
     const getConfig = (key: string): string => {
@@ -26,7 +28,7 @@ export const getCostSummary = async (_req: Request, res: Response) => {
       where: { createdAt: { gte: startOfMonth } },
     });
 
-    // Agrupar por provider
+    // Agrupar por provider (global)
     const byProvider: Record<string, { tokensIn: number; tokensOut: number; cost: number; queries: number }> = {};
     for (const u of apiUsageThisMonth) {
       const p = u.provider || 'unknown';
@@ -52,24 +54,58 @@ export const getCostSummary = async (_req: Request, res: Response) => {
     );
     const freeUserCount = freeUsersSet.size;
 
-    // 3. Usuarios activos este mes
-    const activeUsers = await (prisma as any).apiUsage.groupBy({
-      by: ['userId'],
-      where: { createdAt: { gte: startOfMonth } },
+    // ── NUEVO: Cálculo por árbol ─────────────────────────────────────────
+
+    // Obtener membresías del usuario
+    const memberships = await (prisma as any).treeMember.findMany({
+      where: { userId, status: 'ACTIVE' },
+      include: { tree: { select: { id: true, name: true } } },
     });
 
-    // Excluir admins — no cuentan para el promedio
-    const adminIds = (await (prisma as any).user.findMany({
-      where: { isPlatformAdmin: true },
-      select: { telegramUserId: true },
-    })).map((u: any) => u.telegramUserId);
-    const nonAdminUsers = activeUsers.filter((u: any) => !adminIds.includes(u.userId));
-    const userCount = nonAdminUsers.length || 1;
+    // Árboles activos totales (para dividir costos fijos)
+    const activeTrees = await (prisma as any).treeMember.groupBy({
+      by: ['treeId'],
+      where: { status: 'ACTIVE' },
+    });
+    const activeTreeCount = activeTrees.length || 1;
+    const fixedPerTree = totalFixed / activeTreeCount;
 
-    // 4. Costo promedio por usuario
-    const avgApiPerUser = totalApiCost / userCount;
-    const avgFixedPerUser = totalFixed / userCount;
-    const avgTotalPerUser = avgApiPerUser + avgFixedPerUser;
+    // Calcular por árbol
+    const perTree = await Promise.all(
+      memberships.map(async (m: any) => {
+        const treeId = m.treeId;
+
+        // Uso de APIs este mes en este árbol (sin período gratuito)
+        const apiUsage = await (prisma as any).apiUsage.aggregate({
+          where: {
+            treeId,
+            createdAt: { gte: startOfMonth },
+            isFreePeriod: false,
+          },
+          _sum: { cost: true, tokensIn: true, tokensOut: true },
+        });
+
+        const apiCost = apiUsage._sum?.cost || 0;
+
+        // Miembros activos del árbol
+        const memberCount = await (prisma as any).treeMember.count({
+          where: { treeId, status: 'ACTIVE' },
+        });
+
+        const treeTotal = apiCost + fixedPerTree;
+        const perPerson = treeTotal / (memberCount || 1);
+
+        return {
+          treeId,
+          treeName: m.tree.name,
+          memberCount,
+          apiCost: Math.round(apiCost * 100) / 100,
+          fixedShare: Math.round(fixedPerTree * 100) / 100,
+          treeTotal: Math.round(treeTotal * 100) / 100,
+          perPerson: Math.round(perPerson * 100) / 100,
+        };
+      })
+    );
 
     res.json({
       fixed_costs: {
@@ -77,6 +113,8 @@ export const getCostSummary = async (_req: Request, res: Response) => {
         infrastructure: infra,
         fixed,
         total: totalFixed,
+        active_trees: activeTreeCount,
+        per_tree: Math.round(fixedPerTree * 100) / 100,
       },
       api_costs: {
         this_month: {
@@ -95,12 +133,7 @@ export const getCostSummary = async (_req: Request, res: Response) => {
         users_in_trial: freeUserCount,
         absorbed_this_month: Math.round(absorbed * 100) / 100,
       },
-      per_user_estimate: {
-        active_users: userCount,
-        avg_api_cost: Math.round(avgApiPerUser * 100) / 100,
-        avg_fixed_share: Math.round(avgFixedPerUser * 100) / 100,
-        avg_total: Math.round(avgTotalPerUser * 100) / 100,
-      },
+      per_tree: perTree,
     });
   } catch (error: any) {
     console.error('[costs] Error:', error.message);
