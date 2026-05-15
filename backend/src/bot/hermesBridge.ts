@@ -68,8 +68,8 @@ async function buildSystemPrompt(
   // ── Active needs ──────────────────────────────────────────────────────
   const needs = await (prisma as any).need.findMany({
     where: { treeId, status: "OPEN" },
-    select: { title: true, description: true, priority: true },
-    orderBy: { priority: "desc" },
+    select: { title: true, description: true, importance: true },
+    orderBy: { importance: "desc" },
     take: 10,
   });
 
@@ -85,7 +85,7 @@ async function buildSystemPrompt(
         n.description?.length > 120
           ? n.description.slice(0, 117) + "..."
           : (n.description || "Sin descripción");
-      lines.push(`  - [${n.priority}] ${n.title}: ${desc}`);
+      lines.push(`  - [${n.importance}] ${n.title}: ${desc}`);
     }
   }
 
