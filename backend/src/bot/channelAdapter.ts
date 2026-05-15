@@ -87,7 +87,16 @@ export async function sendViaTelegram(
       switch (msg.kind) {
         case "text":
           if (msg.text) {
-            await ctx.reply(msg.text, { parse_mode: "Markdown" });
+            // Try with Markdown first; fall back to plain text on parse error
+            try {
+              await ctx.reply(msg.text, { parse_mode: "Markdown" });
+            } catch (markdownErr: any) {
+              if (markdownErr.message?.includes("can't parse entities")) {
+                await ctx.reply(msg.text);
+              } else {
+                throw markdownErr;
+              }
+            }
             sent = true;
           }
           break;
