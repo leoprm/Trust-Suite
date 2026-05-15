@@ -691,10 +691,16 @@ export async function createBot(prisma: PrismaClient): Promise<Bot<BotContext> |
 
       const userId = ctx.from?.id.toString() ?? "unknown";
 
-      // Show typing indicator while Hermes processes
+      // Show typing indicator while Hermes processes (refresh every 4s)
+      const typingInterval = setInterval(() => {
+        ctx.replyWithChatAction("typing").catch(() => {});
+      }, 4000);
       ctx.replyWithChatAction("typing").catch(() => {});
 
       const response = await routeToHermes(cmdText, tree.id, userId);
+
+      // Stop typing indicator
+      clearInterval(typingInterval);
 
       if (response) {
         // Send text immediately

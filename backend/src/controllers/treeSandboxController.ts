@@ -26,6 +26,25 @@ function checkApiKey(req: Request, res: Response): boolean {
   return true;
 }
 
+// ── Sandbox env whitelist ────────────────────────────────────────────────────
+
+function buildSandboxEnv(cwd: string): Record<string, string | undefined> {
+  const env: Record<string, string | undefined> = {
+    HOME: cwd,
+    PATH: process.env.PATH,
+    NODE_ENV: process.env.NODE_ENV,
+  };
+
+  // Pass through SANDBOX_ and HERMES_ prefixed vars (compat with Hermes Agent)
+  for (const [key, value] of Object.entries(process.env)) {
+    if (key.startsWith('SANDBOX_') || key.startsWith('HERMES_')) {
+      env[key] = value;
+    }
+  }
+
+  return env;
+}
+
 // ── Path validation ─────────────────────────────────────────────────────────
 
 function resolveSafePath(
@@ -57,7 +76,7 @@ export const execTreeSandbox = async (req: Request, res: Response) => {
   if (!checkApiKey(req, res)) return;
 
   try {
-    const { id } = req.params;
+    const id = req.params.id as string;
     const { command, timeout } = req.body;
 
     if (!command || typeof command !== 'string') {
@@ -84,7 +103,7 @@ export const execTreeSandbox = async (req: Request, res: Response) => {
           cwd,
           timeout: timeoutMs,
           maxBuffer: 1024 * 1024, // 1 MB
-          env: { ...process.env, HOME: cwd },
+          env: buildSandboxEnv(cwd),
         });
 
         let stdout = '';
@@ -123,8 +142,8 @@ export const execTreeSandbox = async (req: Request, res: Response) => {
       action: 'SANDBOX_EXEC',
       entityType: 'TreeSandbox',
       entityId: id,
-      source: 'API_KEY',
-      metadata: { exitCode: result.exitCode, timeoutMs },
+      source: 'SYSTEM',
+      metadataJson: { exitCode: result.exitCode, timeoutMs },
     });
 
     res.json({
@@ -146,7 +165,7 @@ export const readTreeSandbox = async (req: Request, res: Response) => {
   if (!checkApiKey(req, res)) return;
 
   try {
-    const { id } = req.params;
+    const id = req.params.id as string;
     const { path: requestedPath } = req.body;
 
     if (!requestedPath || typeof requestedPath !== 'string') {
@@ -185,7 +204,7 @@ export const readTreeSandbox = async (req: Request, res: Response) => {
       action: 'SANDBOX_READ',
       entityType: 'TreeSandbox',
       entityId: id,
-      source: 'API_KEY',
+      source: 'SYSTEM',
     });
 
     res.json({ content, size: stat.size });
@@ -203,7 +222,7 @@ export const writeTreeSandbox = async (req: Request, res: Response) => {
   if (!checkApiKey(req, res)) return;
 
   try {
-    const { id } = req.params;
+    const id = req.params.id as string;
     const { path: requestedPath, content } = req.body;
 
     if (!requestedPath || typeof requestedPath !== 'string') {
@@ -235,7 +254,7 @@ export const writeTreeSandbox = async (req: Request, res: Response) => {
       action: 'SANDBOX_WRITE',
       entityType: 'TreeSandbox',
       entityId: id,
-      source: 'API_KEY',
+      source: 'SYSTEM',
     });
 
     res.status(201).json({ path: requestedPath, size: Buffer.byteLength(content, 'utf-8') });
