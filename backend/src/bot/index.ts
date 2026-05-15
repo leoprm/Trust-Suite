@@ -622,11 +622,13 @@ export async function createBot(prisma: PrismaClient): Promise<Bot<BotContext> |
 
       const treeId = membership.tree.id;
       const userId = tgUser.id.toString();
+      const displayName = tgUser.first_name || userId;
+      const fullMessage = `${displayName}: ${text}`;
 
       // Typing indicator
       ctx.replyWithChatAction("typing").catch(() => {});
 
-      const response = await routeToHermes(text, treeId, userId);
+      const response = await routeToHermes(fullMessage, treeId, userId);
       if (response) {
         await ctx.reply(response.text, { parse_mode: "Markdown" });
 
@@ -707,6 +709,10 @@ export async function createBot(prisma: PrismaClient): Promise<Bot<BotContext> |
       }
 
       const userId = ctx.from?.id.toString() ?? "unknown";
+      const displayName = ctx.from?.first_name || userId;
+
+      // ── Prepend display name so the agent knows who is speaking ──────
+      const fullMessage = `${displayName}: ${cmdText}`;
 
       // Fetch recent chat history for context
       let chatHistory: any[] | undefined;
@@ -731,7 +737,7 @@ export async function createBot(prisma: PrismaClient): Promise<Bot<BotContext> |
       }, 4000);
       ctx.replyWithChatAction("typing").catch(() => {});
 
-      const response = await routeToHermes(cmdText, tree.id, userId, chatHistory);
+      const response = await routeToHermes(fullMessage, tree.id, userId, chatHistory);
 
       // Stop typing indicator
       clearInterval(typingInterval);
