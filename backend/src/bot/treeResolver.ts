@@ -13,6 +13,7 @@ export interface TreeInfo {
   description: string | null;
   admissionPolicy: string;
   creatorId: string | null;
+  code: string | null;
   memberCount: number;
   needCount: number;
   openNeedCount: number;
@@ -58,9 +59,25 @@ export async function findTreeByChat(
     description: tree.description,
     admissionPolicy: tree.admissionPolicy,
     creatorId: tree.creatorId,
+    code: tree.code,
     memberCount: tree._count.members,
     needCount: tree._count.needs,
     openNeedCount,
     ideaCount,
   };
+}
+
+/**
+ * Busca un árbol por su código corto (ej: ABC123).
+ * Retorna nombre si existe, null si no.
+ */
+export async function findTreeByCode(
+  prisma: PrismaClient,
+  code: string
+): Promise<{ id: string; name: string } | null> {
+  const tree = await (prisma as any).tree.findUnique({
+    where: { code: code.toUpperCase() },
+    select: { id: true, name: true },
+  });
+  return tree ?? null;
 }

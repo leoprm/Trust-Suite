@@ -218,7 +218,7 @@ export function registerReactionHandler(bot: Bot<BotContext>): void {
     }
   });
 
-  console.log("[Telegram Bot] Reaction handler ready (👍=1 voto, ❤️=2 votos, ⭐=3 votos)");
+  console.log("[Telegram Bot] Reaction handler ready (👍=1, ❤️=2, ⭐=3)");
 }
 
 // ── Poll handler (T8: Votación anónima con encuestas nativas) ─────────────

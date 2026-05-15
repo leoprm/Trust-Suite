@@ -7,13 +7,23 @@
 
 import { BotContext } from "./types";
 import { PrismaClient } from "@prisma/client";
+import { t } from "./i18n";
 import { extractCommandText } from "./commands";
 import { findTreeByChat } from "./treeResolver";
+import { showLanguageSelector } from "./messages";
 
 // ── Constantes ──────────────────────────────────────────────────────────
 
 const CONCIERGE_URL = "http://localhost:3100/api/concierge";
 const CONCIERGE_TIMEOUT_MS = 300_000;
+
+// ── Helpers ─────────────────────────────────────────────────────────────
+
+function getUserLanguage(ctx: BotContext): string {
+  const code = ctx.from?.language_code;
+  if (code === "en") return "en";
+  return "es";
+}
 
 // ── User resolution ─────────────────────────────────────────────────────
 
@@ -33,17 +43,19 @@ async function resolveOrCreateDMUser(
       skills: true,
       totalXp: true,
       createdAt: true,
+      language: true,
     },
   });
   if (existing) return existing;
 
-  // Auto-register
+  // Auto-register — language starts as null (forces onboarding selector)
   try {
     return await (prisma as any).user.create({
       data: {
         username: `tg_${telegramUserId}`,
         telegramUserId: tgId,
         role: "USER",
+        language: null,
       },
       select: {
         id: true,
@@ -52,6 +64,7 @@ async function resolveOrCreateDMUser(
         skills: true,
         totalXp: true,
         createdAt: true,
+        language: true,
       },
     });
   } catch {
@@ -70,30 +83,38 @@ export async function handleDM(
 
   const text = msg.text.trim();
   const tgUser = ctx.from;
+  const lng = getUserLanguage(ctx);
+
   if (!tgUser) {
-    await ctx.reply("⚠️ No se pudo identificar tu cuenta de Telegram.");
+    await ctx.reply(t("common:not_identified", lng));
     return;
   }
 
   const user = await resolveOrCreateDMUser(prisma, tgUser.id.toString());
   if (!user) {
-    await ctx.reply("Error al encontrar o crear tu perfil.");
+    await ctx.reply(t("errors:profile_load_error", lng));
+    return;
+  }
+
+  // ── Language selector: if user hasn't chosen a language yet ──
+  if (!user.language) {
+    await showLanguageSelector(ctx);
     return;
   }
 
   // ── Comandos de perfil ──
   if (text === "/start" || text === "/perfil" || text === "perfil") {
-    await showProfile(ctx, user, prisma);
+    await showProfile(ctx, user, prisma, lng);
     return;
   }
 
   // ── /help en DM ──
   if (text === "/help" || text === "help" || text === "ayuda") {
     await ctx.reply(
-      "🌳 **Trust Maker — Comandos en DM:**\n\n" +
-        "/perfil — Ver tu perfil (nivel, habilidades, tareas)\n" +
-        "/help — Esta ayuda\n\n" +
-        "También puedes hablarme directamente y te responderé usando la IA de tu primer árbol.",
+      t("dm:dm_help_title", lng) + "\n\n" +
+        t("dm:dm_help_perfil", lng) + "\n" +
+        t("dm:dm_help_help", lng) + "\n\n" +
+        t("dm:dm_help_footer", lng),
       { parse_mode: "Markdown" },
     );
     return;
@@ -107,11 +128,7 @@ export async function handleDM(
   });
 
   if (memberships.length === 0) {
-    await ctx.reply(
-      "🌳 No estás en ningún árbol todavía.\n\n" +
-        "Pide a alguien que te invite a un grupo o crea uno con /crear",
-      { parse_mode: "Markdown" },
-    );
+    await ctx.reply(t("dm:dm_no_trees", lng), { parse_mode: "Markdown" });
     return;
   }
 
@@ -142,7 +159,7 @@ export async function handleDM(
     });
 
     if (!response.ok) {
-      await ctx.reply("Lo siento, no estoy disponible ahora.");
+      await ctx.reply(t("errors:unavailable", lng));
       return;
     }
 
@@ -150,16 +167,16 @@ export async function handleDM(
     const reply: string = data?.reply ?? "";
 
     if (!reply) {
-      await ctx.reply("Lo siento, no estoy disponible ahora.");
+      await ctx.reply(t("errors:unavailable", lng));
       return;
     }
 
     await ctx.reply(reply, { parse_mode: "Markdown" });
   } catch (error: any) {
     if (error.name === "AbortError") {
-      await ctx.reply("El agente está pensando, intenta de nuevo.");
+      await ctx.reply(t("errors:agent_thinking", lng));
     } else {
-      await ctx.reply("Lo siento, no estoy disponible ahora.");
+      await ctx.reply(t("errors:unavailable", lng));
     }
   } finally {
     clearTimeout(timeoutId);
@@ -173,6 +190,7 @@ async function showProfile(
   ctx: BotContext,
   user: { id: string; username: string; role: string; skills: string | null; totalXp: number },
   prisma: PrismaClient,
+  lng: string,
 ): Promise<void> {
   // Parse skills
   let skills: Record<string, number> = {};
@@ -203,34 +221,34 @@ async function showProfile(
 
   // Build profile message
   const lines = [
-    `👤 **${user.username}** — Nivel ${level}`,
+    t("dm:profile_header", lng, { username: user.username, level }),
     "",
-    `⭐ XP total: ${totalXp}`,
+    t("dm:profile_xp", lng, { xp: totalXp }),
     "",
-    "🛠️ **Habilidades:**",
+    t("dm:profile_skills_title", lng),
     ...(Object.keys(skills).length > 0
       ? Object.entries(skills)
           .sort(([, a], [, b]) => (b as number) - (a as number))
           .slice(0, 5)
           .map(([name, xp]) => `• ${name}: ${xp} XP`)
-      : ["• *Sin habilidades registradas*"]),
+      : [t("dm:profile_no_skills", lng)]),
     "",
-    `🌳 **Árboles:** ${memberships.length}`,
+    t("dm:profile_trees_title", lng, { count: memberships.length }),
     ...memberships.map((m: any) => `• ${m.tree.icono} ${m.tree.name}`),
     "",
-    "📋 **Tareas pendientes:**",
+    t("dm:profile_tasks_title", lng),
     ...(pendingTasks.length > 0
       ? pendingTasks.map((t: any) => `• ${t.title} (${t.status})`)
-      : ["• *No tienes tareas pendientes*"]),
+      : [t("dm:profile_no_tasks", lng)]),
     "",
-    "💬 Envíame un mensaje para hablar con la IA del árbol.",
+    t("dm:profile_chat_hint", lng),
   ];
 
   const keyboard = {
     inline_keyboard: [
-      [{ text: "🛠️ Mis habilidades", callback_data: "profile_skills" }],
-      [{ text: "📋 Mis tareas", callback_data: "profile_tasks" }],
-      [{ text: "💰 Costos", callback_data: "profile_costs" }],
+      [{ text: t("dm:btn_skills", lng), callback_data: "profile_skills" }],
+      [{ text: t("dm:btn_tasks", lng), callback_data: "profile_tasks" }],
+      [{ text: t("dm:btn_costs", lng), callback_data: "profile_costs" }],
     ],
   };
 
@@ -252,11 +270,13 @@ export async function handleProfileCallback(
   const tgUser = ctx.from;
   if (!tgUser) return false;
 
+  const lng = getUserLanguage(ctx);
+
   // ── profile_skills ──
   if (data === "profile_skills") {
     const user = await resolveOrCreateDMUser(prisma, tgUser.id.toString());
     if (!user) {
-      await ctx.answerCallbackQuery({ text: "Error al cargar tu perfil." });
+      await ctx.answerCallbackQuery({ text: t("errors:profile_load_error", lng) });
       return true;
     }
 
@@ -272,12 +292,12 @@ export async function handleProfileCallback(
     );
 
     if (entries.length === 0) {
-      await ctx.reply("🛠️ No tienes habilidades registradas aún.\n\nLas habilidades se ganan completando tareas en los árboles.");
+      await ctx.reply(t("dm:skills_empty", lng));
     } else {
-      const skillLines = ["🛠️ **Tus habilidades:**", ""];
+      const skillLines = [t("dm:skills_title", lng), ""];
       for (const [name, xp] of entries) {
         const lvl = Math.floor((xp as number) / 100) + 1;
-        skillLines.push(`• **${name}**: ${xp} XP (Nivel ${lvl})`);
+        skillLines.push(t("dm:skill_item", lng, { name, xp, level: lvl }));
       }
       await ctx.reply(skillLines.join("\n"), { parse_mode: "Markdown" });
     }
@@ -290,7 +310,7 @@ export async function handleProfileCallback(
   if (data === "profile_tasks") {
     const user = await resolveOrCreateDMUser(prisma, tgUser.id.toString());
     if (!user) {
-      await ctx.answerCallbackQuery({ text: "Error al cargar tus tareas." });
+      await ctx.answerCallbackQuery({ text: t("errors:profile_load_error", lng) });
       return true;
     }
 
@@ -302,7 +322,7 @@ export async function handleProfileCallback(
     });
 
     if (tasks.length === 0) {
-      await ctx.reply("📋 No tienes tareas asignadas.\n\nCuando un árbol te asigne tareas, aparecerán aquí.");
+      await ctx.reply(t("dm:tasks_empty", lng));
     } else {
       const statusEmoji: Record<string, string> = {
         PENDING: "⏳",
@@ -314,7 +334,7 @@ export async function handleProfileCallback(
         DISPUTED: "⚠️",
       };
 
-      const taskLines = ["📋 **Tus tareas:**", ""];
+      const taskLines = [t("dm:tasks_title", lng), ""];
       for (const t of tasks) {
         const emoji = statusEmoji[t.status] ?? "❓";
         const treeName = t.tree ? `${t.tree.icono} ${t.tree.name}` : "🌳";
@@ -334,9 +354,36 @@ export async function handleProfileCallback(
   // ── profile_costs ──
   if (data === "profile_costs") {
     const userId = tgUser.id.toString();
-    const costText = await getUserCosts(prisma, userId);
+    const costText = await getUserCosts(prisma, userId, lng);
     await ctx.reply(costText, { parse_mode: "Markdown" });
     await ctx.answerCallbackQuery();
+    return true;
+  }
+
+  // ── lang:es / lang:en ──
+  if (data === "lang:es" || data === "lang:en") {
+    const selectedLng = data === "lang:es" ? "es" : "en";
+    const validLanguages = ["es", "en"];
+    if (!validLanguages.includes(selectedLng)) {
+      await ctx.answerCallbackQuery({ text: t("errors:language_not_supported", selectedLng) });
+      return true;
+    }
+
+    // Update user language in DB
+    await (prisma as any).user.update({
+      where: { telegramUserId: BigInt(tgUser.id) },
+      data: { language: selectedLng },
+    });
+
+    await ctx.answerCallbackQuery();
+
+    // Respond in the chosen language
+    const confirmMsg = t("onboarding:language_selected", selectedLng);
+    await ctx.reply(confirmMsg, {
+      parse_mode: "Markdown",
+      reply_markup: { remove_keyboard: true },
+    });
+
     return true;
   }
 
@@ -348,9 +395,10 @@ export async function handleProfileCallback(
 async function getUserCosts(
   prisma: PrismaClient,
   telegramUserId: string,
+  lng: string,
 ): Promise<string> {
   const user = await resolveOrCreateDMUser(prisma, telegramUserId);
-  if (!user) return "⚠️ No se pudo encontrar tu perfil.";
+  if (!user) return t("errors:profile_not_found", lng);
 
   // Platform config
   const configs = await (prisma as any).platformConfig.findMany();
@@ -376,7 +424,7 @@ async function getUserCosts(
   });
 
   if (memberships.length === 0) {
-    return "🌳 No eres miembro activo de ningún árbol.\n\nNo tienes costos este mes.";
+    return t("dm:costs_no_membership", lng);
   }
 
   // Active trees (for fixed cost division)
@@ -386,7 +434,7 @@ async function getUserCosts(
   });
   const fixedPerTree = totalFixed / (activeTrees.length || 1);
 
-  const lines = ["💰 **Tus costos este mes:**", ""];
+  const lines = [t("dm:costs_title", lng), ""];
 
   let totalPersonal = 0;
 
@@ -434,17 +482,15 @@ async function getUserCosts(
   });
 
   if (freeUsage) {
-    lines.push(
-      "🎁 **Estás en período gratuito** — la plataforma absorbe tus costos este mes.",
-    );
+    lines.push(t("dm:costs_free_period", lng));
   } else {
-    lines.push(`💸 **Total estimado: $${totalPersonal.toFixed(2)}**`);
+    lines.push(t("dm:costs_total", lng, { total: totalPersonal.toFixed(2) }));
   }
 
   lines.push(
     "",
-    "💡 Los costos se dividen entre todos los miembros activos del árbol.",
-    `📈 Margen de crecimiento: ${margin}%`,
+    t("dm:costs_disclaimer", lng),
+    t("dm:costs_margin", lng, { margin }),
   );
 
   return lines.join("\n");

@@ -1,0 +1,10 @@
+{
+  "created": "Tree \"{{name}}\" created automatically.",
+  "not_found": "❌ Could not find this group's tree.",
+  "membership_added": "Member {{username}} added to tree.",
+  "auto_created": "Automatic tree for Telegram group \"{{name}}\"",
+  "info_members": "👥 Members: {{count}}",
+  "info_needs": "📋 Needs: {{total}} ({{open}} open)",
+  "info_ideas": "💡 Ideas: {{count}}",
+  "info_admission": "🔐 Admission: {{policy}}"
+}

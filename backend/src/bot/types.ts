@@ -13,6 +13,10 @@ export interface BotSessionData {
   awaitingEvidenceTaskId: string | null;
   /** Bot's message ID that requested evidence (used to detect replies) */
   awaitingEvidenceBotMsgId: number | null;
+  /** Paso actual del flujo de onboarding multi-step (1-4). null = no en onboarding */
+  onboardingStep: number | null;
+  /** ID del árbol que se está configurando en el onboarding */
+  onboardingTreeId: string | null;
 }
 
 /**

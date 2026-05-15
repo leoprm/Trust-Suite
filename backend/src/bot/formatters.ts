@@ -1,7 +1,9 @@
 /**
  * Formateo de respuestas del bot para Telegram.
- * Todo en español, conciso, con emojis para legibilidad.
+ * Usa i18n para todos los textos — nada hardcodeado.
  */
+
+import { t } from "./i18n";
 
 /** Máximo de caracteres por mensaje de Telegram (4096, con margen). */
 const TELEGRAM_MAX = 4000;
@@ -14,58 +16,60 @@ function truncar(texto: string, max = TELEGRAM_MAX): string {
 
 // ── Help ───────────────────────────────────────────────────────────────────
 
-export function helpMessage(): string {
+export function helpMessage(lng = "es"): string {
   return [
-    "🌳 *TrustMaker* — comandos disponibles:",
+    t("common:help_bot_title", lng),
     "",
-    "• `@TrustMakerBot /info` — stats del árbol",
-    "• `@TrustMakerBot /lista necesidades` — necesidades abiertas",
-    "• `@TrustMakerBot /crea necesidad \"título\" — descripción` — crear necesidad",
-    "• `@TrustMakerBot /ideas para \"título\"` — ver ideas de una necesidad",
-    "• `@TrustMakerBot /vota <id>` — votar por una necesidad",
-    "• `@TrustMakerBot /cuota` — ver tu cuota mensual",
-    "• `@TrustMakerBot /pagar` — ver tus pagos pendientes",
+    t("common:help_info", lng),
+    t("common:help_list", lng),
+    t("common:help_create", lng),
+    t("common:help_ideas", lng),
+    t("common:help_vote", lng),
+    t("common:help_cuota", lng),
+    t("common:help_pagar", lng),
     "",
-    "_Responde en el grupo mencionando @TrustMaker._",
+    t("common:help_footer", lng),
   ].join("\n");
 }
 
 // ── Error ──────────────────────────────────────────────────────────────────
 
-export function noTreeError(): string {
-  return "⚠️ Este grupo no está vinculado a ningún árbol de TrustMaker.\n\n" +
-    "El creador del árbol debe configurar `telegramChatId` en la consola de administración.";
+export function noTreeError(lng = "es"): string {
+  return t("common:no_tree_error", lng);
 }
 
-export function commandNotFound(): string {
-  return "❓ Comando no reconocido.\n\n" + helpMessage();
+export function commandNotFound(lng = "es"): string {
+  return t("common:command_not_found", lng) + "\n\n" + helpMessage(lng);
 }
 
 // ── Tree Info ──────────────────────────────────────────────────────────────
 
-export function formatTreeInfo(tree: {
-  name: string;
-  icono: string;
-  description: string | null;
-  admissionPolicy: string;
-  memberCount: number;
-  needCount: number;
-  openNeedCount: number;
-  ideaCount: number;
-}): string {
+export function formatTreeInfo(
+  tree: {
+    name: string;
+    icono: string;
+    description: string | null;
+    admissionPolicy: string;
+    memberCount: number;
+    needCount: number;
+    openNeedCount: number;
+    ideaCount: number;
+  },
+  lng = "es",
+): string {
   const politicas: Record<string, string> = {
-    OPEN: "Abierto 🌍",
-    INVITE_ONLY: "Solo invitación 🔒",
+    OPEN: t("common:admission_open", lng),
+    INVITE_ONLY: t("common:admission_invite_only", lng),
   };
 
   return [
     `${tree.icono} *${tree.name}*`,
     tree.description ? `_${tree.description}_` : "",
     "",
-    `👥 Miembros: ${tree.memberCount}`,
-    `📋 Necesidades: ${tree.needCount} (${tree.openNeedCount} abiertas)`,
-    `💡 Ideas: ${tree.ideaCount}`,
-    `🔐 Admisión: ${politicas[tree.admissionPolicy] || tree.admissionPolicy}`,
+    t("tree:info_members", lng, { count: tree.memberCount }),
+    t("tree:info_needs", lng, { total: tree.needCount, open: tree.openNeedCount }),
+    t("tree:info_ideas", lng, { count: tree.ideaCount }),
+    t("tree:info_admission", lng, { policy: politicas[tree.admissionPolicy] || tree.admissionPolicy }),
   ].filter(Boolean).join("\n");
 }
 
@@ -79,11 +83,11 @@ export function formatNeedsList(
     importance: number;
     _count: { ideas: number };
     creator?: { username: string } | null;
-  }>
+  }>,
+  lng = "es",
 ): string {
   if (needs.length === 0) {
-    return "📋 No hay necesidades en este árbol todavía.\n\n" +
-      "Crea una con: `@TrustMakerBot /crea necesidad \"título\" — descripción`";
+    return t("needs:list_empty", lng);
   }
 
   const openNeeds = needs.filter(n => n.status === "OPEN");
@@ -91,54 +95,72 @@ export function formatNeedsList(
   const otherNeeds = needs.filter(n => n.status !== "OPEN" && n.status !== "PENDING_APPROVAL");
 
   const lines: string[] = [
-    `📋 *Necesidades* (${needs.length} total, ${openNeeds.length} abiertas, ${pendingNeeds.length} en revisión):\n`,
+    t("needs:list_header", lng, {
+      total: needs.length,
+      open: openNeeds.length,
+      pending: pendingNeeds.length,
+    }),
   ];
 
   // Pending approval needs first (awaiting vote)
   for (const n of pendingNeeds) {
     const creator = n.creator?.username ? ` por @${n.creator.username}` : "";
     lines.push(
-      `⏳ *${n.title}* — en votación | 💡 ${n._count.ideas} ideas${creator}\n  \`${n.id}\``
+      t("needs:list_pending_item", lng, {
+        title: n.title,
+        ideas: n._count.ideas,
+        creator,
+        id: n.id,
+      }),
     );
   }
 
   for (const n of openNeeds) {
     const creator = n.creator?.username ? ` por @${n.creator.username}` : "";
     lines.push(
-      `🟢 *${n.title}* — importancia ${n.importance}/10 | 💡 ${n._count.ideas} ideas${creator}\n  \`${n.id}\``
+      t("needs:list_open_item", lng, {
+        title: n.title,
+        importance: n.importance,
+        ideas: n._count.ideas,
+        creator,
+        id: n.id,
+      }),
     );
   }
 
   if (otherNeeds.length > 0) {
-    lines.push(`\n📌 _Cerradas/satisfechas (${otherNeeds.length}):_`);
+    lines.push(t("needs:list_closed_header", lng, { count: otherNeeds.length }));
     for (const n of otherNeeds) {
-      const statusEmoji = n.status === "SATISFIED" ? "✅" : "🔒";
-      lines.push(`${statusEmoji} ${n.title}`);
+      const key = n.status === "SATISFIED" ? "needs.list_closed_satisfied" : "needs.list_closed_other";
+      lines.push(t(key, lng, { title: n.title }));
     }
   }
 
   return truncar(lines.join("\n"));
 }
 
-export function formatNeedCreated(need: { id: string; title: string; importance: number }): string {
+export function formatNeedCreated(
+  need: { id: string; title: string; importance: number },
+  lng = "es",
+): string {
   return [
-    "✅ Necesidad creada:",
-    `*${need.title}*`,
-    `Importancia: ${need.importance}/10`,
-    `ID: \`${need.id}\``,
+    t("needs:created_header", lng),
+    t("needs:created_title", lng, { title: need.title }),
+    t("needs:created_importance", lng, { importance: need.importance }),
+    t("needs:created_id", lng, { id: need.id }),
   ].join("\n");
 }
 
-export function formatNeedPendingApproval(need: {
-  id: string;
-  title: string;
-}): string {
+export function formatNeedPendingApproval(
+  need: { id: string; title: string },
+  lng = "es",
+): string {
   return [
-    "⏳ **Necesidad compleja en revisión:**",
-    `*${need.title}*`,
+    t("needs:pending_approval_header", lng),
+    t("needs:pending_approval_title", lng, { title: need.title }),
     "",
-    "El grupo tiene 24h para votar si se desarrolla.",
-    `ID: \`${need.id}\``,
+    t("needs:pending_approval_note", lng),
+    t("needs:pending_approval_id", lng, { id: need.id }),
   ].join("\n");
 }
 
@@ -152,22 +174,22 @@ export function formatIdeasList(
     totalLikes: number;
     matchScore?: number;
     creator?: { username: string } | null;
-  }>
+  }>,
+  lng = "es",
 ): string {
   if (ideas.length === 0) {
-    return `💡 No hay ideas para *${needTitle}* todavía.\n\n` +
-      "Los miembros del árbol pueden proponer ideas desde la app web.";
+    return t("voting:ideas_empty", lng, { title: needTitle });
   }
 
   const lines: string[] = [
-    `💡 *Ideas para \"${needTitle}\"* (${ideas.length}):\n`,
+    t("voting:ideas_header", lng, { title: needTitle, count: ideas.length }),
   ];
 
   for (const idea of ideas) {
     const creator = idea.creator?.username ? ` — @${idea.creator.username}` : "";
     const score = idea.matchScore !== undefined ? ` 🎯${Math.round(idea.matchScore * 100)}%` : "";
     lines.push(
-      `❤️ ${idea.totalLikes} | ${idea.content.slice(0, 120)}${idea.content.length > 120 ? "..." : ""}${creator}${score}`
+      `❤️ ${idea.totalLikes} | ${idea.content.slice(0, 120)}${idea.content.length > 120 ? "..." : ""}${creator}${score}`,
     );
   }
 
@@ -176,40 +198,45 @@ export function formatIdeasList(
 
 // ── Vote ───────────────────────────────────────────────────────────────────
 
-export function formatVoteAck(needTitle: string): string {
-  return `❤️ Voto registrado para *${needTitle}*.`;
+export function formatVoteAck(needTitle: string, lng = "es"): string {
+  return t("common:vote_registered", lng, { title: needTitle });
 }
 
-export function needNotFound(needId: string): string {
-  return `❌ No se encontró la necesidad con ID \`${needId}\`.`;
+export function needNotFound(needId: string, lng = "es"): string {
+  return t("common:need_not_found", lng, { needId });
 }
 
 // ── Create Need Help ───────────────────────────────────────────────────────
 
-export function createNeedHelp(): string {
+export function createNeedHelp(lng = "es"): string {
   return [
-    "❓ Formato: `@TrustMakerBot /crea necesidad \"título\" — descripción`",
+    t("common:create_need_help_format", lng),
     "",
-    "Ejemplo:",
-    "`@TrustMakerBot /crea necesidad \"Mejorar onboarding\" — Crear un tutorial interactivo para nuevos miembros`",
+    t("common:create_need_help_example_label", lng),
+    t("common:create_need_help_example", lng),
   ].join("\n");
 }
 
 // ── Cuota ──────────────────────────────────────────────────────────────────
 
-export function noMemberError(): string {
-  return "⚠️ No eres miembro de este árbol. Únete desde la app web para ver tu cuota.";
+export function noMemberError(lng = "es"): string {
+  return t("common:no_member_error", lng);
 }
 
-export function formatCuota(cuota: number, costoBase: number, taskShare: number): string {
+export function formatCuota(
+  cuota: number,
+  costoBase: number,
+  taskShare: number,
+  lng = "es",
+): string {
   return [
-    `💰 *Tu cuota mensual*`,
+    t("voting:cuota_title", lng),
     "",
-    `💵 Total: *$${cuota.toLocaleString("es-CL")} CLP*`,
-    `📦 Base: $${costoBase.toLocaleString("es-CL")} CLP`,
-    `🔧 Tasks: $${taskShare.toLocaleString("es-CL")} CLP`,
+    t("voting:cuota_total", lng, { total: cuota.toLocaleString("es-CL") }),
+    t("voting:cuota_base", lng, { base: costoBase.toLocaleString("es-CL") }),
+    t("voting:cuota_tasks", lng, { tasks: taskShare.toLocaleString("es-CL") }),
     "",
-    `_Paga con /pagar_`,
+    t("voting:cuota_pay_hint", lng),
   ].join("\n");
 }
 
@@ -218,31 +245,34 @@ export function formatCuota(cuota: number, costoBase: number, taskShare: number)
 export function formatPagar(
   balance: { availableBalance: number; pendingBalance: number } | null,
   splits: Array<{ needTitle: string; percentage: number; reason: string }>,
+  lng = "es",
 ): string {
-  const lines: string[] = ["💳 *Pagos pendientes*", ""];
+  const lines: string[] = [t("voting:pagar_title", lng), ""];
 
   if (balance) {
     lines.push(
-      `💵 Saldo disponible: $${balance.availableBalance.toLocaleString("es-CL")} CLP`,
-      `⏳ Saldo pendiente: $${balance.pendingBalance.toLocaleString("es-CL")} CLP`,
+      t("voting:pagar_available", lng, { amount: balance.availableBalance.toLocaleString("es-CL") }),
+      t("voting:pagar_pending", lng, { amount: balance.pendingBalance.toLocaleString("es-CL") }),
     );
   } else {
-    lines.push("💵 Sin balance registrado aún.");
+    lines.push(t("voting:pagar_no_balance", lng));
   }
 
   if (splits.length > 0) {
-    lines.push("", "*Splits de pago:*");
+    lines.push("", t("voting:pagar_splits_header", lng));
     for (const s of splits) {
       const pct = Math.round(s.percentage);
       lines.push(`• ${s.needTitle} — ${pct}% (${s.reason})`);
     }
   } else {
-    lines.push("", "_Sin splits de pago pendientes._");
+    lines.push("", t("voting:pagar_no_splits", lng));
   }
 
   lines.push(
     "",
-    `Para pagar tu cuota, visita: ${process.env.PAYMENT_LINK || "https://trustmaker.app/pagos"}`,
+    t("voting:pagar_payment_link", lng, {
+      link: process.env.PAYMENT_LINK || "https://trustmaker.app/pagos",
+    }),
   );
 
   return truncar(lines.join("\n"));

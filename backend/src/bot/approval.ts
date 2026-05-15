@@ -10,6 +10,7 @@
 import { Bot } from "grammy";
 import { PrismaClient } from "@prisma/client";
 import { BotContext } from "./types";
+import { t } from "./i18n";
 
 // ── Detección de complejidad ──────────────────────────────────────────────
 
@@ -26,6 +27,7 @@ export async function sendApprovalPoll(
   prisma: PrismaClient,
   needId: string,
   chatId: number | string,
+  lng = "es",
 ): Promise<boolean> {
   try {
     const need = await (prisma as any).need.findUnique({
@@ -41,10 +43,10 @@ export async function sendApprovalPoll(
 
     const sentPoll = await bot.api.sendPoll(
       chatId,
-      `⚠️ **Necesidad compleja detectada:**\n\n*${need.title}*\n\n${desc}\n\n¿Aprobamos desarrollarla?`,
+      t("needs:complex_poll_question", lng, { title: need.title, description: desc }),
       [
-        { text: "✅ Sí, desarrollarla" },
-        { text: "❌ No, por ahora" },
+        { text: t("needs:complex_poll_yes", lng) },
+        { text: t("needs:complex_poll_no", lng) },
       ],
       {
         is_anonymous: true,
@@ -76,6 +78,7 @@ export async function closeApprovalPoll(
   bot: Bot<BotContext>,
   prisma: PrismaClient,
   needId: string,
+  lng = "es",
 ): Promise<void> {
   try {
     const need = await (prisma as any).need.findUnique({
@@ -114,7 +117,7 @@ export async function closeApprovalPoll(
       try {
         await bot.api.sendMessage(
           need.tree.telegramChatId,
-          `✅ **Necesidad aprobada** por votación (${yesVotes} a favor vs ${noVotes} en contra).\n\nYa está disponible para priorización.`,
+          t("needs:approved_message", lng, { yes: yesVotes, no: noVotes }),
           { parse_mode: "Markdown" },
         );
       } catch {}
@@ -131,7 +134,7 @@ export async function closeApprovalPoll(
       try {
         await bot.api.sendMessage(
           need.tree.telegramChatId,
-          `❌ **Necesidad rechazada** por votación (${yesVotes} a favor vs ${noVotes} en contra).\n\nNo se desarrollará por ahora.`,
+          t("needs:rejected_message", lng, { yes: yesVotes, no: noVotes }),
           { parse_mode: "Markdown" },
         );
       } catch {}
@@ -154,10 +157,11 @@ export function scheduleApprovalClose(
   bot: Bot<BotContext>,
   prisma: PrismaClient,
   needId: string,
+  lng = "es",
 ): void {
   const TWENTY_FOUR_HOURS = 24 * 60 * 60 * 1000;
   setTimeout(() => {
-    closeApprovalPoll(bot, prisma, needId).catch((err) =>
+    closeApprovalPoll(bot, prisma, needId, lng).catch((err) =>
       console.error(
         `[approval] Scheduled close failed for ${needId}:`,
         err.message,
@@ -201,13 +205,13 @@ export async function recoverPendingApprovals(
           need.approvalMessageId &&
           need.tree?.telegramChatId
         ) {
-          await closeApprovalPoll(bot, prisma, need.id);
+          await closeApprovalPoll(bot, prisma, need.id, "es");
           resolved++;
         }
       } else {
         const remaining = TWENTY_FOUR_HOURS - age;
         setTimeout(() => {
-          closeApprovalPoll(bot, prisma, need.id).catch((err) =>
+          closeApprovalPoll(bot, prisma, need.id, "es").catch((err) =>
             console.error(
               `[approval] Recovery close failed for ${need.id}:`,
               err.message,

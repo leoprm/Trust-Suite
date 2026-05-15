@@ -1,0 +1,20 @@
+{
+  "anonymous_title": "Anonymous voting",
+  "anonymous_note": "Your vote is secret. Only the total is shown.",
+  "voted": "✅ Your vote has been recorded.",
+  "results": "📊 Voting results:",
+  "ideas_empty": "💡 No ideas for *{{title}}* yet.\n\nTree members can propose ideas from the web app.",
+  "ideas_header": "💡 *Ideas for \"{{title}}\"* ({{count}}):",
+  "cuota_title": "💰 *Your monthly fee*",
+  "cuota_total": "💵 Total: *${{total}} CLP*",
+  "cuota_base": "📦 Base: ${{base}} CLP",
+  "cuota_tasks": "🔧 Tasks: ${{tasks}} CLP",
+  "cuota_pay_hint": "_Pay with /pagar_",
+  "pagar_title": "💳 *Pending payments*",
+  "pagar_available": "💵 Available balance: ${{amount}} CLP",
+  "pagar_pending": "⏳ Pending balance: ${{amount}} CLP",
+  "pagar_no_balance": "💵 No balance recorded yet.",
+  "pagar_splits_header": "*Payment splits:*",
+  "pagar_no_splits": "_No pending payment splits._",
+  "pagar_payment_link": "To pay your fee, visit: {{link}}"
+}

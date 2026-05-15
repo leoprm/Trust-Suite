@@ -15,6 +15,7 @@ import type { Bot } from "grammy";
 import type { BotContext } from "./types";
 import { execFile } from "child_process";
 import { promisify } from "util";
+import { getTasksForChat } from "./kanbanBridge";
 
 const execFileAsync = promisify(execFile);
 
@@ -24,6 +25,23 @@ const HERMES_BIN = process.env.HERMES_BIN || "hermes";
 const WATCHDOG_INTERVAL_MS = 150_000; // 150 seconds (2:30)
 const TWO_CYCLES_MS = 300_000; // 2 cycles = 5 min — re-notify running tasks
 const EXEC_TIMEOUT_MS = 10_000;
+const RATE_LIMIT_MS = 60_000; // max 1 progress summary per minute per chat
+
+// Rate-limit tracker: chatId → timestamp of last summary notification
+const lastSummaryNotification = new Map<string, number>();
+
+/** Exported for testing: returns true if notification is allowed for this chat. */
+export function rateLimitGate(chatId: string): boolean {
+  const last = lastSummaryNotification.get(chatId) || 0;
+  if (Date.now() - last < RATE_LIMIT_MS) return false;
+  lastSummaryNotification.set(chatId, Date.now());
+  return true;
+}
+
+/** Exported for testing: reset all rate-limit state. */
+export function resetRateLimits(): void {
+  lastSummaryNotification.clear();
+}
 
 // ── Types ─────────────────────────────────────────────────────────────────
 
@@ -163,6 +181,123 @@ export async function checkSingleTask(
   return { message, newStatus: realStatus };
 }
 
+/**
+ * Build and send a per-chat aggregate progress summary.
+ *
+ * Fetches ALL kanban tasks via `hermes kanban list --json`, filters to
+ * only the tasks tracked for each chat (via getTasksForChat), counts
+ * statuses, and sends a formatted summary. Rate-limited: 1 per minute
+ * per chat_id.
+ *
+ * Called at the end of runWatchdogCycle for every chat that had at
+ * least one individual task notification this cycle.
+ */
+export async function notifyProgress(
+  prisma: PrismaClient,
+  bot: Bot<BotContext>,
+  chatIds: Set<string>,
+): Promise<void> {
+  if (chatIds.size === 0) return;
+
+  // 1. Fetch all kanban tasks once (single CLI call)
+  let allTasks: Array<{ id: string; status: string; title?: string }>;
+  try {
+    const result = await execFileAsync(
+      HERMES_BIN,
+      ["kanban", "list", "--json"],
+      { timeout: EXEC_TIMEOUT_MS, maxBuffer: 512 * 1024 },
+    );
+    allTasks = JSON.parse(result.stdout.trim());
+  } catch (err: any) {
+    console.error(
+      "[KanbanWatchdog] Failed to fetch kanban list for summary:",
+      err.message,
+    );
+    return;
+  }
+
+  if (!Array.isArray(allTasks)) return;
+
+  // 2. Build lookup maps: taskId → status, taskId → title
+  const statusMap = new Map<string, string>();
+  const titleMap = new Map<string, string>();
+  for (const t of allTasks) {
+    if (t?.id) {
+      statusMap.set(t.id, t.status || "unknown");
+      titleMap.set(t.id, t.title || t.id);
+    }
+  }
+
+  // 3. For each chat, build and send the progress summary
+  for (const chatId of Array.from(chatIds)) {
+    // Rate limit check
+    if (!rateLimitGate(chatId)) continue;
+
+    const taskIds = await getTasksForChat(prisma, chatId);
+    if (taskIds.length === 0) continue;
+
+    // Count statuses
+    let doneCount = 0;
+    const running: string[] = [];
+    const pending: string[] = [];
+    const blocked: string[] = [];
+
+    for (const tid of taskIds) {
+      const status = statusMap.get(tid);
+      const label = titleMap.get(tid) || tid;
+      // Truncate long titles for readability
+      const shortLabel = label.length > 40 ? label.substring(0, 37) + "..." : label;
+
+      switch (status) {
+        case "done":
+          doneCount++;
+          break;
+        case "running":
+          running.push(shortLabel);
+          break;
+        case "ready":
+          pending.push(shortLabel);
+          break;
+        case "blocked":
+          blocked.push(shortLabel);
+          break;
+        default:
+          // archived, unknown — count as done/dead
+          doneCount++;
+          break;
+      }
+    }
+
+    const total = taskIds.length;
+    const parts: string[] = [];
+    parts.push(`📊 Progreso: ✓ ${doneCount}/${total} tareas`);
+
+    if (running.length) {
+      parts.push(`● corriendo: ${running.join(", ")}`);
+    }
+    if (pending.length) {
+      parts.push(`◻ pendientes: ${pending.join(", ")}`);
+    }
+    if (blocked.length) {
+      parts.push(`⊗ bloqueadas: ${blocked.join(", ")}`);
+    }
+
+    const message = parts.join(" | ");
+
+    try {
+      await bot.api.sendMessage(chatId, message);
+      console.log(`[KanbanWatchdog] Summary sent to ${chatId}`);
+    } catch (sendErr: any) {
+      if (sendErr?.error_code !== 403) {
+        console.error(
+          `[KanbanWatchdog] Summary send error to ${chatId}:`,
+          sendErr.message,
+        );
+      }
+    }
+  }
+}
+
 // ── Public API ─────────────────────────────────────────────────────────────
 
 /**
@@ -181,6 +316,7 @@ export async function runWatchdogCycle(
 
   let notified = 0;
   let cleaned = 0;
+  const notifiedChats = new Set<string>();
 
   for (const t of trackedTasks) {
     try {
@@ -210,6 +346,7 @@ export async function runWatchdogCycle(
             parse_mode: "Markdown",
           });
           notified++;
+          notifiedChats.add(t.chatId);
         } catch (sendErr: any) {
           if (sendErr?.error_code === 403) {
             // Chat unavailable (group deleted / bot kicked)
@@ -244,6 +381,11 @@ export async function runWatchdogCycle(
         err.message,
       );
     }
+  }
+
+  // ── Aggregate progress summary per notified chat ──
+  if (notifiedChats.size > 0) {
+    await notifyProgress(prisma, bot, notifiedChats);
   }
 
   if (notified > 0 || cleaned > 0) {

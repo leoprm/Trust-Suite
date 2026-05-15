@@ -101,26 +101,27 @@ const port = process.env.PORT || 3000;
 export const prisma = new PrismaClient();
 
 // ── Telegram Bot ───────────────────────────────────────────────────────────────
-// createBot returns null gracefully when TELEGRAM_BOT_TOKEN is not configured.
-// The bot starts polling immediately inside createBot().
-const telegramBot = createBot(prisma);
+// createBot is async (initializes i18n before starting polling).
+// Returns null gracefully when TELEGRAM_BOT_TOKEN is not configured.
+let telegramBot: ReturnType<typeof createBot> extends Promise<infer T> ? T : never = null as any;
 export { telegramBot }; // exported for satisfaction poll trigger
 
-// ── Initialize dispute broadcast service ──────────────────────────────────────
-initDisputeService(prisma, telegramBot);
+(async () => {
+  telegramBot = await createBot(prisma);
 
-// ── Scheduler: cierre diario a medianoche ──────────────────────────────────────
-// El scheduler necesita el bot para enviar resúmenes a los grupos.
-// Si el bot no está configurado (sin TELEGRAM_BOT_TOKEN), el scheduler
-// igual corre — solo procesa árboles sin enviar mensajes.
-if (telegramBot) {
-  startScheduler(prisma, telegramBot);
-} else {
-  console.warn(
-    "[Scheduler] Bot no disponible — el cierre diario se ejecutará sin notificaciones de Telegram."
-  );
-  startScheduler(prisma, null);
-}
+  // ── Initialize dispute broadcast service ──────────────────────────────────────
+  initDisputeService(prisma, telegramBot);
+
+  // ── Scheduler: cierre diario a medianoche ──────────────────────────────────────
+  if (telegramBot) {
+    startScheduler(prisma, telegramBot);
+  } else {
+    console.warn(
+      "[Scheduler] Bot no disponible — el cierre diario se ejecutará sin notificaciones de Telegram."
+    );
+    startScheduler(prisma, null);
+  }
+})();
 
 // ── Scheduler: cierre diario, cuota mensual, resolución de disputas ────────
 async function bootstrapDatabase(): Promise<void> {

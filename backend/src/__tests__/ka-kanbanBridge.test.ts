@@ -19,7 +19,7 @@ vi.mock('child_process', () => ({
 }));
 
 // Re-import after mock
-const { createKanbanTask } = await import('../bot/kanbanBridge');
+const { createKanbanTask, getTasksForChat } = await import('../bot/kanbanBridge');
 
 describe('Kanban Bridge', () => {
   let prisma: any;
@@ -54,14 +54,17 @@ describe('Kanban Bridge', () => {
 
     // Verificar que se llamó a exec con el comando correcto
     const execCalls = (child_process.exec as any).mock.calls;
-    expect(execCalls.length).toBe(1);
-    const command: string = execCalls[0][0];
-    expect(command).toContain('hermes kanban create');
-    expect(command).toContain('Consulta: instala Docker en mi servidor');
-    expect(command).toContain('--assignee backend-eng');
-    expect(command).toContain('**Tree:** tree-uuid-123');
-    expect(command).toContain('**Chat:** chat-456');
-    expect(command).toContain('> instala Docker en mi servidor');
+    // 2 calls: kanban create + auto-claim
+    expect(execCalls.length).toBeGreaterThanOrEqual(2);
+    const createCommand: string = execCalls[0][0];
+    const claimCommand: string = execCalls[1][0];
+    expect(createCommand).toContain('hermes kanban create');
+    expect(createCommand).toContain('Consulta: instala Docker en mi servidor');
+    expect(createCommand).toContain('--assignee backend-eng');
+    expect(createCommand).toContain('**Tree:** tree-uuid-123');
+    expect(createCommand).toContain('**Chat:** chat-456');
+    expect(createCommand).toContain('> instala Docker en mi servidor');
+    expect(claimCommand).toContain('hermes kanban claim t_abc123def456');
 
     // Verificar que persistió en DB
     expect(prisma.botKanbanTask.create).toHaveBeenCalledWith({
@@ -152,5 +155,40 @@ describe('Kanban Bridge', () => {
     const titlePart = command.match(/'Consulta: (.+?)'/);
     expect(titlePart).not.toBeNull();
     expect(titlePart![1].length).toBeLessThanOrEqual(80);
+  });
+});
+
+describe('Kanban Bridge — getTasksForChat', () => {
+  let prisma: any;
+
+  beforeEach(() => {
+    prisma = {
+      botKanbanTask: {
+        findMany: vi.fn(),
+      },
+    };
+    vi.clearAllMocks();
+  });
+
+  it('returns kanban task IDs for a given chat', async () => {
+    prisma.botKanbanTask.findMany.mockResolvedValue([
+      { kanbanTaskId: 't_aaa111' },
+      { kanbanTaskId: 't_bbb222' },
+    ]);
+
+    const result = await getTasksForChat(prisma, 'chat-789');
+
+    expect(result).toEqual(['t_aaa111', 't_bbb222']);
+    expect(prisma.botKanbanTask.findMany).toHaveBeenCalledWith({
+      where: { chatId: 'chat-789', status: { not: 'done' } },
+      select: { kanbanTaskId: true },
+    });
+  });
+
+  it('returns empty array when chat has no tracked tasks', async () => {
+    prisma.botKanbanTask.findMany.mockResolvedValue([]);
+
+    const result = await getTasksForChat(prisma, 'chat-empty');
+    expect(result).toEqual([]);
   });
 });

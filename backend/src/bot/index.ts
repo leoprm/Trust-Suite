@@ -3,7 +3,7 @@ import { Bot, session } from "grammy";
 import { PrismaClient } from "@prisma/client";
 import { BotContext, BotSessionData } from "./types";
 import { handleMessage, extractCommandText } from "./commands";
-import { handleNaturalMessage } from "./messages";
+import { handleNaturalMessage, showLanguageSelector, handleLanguageCallback, resolveUserLanguage } from "./messages";
 import { handleDM, handleProfileCallback } from "./dm";
 import { analyzeMessage } from "./analyzer";
 import { registerReactionHandler, handleNeedPollAnswer } from "./voting";
@@ -17,8 +17,9 @@ import { checkPaymentAccess } from "./payment";
 import { formatForChannel, sendViaTelegram } from "./channelAdapter";
 import { textToSpeech } from "../services/ttsService";
 import { TreeSandbox } from "../services/treeSandbox";
+import { initI18n, t } from "./i18n";
 
-// ── IPv4 fetch wrapper: undici (Node fetch) no respeta dns.setDefaultResultOrder ─
+// ── IPv4 fetch wrapper: undici (Node fetch) no respeta dns.setDefaultResultOrder ──
 // para api.telegram.org. Usamos https.get con family:4 como fallback.
 function httpsDownload(url: string): Promise<Buffer> {
   return new Promise((resolve, reject) => {
@@ -42,12 +43,25 @@ function httpsDownload(url: string): Promise<Buffer> {
 
 // ── TTS: generate voice buffer for a text response ──────────────────────
 
-async function generateVoice(text: string): Promise<Buffer | null> {
+async function generateVoice(text: string, lang?: string): Promise<Buffer | null> {
   try {
-    return await textToSpeech(text);
+    return await textToSpeech(text, lang);
   } catch (err: any) {
     console.warn("[TTS] Voice generation failed:", err.message);
     return null; // non-blocking — text still gets sent
+  }
+}
+
+/** Resolve user language for TTS voice selection. Returns null if not found. */
+async function getUserLanguage(prisma: PrismaClient, telegramId: number): Promise<string | undefined> {
+  try {
+    const user = await (prisma as any).user.findUnique({
+      where: { telegramUserId: BigInt(telegramId) },
+      select: { language: true },
+    });
+    return user?.language ?? undefined;
+  } catch {
+    return undefined;
   }
 }
 
@@ -77,7 +91,7 @@ function extractSimpleKeywords(text: string): string[] {
   return found;
 }
 
-export function createBot(prisma: PrismaClient): Bot<BotContext> | null {
+export async function createBot(prisma: PrismaClient): Promise<Bot<BotContext> | null> {
   const token = process.env.TELEGRAM_BOT_TOKEN || "";
 
   if (!token) {
@@ -93,18 +107,24 @@ export function createBot(prisma: PrismaClient): Bot<BotContext> | null {
   bot.use(
     session({
       initial(): BotSessionData {
-        return { userId: null, authenticatedAt: null, awaitingEvidenceTaskId: null, awaitingEvidenceBotMsgId: null };
+        return { userId: null, authenticatedAt: null, awaitingEvidenceTaskId: null, awaitingEvidenceBotMsgId: null, onboardingStep: null, onboardingTreeId: null };
       },
     })
   );
 
   // ── Comandos ───────────────────────────────────────────────────────────
   bot.command("start", async (ctx) => {
-    await ctx.reply(
-      "🌳 Bienvenido a Trust Maker v4.\n\n" +
-        "Usa /login para vincular tu cuenta.\n" +
-        "Usa /help para ver los comandos disponibles."
-    );
+    const lang = await resolveUserLanguage(prisma, ctx);
+    if (!lang) {
+      // No language set → show language selector first
+      await showLanguageSelector(ctx);
+      return;
+    }
+    await ctx.reply(t("common.welcome", lang) + "\n\n" + t("common.welcome_detail", lang));
+  });
+
+  bot.command("language", async (ctx) => {
+    await showLanguageSelector(ctx);
   });
 
   bot.command("help", async (ctx) => {
@@ -266,89 +286,178 @@ Ejemplo: *"@TrustMakerBot necesito que alguien rediseñe el logo del grupo"*
     return `🌳 ¡He vuelto! El árbol "${treeName}" sigue activo.`;
   }
 
-  // ── Onboarding: capture response to "¿Qué tipo de organización son?" ──
+  // ── Onboarding multi-step: flujo de configuración del árbol ──────────
+  // Paso 1: objetivos → Paso 2: subárbol? (inline buttons) → Paso 3: árbol padre → Paso 4: WhatsApp
 
   async function handleOnboardingResponse(ctx: any, prisma: PrismaClient) {
-    const text = ctx.message.text?.trim();
-    if (!text || text.length < 10) {
-      return ctx.reply('Cuéntame un poco más. ¿Qué hacen y qué quieren lograr?', {
-        reply_markup: { force_reply: true, input_field_placeholder: 'Somos... y queremos...' },
+    const session = (ctx as BotContext).session;
+    const text: string | undefined = ctx.message.text?.trim();
+    const lang = await resolveUserLanguage(prisma, ctx);
+
+    // Resolver el árbol si no está en sesión (primera respuesta)
+    if (!session.onboardingTreeId) {
+      const chatId = ctx.chat.id.toString();
+      const tree = await (prisma as any).tree.findFirst({
+        where: { telegramChatId: chatId },
       });
-    }
-
-    const chatId = ctx.chat.id.toString();
-
-    // Buscar el árbol del grupo
-    const tree = await (prisma as any).tree.findFirst({
-      where: { telegramChatId: chatId },
-    });
-
-    if (!tree) {
-      return ctx.reply('❌ No encontré el árbol de este grupo.');
-    }
-
-    // Guardar descripción y objetivos
-    await (prisma as any).tree.update({
-      where: { id: tree.id },
-      data: {
-        description: text,
-        objectives: text,
-      },
-    });
-
-    // Extraer keywords para feedback
-    const keywords = extractSimpleKeywords(text);
-
-    await ctx.reply(
-      `✅ **¡Configurado!**\n\n` +
-      `Entendí que son:\n` +
-      `_"${text}"_\n\n` +
-      `A partir de ahora, adaptaré mis respuestas y priorizaré soluciones para este contexto.\n\n` +
-      (keywords.length > 0
-        ? `🔍 Skills detectadas: ${keywords.slice(0, 5).join(', ')}\n\n`
-        : '') +
-      `Para cambiar esto, un admin puede usar /objetivos`,
-      { parse_mode: 'Markdown' }
-    );
-
-    // T23: Si el texto es sustancial, intentar recomendar estructura (si el servicio existe)
-    if (text.length > 30) {
-      try {
-        // Lazy-load treeRecommenderService — solo si T23 fue implementado
-        const recommender = await import('../services/treeRecommenderService');
-        if (recommender.generateRecommendationForNewTree) {
-          const recommendation = await recommender.generateRecommendationForNewTree(text);
-          if (recommendation) {
-            await new Promise(r => setTimeout(r, 2000));
-            await ctx.reply(recommendation, { parse_mode: 'Markdown' });
-          }
-        }
-      } catch {
-        // T23 not implemented yet — silently skip
+      if (!tree) {
+        return ctx.reply('❌ ' + t('errors.tree_not_found', lang));
       }
+      session.onboardingTreeId = tree.id;
+      session.onboardingStep = 1;
     }
 
-    // T26: Recommend tech stack for new trees
-    if (text.length > 20) {
-      try {
-        const techStack = await import('../services/techStackService');
-        if (techStack.recommendTechStack && techStack.formatTechStackRecommendation) {
-          const ranked = await techStack.recommendTechStack(text);
-          if (ranked.length > 0) {
-            // Count similar trees for the header
-            const successful = await import('../services/treeRecommenderService');
-            const allTrees = await successful.findSuccessfulTrees();
-            const similar = await successful.findSimilarTrees(text, allTrees);
-            const formatted = techStack.formatTechStackRecommendation(ranked, similar.length);
-            if (formatted) {
-              await new Promise(r => setTimeout(r, 1500));
-              await ctx.reply(formatted, { parse_mode: 'Markdown' });
+    const step = session.onboardingStep;
+
+    if (step === 1) {
+      // ── Paso 1: Guardar objetivos ──────────────────────────────────────
+      if (!text || text.length < 10) {
+        return ctx.reply(t('onboarding.org_tell_more', lang), {
+          reply_markup: { force_reply: true, input_field_placeholder: t('onboarding.org_placeholder_detail', lang) },
+        });
+      }
+
+      const treeId = session.onboardingTreeId;
+
+      // Guardar descripción y objetivos
+      await (prisma as any).tree.update({
+        where: { id: treeId },
+        data: { description: text, objectives: text },
+      });
+
+      // Extraer keywords para feedback
+      const keywords = extractSimpleKeywords(text);
+
+      let step1Msg = t('onboarding.org_configured', lang) + '\n\n' +
+        t('onboarding.org_understood', lang) + '\n' +
+        `_"${text}"_\n\n`;
+
+      if (keywords.length > 0) {
+        step1Msg += t('onboarding.org_skills_detected', lang, { skills: keywords.slice(0, 5).join(', ') }) + '\n\n';
+      }
+
+      // T23: recomendar estructura
+      if (text.length > 30) {
+        try {
+          const recommender = await import('../services/treeRecommenderService');
+          if (recommender.generateRecommendationForNewTree) {
+            const recommendation = await recommender.generateRecommendationForNewTree(text);
+            if (recommendation) {
+              await new Promise(r => setTimeout(r, 2000));
+              await ctx.reply(recommendation, { parse_mode: 'Markdown' });
             }
           }
-        }
-      } catch {
-        // T26 not implemented yet — silently skip
+        } catch { /* not implemented yet */ }
       }
+
+      // T26: recomendar tech stack
+      if (text.length > 20) {
+        try {
+          const techStack = await import('../services/techStackService');
+          if (techStack.recommendTechStack && techStack.formatTechStackRecommendation) {
+            const ranked = await techStack.recommendTechStack(text);
+            if (ranked.length > 0) {
+              const successful = await import('../services/treeRecommenderService');
+              const allTrees = await successful.findSuccessfulTrees();
+              const similar = await successful.findSimilarTrees(text, allTrees);
+              const formatted = techStack.formatTechStackRecommendation(ranked, similar.length);
+              if (formatted) {
+                await new Promise(r => setTimeout(r, 1500));
+                await ctx.reply(formatted, { parse_mode: 'Markdown' });
+              }
+            }
+          }
+        } catch { /* not implemented yet */ }
+      }
+
+      // Preguntar si es sub-árbol (Paso 2)
+      session.onboardingStep = 2;
+      await new Promise(r => setTimeout(r, 1000));
+      await ctx.reply(step1Msg + t('onboarding.subtree_question', lang), {
+        parse_mode: 'Markdown',
+        reply_markup: {
+          inline_keyboard: [[
+            { text: t('onboarding.subtree_yes', lang), callback_data: 'onboarding:subtree_yes' },
+            { text: t('onboarding.subtree_no', lang), callback_data: 'onboarding:subtree_no' },
+          ]],
+        },
+      });
+      return;
+    }
+
+    if (step === 3) {
+      // ── Paso 3: Código del árbol padre ─────────────────────────────────
+      if (!text || text === '/skip') {
+        // Skip parent tree linking
+        session.onboardingStep = 4;
+        await ctx.reply(
+          t('onboarding.parent_skipped', lang) + '\n\n' + t('onboarding.whatsapp_prompt', lang), {
+            parse_mode: 'Markdown',
+            reply_markup: { force_reply: true, input_field_placeholder: t('onboarding.whatsapp_placeholder', lang) },
+          }
+        );
+        return;
+      }
+
+      // Buscar árbol padre por código, id o nombre
+      const parentTree = await (prisma as any).tree.findFirst({
+        where: {
+          OR: [
+            { code: text },
+            { id: text },
+            { name: { contains: text } },
+          ],
+        },
+        select: { id: true, name: true, icono: true },
+      });
+
+      if (!parentTree) {
+        return ctx.reply(t('onboarding.parent_not_found', lang), {
+          reply_markup: { force_reply: true, input_field_placeholder: t('onboarding.parent_code_placeholder', lang) },
+        });
+      }
+
+      // Vincular como sub-árbol
+      await (prisma as any).tree.update({
+        where: { id: session.onboardingTreeId },
+        data: { parentTreeId: parentTree.id },
+      });
+
+      session.onboardingStep = 4;
+      await ctx.reply(
+        t('onboarding.parent_linked', lang, { treeName: (parentTree.icono || '🌳') + ' ' + parentTree.name }) + '\n\n' +
+        t('onboarding.whatsapp_prompt', lang), {
+          parse_mode: 'Markdown',
+          reply_markup: { force_reply: true, input_field_placeholder: t('onboarding.whatsapp_placeholder', lang) },
+        }
+      );
+      return;
+    }
+
+    if (step === 4) {
+      // ── Paso 4: WhatsApp group ID ──────────────────────────────────────
+      if (!text || text === '/skip') {
+        // Skip WhatsApp
+        session.onboardingStep = null;
+        session.onboardingTreeId = null;
+        await ctx.reply(t('onboarding.whatsapp_skipped', lang) + '\n\n' + t('onboarding.onboarding_complete', lang), {
+          parse_mode: 'Markdown',
+        });
+        return;
+      }
+
+      // Guardar WhatsApp group ID
+      await (prisma as any).tree.update({
+        where: { id: session.onboardingTreeId },
+        data: { whatsappGroupId: text },
+      });
+
+      session.onboardingStep = null;
+      session.onboardingTreeId = null;
+      await ctx.reply(t('onboarding.whatsapp_saved', lang) + '\n\n' + t('onboarding.onboarding_complete', lang), {
+        parse_mode: 'Markdown',
+      });
+      return;
     }
   }
 
@@ -399,7 +508,7 @@ Ejemplo: *"@TrustMakerBot necesito que alguien rediseñe el logo del grupo"*
             let user = await prisma.user.findUnique({ where: { telegramUserId: tgId } });
             if (!user) {
               user = await prisma.user.create({
-                data: { username: `tg_${adderId}`, telegramUserId: tgId },
+                data: { username: `tg_${adderId}`, telegramUserId: tgId, language: null },
               });
             }
             await prisma.treeMember.upsert({
@@ -423,23 +532,20 @@ Ejemplo: *"@TrustMakerBot necesito que alguien rediseñe el logo del grupo"*
               parse_mode: "Markdown",
             });
 
-            // Send onboarding question for new trees
+            // Send onboarding question for new trees (i18n-aware)
             if (isNewTree) {
               await new Promise(r => setTimeout(r, 1500));
+              const lang = await resolveUserLanguage(prisma, ctx);
               await ctx.api.sendMessage(chatId,
-                '❓ **¿Qué tipo de organización son y cuáles son sus objetivos?**\n\n' +
-                'Ejemplos:\n' +
-                '• "Somos una cooperativa de agricultores, queremos vender directo"\n' +
-                '• "Startup tech, desarrollamos software para salud"\n' +
-                '• "Comunidad de vecinos, gestionamos áreas comunes"\n' +
-                '• "Banda de música, componemos y tocamos en vivo"\n\n' +
-                '_Responde a este mensaje para configurar el árbol._' +
-                '\u200B[T24_ONBOARDING]',
+                t("onboarding.org_question", lang) + "\n\n" +
+                t("onboarding.org_examples", lang) + "\n\n" +
+                "_" + t("onboarding.org_prompt", lang) + "_" +
+                "\u200B[T24_ONBOARDING]",
                 {
-                  parse_mode: 'Markdown',
+                  parse_mode: "Markdown",
                   reply_markup: {
                     force_reply: true,
-                    input_field_placeholder: 'Somos... y queremos...',
+                    input_field_placeholder: t("onboarding.org_placeholder", lang),
                   },
                 }
               );
@@ -537,7 +643,8 @@ Ejemplo: *"@TrustMakerBot necesito que alguien rediseñe el logo del grupo"*
         }
 
         // Voice generation: fire-and-forget (don't block text delivery)
-        generateVoice(result.text).then((vb) => {
+        const userLang = ctx.from ? await getUserLanguage(prisma, ctx.from.id) : undefined;
+        generateVoice(result.text, userLang).then((vb) => {
           if (vb) {
             const vmsgs = formatForChannel({ text: "", voiceBuffer: vb }, "telegram");
             sendViaTelegram(ctx, vmsgs).catch(() => {});
@@ -556,7 +663,8 @@ Ejemplo: *"@TrustMakerBot necesito que alguien rediseñe el logo del grupo"*
         await sendViaTelegram(ctx, messages);
 
         // Voice generation: fire-and-forget (don't block text delivery)
-        generateVoice(naturalResult.text).then((vb) => {
+        const natLang = ctx.from ? await getUserLanguage(prisma, ctx.from.id) : undefined;
+        generateVoice(naturalResult.text, natLang).then((vb) => {
           if (vb) {
             const vmsgs = formatForChannel({ text: "", voiceBuffer: vb }, "telegram");
             sendViaTelegram(ctx, vmsgs).catch(() => {});
@@ -674,7 +782,8 @@ Ejemplo: *"@TrustMakerBot necesito que alguien rediseñe el logo del grupo"*
               try { await ctx.react("❤"); } catch {}
             }
             // Voice: fire-and-forget
-            generateVoice(result.text).then((vb) => {
+            const voiceLang = ctx.from ? await getUserLanguage(prisma, ctx.from.id) : undefined;
+            generateVoice(result.text, voiceLang).then((vb) => {
               if (vb) {
                 const vmsgs = formatForChannel({ text: "", voiceBuffer: vb }, "telegram");
                 sendViaTelegram(ctx, vmsgs).catch(() => {});
@@ -691,7 +800,8 @@ Ejemplo: *"@TrustMakerBot necesito que alguien rediseñe el logo del grupo"*
             );
             await sendViaTelegram(ctx, messages);
             // Voice: fire-and-forget
-            generateVoice(naturalResult.text).then((vb) => {
+            const voiceNatLang = ctx.from ? await getUserLanguage(prisma, ctx.from.id) : undefined;
+            generateVoice(naturalResult.text, voiceNatLang).then((vb) => {
               if (vb) {
                 const vmsgs = formatForChannel({ text: "", voiceBuffer: vb }, "telegram");
                 sendViaTelegram(ctx, vmsgs).catch(() => {});
@@ -858,8 +968,54 @@ Ejemplo: *"@TrustMakerBot necesito que alguien rediseñe el logo del grupo"*
   // ── Reaction handler (votos con reacciones) ─────────────────────────
   registerReactionHandler(bot);
 
-  // ── DM: Inline button callbacks (perfil skills/tasks/costs) ─────────
+  // ── DM: Inline button callbacks (perfil skills/tasks/costs, language selector) ──
   bot.on("callback_query", async (ctx) => {
+    const data = ctx.callbackQuery?.data;
+    if (!data) {
+      await ctx.answerCallbackQuery();
+      return;
+    }
+
+    // Language selector callbacks
+    if (data === "lang:en" || data === "lang:es") {
+      const lang = data === "lang:en" ? "en" : "es";
+      await handleLanguageCallback(prisma, ctx, lang);
+      return;
+    }
+
+    // Onboarding multi-step callbacks (Paso 2: subárbol sí/no)
+    if (data === "onboarding:subtree_yes" || data === "onboarding:subtree_no") {
+      const session = (ctx as BotContext).session;
+      if (!session.onboardingTreeId || session.onboardingStep !== 2) {
+        await ctx.answerCallbackQuery();
+        return;
+      }
+
+      const lang = await resolveUserLanguage(prisma, ctx);
+
+      // Remove inline keyboard from the question message
+      try { await ctx.editMessageReplyMarkup({ reply_markup: undefined }); } catch { /* ok */ }
+
+      if (data === "onboarding:subtree_yes") {
+        session.onboardingStep = 3;
+        await ctx.reply(t("onboarding.parent_code_prompt", lang), {
+          parse_mode: "Markdown",
+          reply_markup: { force_reply: true, input_field_placeholder: t("onboarding.parent_code_placeholder", lang) },
+        });
+      } else {
+        // No es sub-árbol → saltar a paso 4 (WhatsApp)
+        session.onboardingStep = 4;
+        await ctx.reply(
+          t("onboarding.parent_skipped", lang) + "\n\n" + t("onboarding.whatsapp_prompt", lang), {
+            parse_mode: "Markdown",
+            reply_markup: { force_reply: true, input_field_placeholder: t("onboarding.whatsapp_placeholder", lang) },
+          }
+        );
+      }
+      await ctx.answerCallbackQuery();
+      return;
+    }
+
     const handled = await handleProfileCallback(prisma, ctx as BotContext);
     if (!handled) {
       // Unknown callback — acknowledge silently
@@ -922,6 +1078,9 @@ Ejemplo: *"@TrustMakerBot necesito que alguien rediseñe el logo del grupo"*
       throw err;
     });
   });
+
+  // ── Inicializar i18n ───────────────────────────────────────────────────
+  await initI18n();
 
   // ── Iniciar polling ────────────────────────────────────────────────────
   bot.start({

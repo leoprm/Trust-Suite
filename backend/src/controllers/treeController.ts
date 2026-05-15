@@ -6,12 +6,35 @@ import { onTreeCreated } from '../services/genesisService';
 import { TreeSandbox } from '../services/treeSandbox';
 import { suggestTreeStructure, generateRecommendationForNewTree } from '../services/treeRecommenderService';
 
+// ── Helpers ──────────────────────────────────────────────────────────────
+
+/** Genera un código corto único de 6 caracteres (ej: ABC123). */
+function generateTreeCode(): string {
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // sin I, O, 0, 1 para evitar confusión
+  let code = '';
+  const bytes = randomBytes(6);
+  for (let i = 0; i < 6; i++) {
+    code += chars[bytes[i] % chars.length];
+  }
+  return code;
+}
+
 // ── Tree CRUD ────────────────────────────────────────────────────────────────
 
 export const createTree = async (req: any, res: Response) => {
   try {
     const { name, icono, description, inviteUserIds, admissionPolicy } = req.body;
     const creatorId = req.user.id;
+
+    // Generate unique tree code (retry on collision)
+    let code = generateTreeCode();
+    let attempts = 0;
+    while (attempts < 5) {
+      const existing = await prisma.tree.findUnique({ where: { code } });
+      if (!existing) break;
+      code = generateTreeCode();
+      attempts++;
+    }
 
     const tree = await prisma.tree.create({
       data: {
@@ -20,6 +43,7 @@ export const createTree = async (req: any, res: Response) => {
         description: description || null,
         creatorId,
         admissionPolicy: admissionPolicy || 'INVITE_ONLY',
+        code,
       }
     });
 

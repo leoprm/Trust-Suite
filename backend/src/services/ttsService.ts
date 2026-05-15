@@ -34,19 +34,36 @@ function resolveEdgeTtsPath(): string {
 }
 
 const EDGE_TTS_BIN = resolveEdgeTtsPath();
-const VOICE = "es-MX-DaliaNeural";
+const DEFAULT_VOICE = "es-MX-DaliaNeural";
 const TIMEOUT_MS = 15_000; // 15s max for TTS generation
+
+// ── Voice map ───────────────────────────────────────────────────────────────
+
+const VOICE_MAP: Record<string, string> = {
+  es: "es-MX-DaliaNeural",
+  en: "en-US-JennyNeural",
+};
+
+/**
+ * Returns the edge-tts voice name for a given language code.
+ * Falls back to DEFAULT_VOICE for unsupported languages.
+ */
+export function getVoiceForLanguage(lang: string): string {
+  return VOICE_MAP[lang] || DEFAULT_VOICE;
+}
 
 // ── Public API ──────────────────────────────────────────────────────────────
 
 /**
- * Convert Spanish text to OGG Opus audio buffer.
+ * Convert text to OGG Opus audio buffer, selecting voice by language.
  *
- * @param text  Text to speak (Spanish).
+ * @param text  Text to speak.
+ * @param lang  Language code ('es' | 'en'). Defaults to 'es'.
  * @returns     OGG Opus buffer ready for Telegram sendVoice.
  * @throws      Error if TTS generation or conversion fails.
  */
-export async function textToSpeech(text: string): Promise<Buffer> {
+export async function textToSpeech(text: string, lang?: string): Promise<Buffer> {
+  const voice = getVoiceForLanguage(lang || "es");
   const sanitized = sanitizeText(text);
   if (!sanitized) {
     throw new Error("TTS: empty text after sanitization");
@@ -58,7 +75,7 @@ export async function textToSpeech(text: string): Promise<Buffer> {
 
   try {
     // 1. Generate MP3 with edge-tts
-    await runEdgeTts(sanitized, mp3Path);
+    await runEdgeTts(sanitized, mp3Path, voice);
 
     // 2. Convert MP3 → OGG Opus (Telegram voice note format)
     await convertToOggOpus(mp3Path, oggPath);
@@ -96,11 +113,11 @@ function sanitizeText(text: string): string {
     .slice(0, 500);
 }
 
-function runEdgeTts(text: string, outputPath: string): Promise<void> {
+function runEdgeTts(text: string, outputPath: string, voice: string): Promise<void> {
   return new Promise((resolve, reject) => {
     const child = execFile(
       EDGE_TTS_BIN,
-      ["--voice", VOICE, "--text", text, "--write-media", outputPath],
+      ["--voice", voice, "--text", text, "--write-media", outputPath],
       { timeout: TIMEOUT_MS, maxBuffer: 1024 * 1024 },
       (err, stdout, stderr) => {
         if (err) {

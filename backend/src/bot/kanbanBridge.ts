@@ -15,6 +15,14 @@ const EXEC_TIMEOUT_MS = 10_000; // 10 seconds
 const TITLE_MAX_CHARS = 80;
 const KANBAN_TASK_ID_REGEX = /t_[a-f0-9]+/;
 
+// ── Types ─────────────────────────────────────────────────────────────────
+
+export interface TrackedTask {
+  kanbanTaskId: string;
+  status: string;
+  createdAt: Date;
+}
+
 // ── Public API ────────────────────────────────────────────────────────────
 
 /**
@@ -78,7 +86,28 @@ export async function createKanbanTask(
 
   const kanbanTaskId = match[0];
 
-  // ── 5. Persist to DB ─────────────────────────────────────────────────
+  // ── 5. Auto-claim: claim the task so a worker picks it up immediately ─
+  try {
+    await new Promise<void>((resolve) => {
+      exec(
+        `hermes kanban claim ${kanbanTaskId}`,
+        { timeout: EXEC_TIMEOUT_MS },
+        (error) => {
+          if (error) {
+            console.error(
+              `[kanbanBridge] Claim failed for ${kanbanTaskId}:`,
+              error.message,
+            );
+          }
+          resolve(); // Non-blocking — task exists even if claim fails
+        },
+      );
+    });
+  } catch {
+    // Non-blocking
+  }
+
+  // ── 6. Persist to DB ─────────────────────────────────────────────────
   try {
     await (prisma as any).botKanbanTask.create({
       data: {
@@ -96,4 +125,19 @@ export async function createKanbanTask(
   }
 
   return kanbanTaskId;
+}
+
+/**
+ * Return all kanban task IDs tracked for a given Telegram chat.
+ * Used by the watchdog to build per-chat progress summaries.
+ */
+export async function getTasksForChat(
+  prisma: PrismaClient,
+  chatId: string,
+): Promise<string[]> {
+  const records = await (prisma as any).botKanbanTask.findMany({
+    where: { chatId, status: { not: "done" } },
+    select: { kanbanTaskId: true },
+  });
+  return records.map((r: any) => r.kanbanTaskId);
 }

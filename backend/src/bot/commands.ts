@@ -19,6 +19,7 @@
 import { Context } from "grammy";
 import { PrismaClient } from "@prisma/client";
 import { findTreeByChat, TreeInfo } from "./treeResolver";
+import { t } from "./i18n";
 import {
   helpMessage,
   noTreeError,
@@ -116,7 +117,14 @@ export function parseCommand(raw: string): ParsedCommand {
   return { type: "unknown" };
 }
 
-// ── Handlers ───────────────────────────────────────────────────────────────
+// ── Helpers ────────────────────────────────────────────────────────────────
+
+/** Extrae el idioma del contexto de Telegram. */
+function getUserLanguage(ctx: Context): string {
+  const code = ctx.from?.language_code;
+  if (code === "en") return "en";
+  return "es"; // default
+}
 
 /** Busca o crea un usuario basado en la info de Telegram. */
 async function resolveTelegramUser(
@@ -150,12 +158,13 @@ async function resolveTelegramUser(
       }
     }
 
-    // 3. Crear nuevo usuario con telegramUserId asignado
+    // 3. Crear nuevo usuario con telegramUserId asignado y language null (forzar selector onboarding)
     const created = await (prisma as any).user.create({
       data: {
         username: tgUser.username || `tg_${tgUser.id}`,
         telegramUserId: telegramId,
         role: "USER",
+        language: null,
       },
     });
     return created.id;
@@ -168,19 +177,21 @@ async function resolveTelegramUser(
 async function handleInfo(
   prisma: PrismaClient,
   ctx: Context,
-  tree: TreeInfo | null
+  tree: TreeInfo | null,
+  lng: string,
 ): Promise<string> {
-  if (!tree) return noTreeError();
-  return formatTreeInfo(tree);
+  if (!tree) return noTreeError(lng);
+  return formatTreeInfo(tree, lng);
 }
 
 // ── lista necesidades ──
 async function handleLista(
   prisma: PrismaClient,
   ctx: Context,
-  tree: TreeInfo | null
+  tree: TreeInfo | null,
+  lng: string,
 ): Promise<string> {
-  if (!tree) return noTreeError();
+  if (!tree) return noTreeError(lng);
 
   const needs = await (prisma as any).need.findMany({
     where: { treeId: tree.id },
@@ -191,7 +202,7 @@ async function handleLista(
     orderBy: [{ status: "asc" }, { importance: "desc" }],
   });
 
-  return formatNeedsList(needs);
+  return formatNeedsList(needs, lng);
 }
 
 // ── crea necesidad ──
@@ -200,10 +211,11 @@ async function handleCrea(
   ctx: Context,
   tree: TreeInfo | null,
   titulo: string,
-  descripcion: string
+  descripcion: string,
+  lng: string,
 ): Promise<string> {
-  if (!tree) return noTreeError();
-  if (!titulo || !descripcion) return createNeedHelp();
+  if (!tree) return noTreeError(lng);
+  if (!titulo || !descripcion) return createNeedHelp(lng);
 
   const userId = await resolveTelegramUser(prisma, ctx);
 
@@ -224,7 +236,7 @@ async function handleCrea(
   });
 
   const chatId = ctx.chat?.id;
-  if (!chatId) return formatNeedCreated(need);
+  if (!chatId) return formatNeedCreated(need, lng);
 
   if (complex) {
     // ── Necesidad compleja → encuesta de aprobación ──
@@ -233,13 +245,14 @@ async function handleCrea(
       prisma,
       need.id,
       chatId,
+      lng,
     );
 
     if (sent) {
-      scheduleApprovalClose(ctx.api as any, prisma, need.id);
+      scheduleApprovalClose(ctx.api as any, prisma, need.id, lng);
     }
 
-    return formatNeedPendingApproval(need);
+    return formatNeedPendingApproval(need, lng);
   }
 
   // ── Necesidad simple → encuesta de importancia (T8) ──
@@ -250,11 +263,11 @@ async function handleCrea(
 
     const pollMessage = await ctx.api.sendPoll(
       chatId,
-      `📋 ${titulo}\n\n${desc}\n\n¿Qué importancia tiene?`,
+      t("common:poll_question", lng, { title: titulo, description: desc }),
       [
-        { text: "👍 Baja" },
-        { text: "❤️ Media" },
-        { text: "⭐ Alta / Urgente" },
+        { text: t("common:poll_low", lng) },
+        { text: t("common:poll_medium", lng) },
+        { text: t("common:poll_high", lng) },
       ],
       {
         is_anonymous: true,
@@ -262,7 +275,7 @@ async function handleCrea(
         reply_markup: {
           inline_keyboard: [[
             {
-              text: "🔗 Ver necesidad",
+              text: t("common:poll_view_need", lng),
               url: `https://t.me/TrustMakerBot?start=need_${need.id}`,
             },
           ]],
@@ -290,7 +303,7 @@ async function handleCrea(
     // Non-fatal: still return the created confirmation
   }
 
-  return formatNeedCreated(need);
+  return formatNeedCreated(need, lng);
 }
 
 // ── vota ──
@@ -298,18 +311,19 @@ async function handleVota(
   prisma: PrismaClient,
   ctx: Context,
   tree: TreeInfo | null,
-  needId: string
+  needId: string,
+  lng: string,
 ): Promise<{ text: string; react: boolean }> {
-  if (!tree) return { text: noTreeError(), react: false };
+  if (!tree) return { text: noTreeError(lng), react: false };
 
   const need = await (prisma as any).need.findUnique({
     where: { id: needId },
     select: { id: true, title: true, treeId: true },
   });
 
-  if (!need) return { text: needNotFound(needId), react: false };
+  if (!need) return { text: needNotFound(needId, lng), react: false };
   if (need.treeId !== tree.id) {
-    return { text: `❌ Esa necesidad no pertenece a este árbol.`, react: false };
+    return { text: t("errors:need_wrong_tree", lng), react: false };
   }
 
   // Intentar registrar el voto del usuario si podemos identificarlo
@@ -352,7 +366,7 @@ async function handleVota(
     }
   }
 
-  return { text: formatVoteAck(need.title), react: true };
+  return { text: formatVoteAck(need.title, lng), react: true };
 }
 
 // ── ideas para ──
@@ -360,9 +374,10 @@ async function handleIdeas(
   prisma: PrismaClient,
   ctx: Context,
   tree: TreeInfo | null,
-  query: string
+  query: string,
+  lng: string,
 ): Promise<string> {
-  if (!tree) return noTreeError();
+  if (!tree) return noTreeError(lng);
 
   // Find needs matching the query (by title substring)
   const needs = await (prisma as any).need.findMany({
@@ -375,8 +390,7 @@ async function handleIdeas(
   });
 
   if (needs.length === 0) {
-    return `❌ No se encontraron necesidades que coincidan con *"${query}"*.\n\n` +
-      `Usa \`@TrustMakerBot /lista necesidades\` para ver todas.`;
+    return t("errors:no_ideas_match", lng, { query });
   }
 
   if (needs.length === 1) {
@@ -403,19 +417,19 @@ async function handleIdeas(
       creator: ni.idea.creator,
     }));
 
-    return formatIdeasList(need.title, ideas);
+    return formatIdeasList(need.title, ideas, lng);
   }
 
   // Multiple matches: show the matching needs first, let user pick one
   const lines: string[] = [
-    `🔍 *${needs.length} necesidades* coinciden con *"${query}"*:\n`,
+    t("errors:ideas_multiple_match", lng, { count: needs.length, query }),
   ];
   for (const n of needs) {
     lines.push(`• *${n.title}*\n  \`${n.id}\``);
   }
   lines.push(
     "",
-    `Para ver ideas, usa \`@TrustMakerBot /ideas para "título exacto"\``
+    t("errors:ideas_pick_hint", lng),
   );
 
   return lines.join("\n");
@@ -428,19 +442,20 @@ const ACTIVE_TASK_STATUSES_CUOTA = ["PENDING", "ASSIGNED", "IN_PROGRESS", "EVIDE
 async function handleCuota(
   prisma: PrismaClient,
   ctx: Context,
-  tree: TreeInfo | null
+  tree: TreeInfo | null,
+  lng: string,
 ): Promise<string> {
-  if (!tree) return noTreeError();
+  if (!tree) return noTreeError(lng);
 
   const userId = await resolveTelegramUser(prisma, ctx);
-  if (!userId) return "⚠️ No se pudo identificar tu usuario de Telegram. Usa /login.";
+  if (!userId) return t("errors:not_identified_cuota", lng);
 
   // Buscar membresía en este árbol
   const member = await (prisma as any).treeMember.findUnique({
     where: { userId_treeId: { userId, treeId: tree.id } },
     select: { monthlyFee: true },
   });
-  if (!member) return noMemberError();
+  if (!member) return noMemberError(lng);
 
   // Recalcular breakdown para mostrar base + tasks
   let costoBase = 0;
@@ -468,7 +483,7 @@ async function handleCuota(
   const taskShare = memberCount > 0 ? Math.round(taskBudgetSum / memberCount) : 0;
   const cuota = member.monthlyFee ?? (costoBase + taskShare);
 
-  return formatCuota(cuota, costoBase, taskShare);
+  return formatCuota(cuota, costoBase, taskShare, lng);
 }
 
 // ── pagar ──
@@ -476,18 +491,19 @@ async function handleCuota(
 async function handlePagar(
   prisma: PrismaClient,
   ctx: Context,
-  tree: TreeInfo | null
+  tree: TreeInfo | null,
+  lng: string,
 ): Promise<string> {
-  if (!tree) return noTreeError();
+  if (!tree) return noTreeError(lng);
 
   const userId = await resolveTelegramUser(prisma, ctx);
-  if (!userId) return "⚠️ No se pudo identificar tu usuario de Telegram. Usa /login.";
+  if (!userId) return t("errors:not_identified_cuota", lng);
 
   const member = await (prisma as any).treeMember.findUnique({
     where: { userId_treeId: { userId, treeId: tree.id } },
     select: { id: true },
   });
-  if (!member) return noMemberError();
+  if (!member) return noMemberError(lng);
 
   // Balance
   const balance = await (prisma as any).memberBalance.findUnique({
@@ -508,7 +524,7 @@ async function handlePagar(
     reason: s.reason,
   }));
 
-  return formatPagar(balance, splits);
+  return formatPagar(balance, splits, lng);
 }
 
 // ── Dispatcher ─────────────────────────────────────────────────────────────
@@ -533,18 +549,20 @@ export async function handleMessage(
   const isHelpAlias = /^(help|ayuda)$/i.test(cmdText);
   if (!isCommand && !isHelpAlias) return null;
 
+  const lng = getUserLanguage(ctx);
+
   // Quitar el "/" inicial si lo tiene, o usar el texto tal cual para alias
   const cmdWithoutSlash = isCommand ? cmdText.slice(1).trim() : cmdText;
   const parsed = parseCommand(cmdWithoutSlash);
   const chatId = ctx.chat?.id.toString();
 
   if (!chatId) {
-    return { text: "⚠️ No se pudo identificar el chat." };
+    return { text: t("errors:no_chat_id", lng) };
   }
 
   // Special case: crea with empty args (bad format)
   if (parsed.type === "crea" && !parsed.titulo) {
-    return { text: createNeedHelp() };
+    return { text: createNeedHelp(lng) };
   }
 
   let tree: TreeInfo | null = null;
@@ -560,35 +578,35 @@ export async function handleMessage(
 
   switch (parsed.type) {
     case "info":
-      return { text: await handleInfo(prisma, ctx, tree) };
+      return { text: await handleInfo(prisma, ctx, tree, lng) };
 
     case "lista":
-      return { text: await handleLista(prisma, ctx, tree) };
+      return { text: await handleLista(prisma, ctx, tree, lng) };
 
     case "crea":
       return {
-        text: await handleCrea(prisma, ctx, tree, parsed.titulo, parsed.descripcion),
+        text: await handleCrea(prisma, ctx, tree, parsed.titulo, parsed.descripcion, lng),
       };
 
     case "vota": {
-      const result = await handleVota(prisma, ctx, tree, parsed.needId);
+      const result = await handleVota(prisma, ctx, tree, parsed.needId, lng);
       return { text: result.text, react: result.react };
     }
 
     case "ideas":
-      return { text: await handleIdeas(prisma, ctx, tree, parsed.query) };
+      return { text: await handleIdeas(prisma, ctx, tree, parsed.query, lng) };
 
     case "cuota":
-      return { text: await handleCuota(prisma, ctx, tree) };
+      return { text: await handleCuota(prisma, ctx, tree, lng) };
 
     case "pagar":
-      return { text: await handlePagar(prisma, ctx, tree) };
+      return { text: await handlePagar(prisma, ctx, tree, lng) };
 
     case "help":
-      return { text: helpMessage() };
+      return { text: helpMessage(lng) };
 
     case "unknown":
     default:
-      return { text: commandNotFound() };
+      return { text: commandNotFound(lng) };
   }
 }

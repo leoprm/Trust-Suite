@@ -21,7 +21,7 @@ vi.mock('util', () => ({
   promisify: () => mockExecFile,
 }));
 
-const { checkSingleTask, runWatchdogCycle, startKanbanWatchdog, stopKanbanWatchdog } =
+const { checkSingleTask, runWatchdogCycle, startKanbanWatchdog, stopKanbanWatchdog, notifyProgress } =
   await import('../bot/kanbanWatchdog');
 
 describe('Kanban Watchdog — checkSingleTask', () => {
@@ -334,5 +334,118 @@ describe('Kanban Watchdog — runWatchdogCycle', () => {
     // No calls to hermes or Telegram
     expect(mockExecFile).not.toHaveBeenCalled();
     expect(bot.api.sendMessage).not.toHaveBeenCalled();
+  });
+});
+
+describe('Kanban Watchdog — notifyProgress summary', () => {
+  let prisma: any;
+  let bot: any;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-05-15T12:00:00Z'));
+    prisma = {
+      botKanbanTask: {
+        findMany: vi.fn(),
+      },
+    };
+    bot = {
+      api: {
+        sendMessage: vi.fn().mockResolvedValue({}),
+      },
+    };
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('sends aggregate progress summary for a chat', async () => {
+    // Mock `hermes kanban list --json` returning multiple tasks
+    mockExecFile.mockResolvedValue({
+      stdout: JSON.stringify([
+        { id: 't_aaa', status: 'done', title: 'Setup done' },
+        { id: 't_bbb', status: 'running', title: 'Build backend' },
+        { id: 't_ccc', status: 'ready', title: 'Deploy' },
+        { id: 't_ddd', status: 'blocked', title: 'Needs keys' },
+      ]),
+    });
+
+    // Mock getTasksForChat → tracks t_aaa..t_ddd for this chat
+    prisma.botKanbanTask.findMany.mockResolvedValue(
+      ['t_aaa', 't_bbb', 't_ccc', 't_ddd'].map((id) => ({ kanbanTaskId: id })),
+    );
+
+    const chatIds = new Set(['chat-1']);
+    await notifyProgress(prisma, bot as any, chatIds);
+
+    expect(bot.api.sendMessage).toHaveBeenCalledTimes(1);
+    const sentMessage = (bot.api.sendMessage as any).mock.calls[0][1];
+    expect(sentMessage).toContain('📊 Progreso: ✓ 1/4 tareas');
+    expect(sentMessage).toContain('● corriendo: Build backend');
+    expect(sentMessage).toContain('◻ pendientes: Deploy');
+    expect(sentMessage).toContain('⊗ bloqueadas: Needs keys');
+  });
+
+  it('skips when chatIds set is empty', async () => {
+    await notifyProgress(prisma, bot as any, new Set());
+    expect(bot.api.sendMessage).not.toHaveBeenCalled();
+    expect(mockExecFile).not.toHaveBeenCalled();
+  });
+
+  it('handles hermes kanban list failure gracefully', async () => {
+    const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    mockExecFile.mockRejectedValue(new Error('hermes: command not found'));
+
+    prisma.botKanbanTask.findMany.mockResolvedValue([
+      { kanbanTaskId: 't_aaa' },
+    ]);
+
+    await notifyProgress(prisma, bot as any, new Set(['chat-1']));
+
+    expect(bot.api.sendMessage).not.toHaveBeenCalled();
+    expect(consoleErrorSpy).toHaveBeenCalled();
+
+    consoleErrorSpy.mockRestore();
+  });
+
+  it('rate limits: skips if notified <1 min ago', async () => {
+    const chatId = 'chat-rl-test'; // unique to avoid cross-test pollution
+
+    // First call — should send
+    mockExecFile.mockResolvedValue({
+      stdout: JSON.stringify([
+        { id: 't_aaa', status: 'done', title: 'Done task' },
+      ]),
+    });
+
+    prisma.botKanbanTask.findMany.mockResolvedValue([
+      { kanbanTaskId: 't_aaa' },
+    ]);
+
+    const chatIds = new Set([chatId]);
+    await notifyProgress(prisma, bot as any, chatIds);
+    expect(bot.api.sendMessage).toHaveBeenCalledTimes(1);
+
+    // Advance only 30 seconds — should be rate limited
+    vi.advanceTimersByTime(30_000);
+
+    mockExecFile.mockResolvedValue({
+      stdout: JSON.stringify([
+        { id: 't_aaa', status: 'done', title: 'Done task' },
+      ]),
+    });
+
+    await notifyProgress(prisma, bot as any, chatIds);
+    // No additional message — rate limited
+    expect(bot.api.sendMessage).toHaveBeenCalledTimes(1);
+
+    // Advance past 60s — should send again
+    vi.advanceTimersByTime(40_000);
+
+    await notifyProgress(prisma, bot as any, chatIds);
+    expect(bot.api.sendMessage).toHaveBeenCalledTimes(2);
   });
 });
