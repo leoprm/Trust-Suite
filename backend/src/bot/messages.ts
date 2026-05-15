@@ -58,7 +58,7 @@ export async function handleNaturalMessage(
   if (isComplexQuery(cleanText)) {
     const taskId = await createKanbanTask(prisma, cleanText, tree.id, chatId);
     if (taskId) {
-      return { text: `⏳ ${taskId}` };
+      return { text: `⏳ Estoy trabajando en esto. Te mantengo al tanto cada 2:30 min. [${taskId}]` };
     }
     // Fall through to concierge if kanban creation fails
   }

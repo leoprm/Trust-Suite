@@ -62,7 +62,7 @@ function formatDuration(ms: number): string {
  * Check a single tracked task against Hermes kanban board.
  * Returns the message to send, or null if no notification is needed.
  */
-async function checkSingleTask(
+export async function checkSingleTask(
   prisma: PrismaClient,
   tracked: {
     id: string;
@@ -198,7 +198,9 @@ export async function runWatchdogCycle(
           data: { status: "done", lastNotifiedAt: new Date() },
         });
         cleaned++;
-        continue; // don't notify for auto-cleaned tasks
+        // Only skip notification for auto-clean (no message) — real
+        // completions still get the ✅ notification below
+        if (!message) continue;
       }
 
       // Send Telegram notification
