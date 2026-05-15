@@ -1,5 +1,5 @@
 import https from "https";
-import { Bot, session } from "grammy";
+import { Bot, session, InputFile } from "grammy";
 import { PrismaClient } from "@prisma/client";
 import { BotContext, BotSessionData } from "./types";
 import { handleMessage, extractCommandText } from "./commands";
@@ -253,37 +253,25 @@ export async function createBot(prisma: PrismaClient): Promise<Bot<BotContext> |
   });
 
   // ── Welcome / rejoin messages ─────────────────────────────────────────
-  const WELCOME_MESSAGE = `
-🌳 **¡Hola! Soy Ari, el asistente de Trust Maker.**
-
-Estoy aquí para ayudar a tu comunidad a identificar necesidades, priorizarlas y resolverlas con inteligencia artificial.
-
-**🧠 ¿Qué puedo hacer?**
-• Registrar necesidades del grupo
-• Priorizarlas con votación anónima (encuesta nativa de Telegram)
-• Asignar las mejores IAs para resolver cada necesidad
-• Evaluar resultados y aprender de la comunidad
-
-**🗳️ Sistema de votación (anónimo):**
-• 👍 *Baja* — 1 punto — la necesidad es poco urgente
-• ❤️ *Media* — 2 puntos — importante, pero no crítica
-• ⭐ *Alta* — 3 puntos — urgente, necesita atención inmediata
-
-Las necesidades con más puntos suben al podio y son resueltas primero.
-
-**💰 Costo transparente:**
-El costo del árbol (grupo) se divide en partes iguales entre todos los miembros activos.
-Los primeros 2 meses son gratis para nuevos usuarios.
-Pregúntame \"¿cuánto cuesta?\" para ver el desglose completo.
-
-**🚀 Para empezar:**
-Envía un mensaje mencionándome (@TrustMakerBot) con tu necesidad o idea.
-Ejemplo: *"@TrustMakerBot necesito que alguien rediseñe el logo del grupo"*
-
-¡Estoy aquí para servirles! 🌟`.trim();
 
   function rejoinMessage(treeName: string): string {
     return `🌳 ¡He vuelto! El árbol "${treeName}" sigue activo.`;
+  }
+
+  /**
+   * Resuelve el idioma desde el Tree (usado en grupo en vez de resolveUserLanguage).
+   * Retorna el language del árbol, o null si no está configurado (nuevo árbol sin selector aún).
+   */
+  async function resolveTreeLanguage(prisma: PrismaClient, treeId: string): Promise<string | null> {
+    try {
+      const tree = await (prisma as any).tree.findUnique({
+        where: { id: treeId },
+        select: { language: true },
+      });
+      return tree?.language ?? null;
+    } catch {
+      return null;
+    }
   }
 
   // ── Onboarding multi-step: flujo de configuración del árbol ──────────
@@ -292,7 +280,18 @@ Ejemplo: *"@TrustMakerBot necesito que alguien rediseñe el logo del grupo"*
   async function handleOnboardingResponse(ctx: any, prisma: PrismaClient) {
     const session = (ctx as BotContext).session;
     const text: string | undefined = ctx.message.text?.trim();
-    const lang = await resolveUserLanguage(prisma, ctx);
+
+    // Resolve language: prefer tree.language for groups, user.language for DMs
+    let lang: string | null = null;
+    const chatType = ctx.chat?.type;
+    if ((chatType === "group" || chatType === "supergroup") && session.onboardingTreeId) {
+      lang = await resolveTreeLanguage(prisma, session.onboardingTreeId);
+    }
+    if (!lang) {
+      lang = await resolveUserLanguage(prisma, ctx);
+    }
+    // Fallback: default to Spanish
+    if (!lang) lang = "es";
 
     // Resolver el árbol si no está en sesión (primera respuesta)
     if (!session.onboardingTreeId) {
@@ -525,30 +524,39 @@ Ejemplo: *"@TrustMakerBot necesito que alguien rediseñe el logo del grupo"*
 
           // Send welcome / rejoin message
           try {
-            const message = isNewTree
-              ? WELCOME_MESSAGE
-              : rejoinMessage(tree!.name);
-            await ctx.api.sendMessage(chatId, message, {
-              parse_mode: "Markdown",
-            });
-
-            // Send onboarding question for new trees (i18n-aware)
             if (isNewTree) {
-              await new Promise(r => setTimeout(r, 1500));
-              const lang = await resolveUserLanguage(prisma, ctx);
-              await ctx.api.sendMessage(chatId,
-                t("onboarding.org_question", lang) + "\n\n" +
-                t("onboarding.org_examples", lang) + "\n\n" +
-                "_" + t("onboarding.org_prompt", lang) + "_" +
-                "\u200B[T24_ONBOARDING]",
+              // New tree: show language selector first (bilingual prompt + TTS in English)
+              await ctx.api.sendMessage(
+                chatId,
+                "\uD83C\uDF10 Select your language / Selecciona tu idioma",
                 {
-                  parse_mode: "Markdown",
                   reply_markup: {
-                    force_reply: true,
-                    input_field_placeholder: t("onboarding.org_placeholder", lang),
+                    inline_keyboard: [[
+                      {
+                        text: "\uD83C\uDDFA\uD83C\uDDF8 English",
+                        callback_data: "lang_group:en:" + tree.id,
+                      },
+                      {
+                        text: "\uD83C\uDDF2\uD83C\uDDFD Español",
+                        callback_data: "lang_group:es:" + tree.id,
+                      },
+                    ]],
                   },
                 }
               );
+
+              // Send TTS audio in English (non-blocking)
+              try {
+                const voiceBuffer = await textToSpeech("Select your language", "en");
+                await ctx.api.sendVoice(chatId, new InputFile(voiceBuffer));
+              } catch {
+                // Non-blocking — voice is a nice-to-have
+              }
+            } else {
+              // Rejoin: existing tree
+              await ctx.api.sendMessage(chatId, rejoinMessage(tree!.name), {
+                parse_mode: "Markdown",
+              });
             }
           } catch (msgErr: any) {
             console.error(`[Telegram Bot] Error al enviar mensaje de bienvenida:`, msgErr.message);
@@ -976,10 +984,69 @@ Ejemplo: *"@TrustMakerBot necesito que alguien rediseñe el logo del grupo"*
       return;
     }
 
-    // Language selector callbacks
+    // Language selector callbacks (DM)
     if (data === "lang:en" || data === "lang:es") {
       const lang = data === "lang:en" ? "en" : "es";
       await handleLanguageCallback(prisma, ctx, lang);
+      return;
+    }
+
+    // Language selector callbacks (group welcome)
+    if (data.startsWith("lang_group:")) {
+      const parts = data.split(":");
+      // parts = ["lang_group", "en"|"es", "treeId"]
+      if (parts.length >= 3) {
+        const lang = parts[1];
+        const treeId = parts.slice(2).join(":"); // treeId may contain ':' if UUID
+        if (lang === "en" || lang === "es") {
+          await ctx.answerCallbackQuery();
+
+          // Save language to tree
+          try {
+            await (prisma as any).tree.update({
+              where: { id: treeId },
+              data: { language: lang },
+            });
+          } catch (err: any) {
+            console.error("[lang_group] Failed to update tree language:", err.message);
+          }
+
+          // Edit selector message to confirm
+          try {
+            await ctx.editMessageText(t("common.language_selected", lang), {
+              reply_markup: undefined,
+            });
+          } catch {
+            // Ok if edit fails
+          }
+
+          // Send welcome message in the selected language
+          await ctx.reply(t("onboarding.welcome_group", lang), {
+            parse_mode: "Markdown",
+          });
+
+          // Start onboarding after a brief pause
+          await new Promise(r => setTimeout(r, 1500));
+          await ctx.reply(
+            t("onboarding.org_question", lang) + "\n\n" +
+            t("onboarding.org_examples", lang) + "\n\n" +
+            "_" + t("onboarding.org_prompt", lang) + "_" +
+            "\u200B[T24_ONBOARDING]",
+            {
+              parse_mode: "Markdown",
+              reply_markup: {
+                force_reply: true,
+                input_field_placeholder: t("onboarding.org_placeholder", lang),
+              },
+            }
+          );
+
+          // Set onboarding session state
+          const session = (ctx as BotContext).session;
+          session.onboardingTreeId = treeId;
+          session.onboardingStep = 1;
+        }
+      }
       return;
     }
 
@@ -991,7 +1058,16 @@ Ejemplo: *"@TrustMakerBot necesito que alguien rediseñe el logo del grupo"*
         return;
       }
 
-      const lang = await resolveUserLanguage(prisma, ctx);
+      // Resolve language: prefer tree.language for groups, user.language for DMs
+      let lang: string | null = null;
+      const chatType = ctx.chat?.type;
+      if ((chatType === "group" || chatType === "supergroup") && session.onboardingTreeId) {
+        lang = await resolveTreeLanguage(prisma, session.onboardingTreeId);
+      }
+      if (!lang) {
+        lang = await resolveUserLanguage(prisma, ctx);
+      }
+      if (!lang) lang = "es";
 
       // Remove inline keyboard from the question message
       try { await ctx.editMessageReplyMarkup({ reply_markup: undefined }); } catch { /* ok */ }

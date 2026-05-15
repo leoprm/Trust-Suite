@@ -15,7 +15,7 @@ import { showLanguageSelector } from "./messages";
 // ── Constantes ──────────────────────────────────────────────────────────
 
 const CONCIERGE_URL = "http://localhost:3100/api/concierge";
-const CONCIERGE_TIMEOUT_MS = 300_000;
+const CONCIERGE_TIMEOUT_MS = 900_000;
 
 // ── Helpers ─────────────────────────────────────────────────────────────
 

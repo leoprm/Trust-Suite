@@ -10,7 +10,7 @@ const CONCIERGE_URL = 'http://localhost:3100/api/concierge';
 const API_SERVER_KEY = process.env.HERMES_API_SERVER_KEY ?? '';
 const WHATSAPP_VERIFY_TOKEN = process.env.WHATSAPP_VERIFY_TOKEN ?? '';
 const WHATSAPP_DEFAULT_TREE_ID = process.env.WHATSAPP_DEFAULT_TREE_ID ?? '';
-const CONCIERGE_TIMEOUT_MS = 300_000; // 5 min
+const CONCIERGE_TIMEOUT_MS = 900_000; // 15 min
 
 // ── WhatsApp Cloud API types ──────────────────────────────────────────────
 

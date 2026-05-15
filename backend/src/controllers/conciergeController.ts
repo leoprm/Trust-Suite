@@ -822,7 +822,7 @@ export const conciergeHandler = async (req: Request, res: Response) => {
 
     // ── Call Hermes Agent API ─────────────────────────────────────────────
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 600_000); // 10 minutos
+    const timeoutId = setTimeout(() => controller.abort(), 900_000); // 15 minutos
 
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',

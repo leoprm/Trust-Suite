@@ -144,6 +144,7 @@ model Tree {
   parentTreeId    String?
   whatsappGroupId String?         // ID del grupo de WhatsApp vinculado
   code            String?         @unique  // Código corto para vincular subárboles (ej: ABC123)
+  language        String          @default("es")
   objectives      String?         @db.Text  // T24: tipo de organización y objetivos
   totalBudget     Float?          // Presupuesto total del árbol (CLP)
   createdAt       DateTime        @default(now())

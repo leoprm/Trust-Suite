@@ -21,7 +21,7 @@ import { textToSpeech } from "../services/ttsService";
 // ── Constantes ─────────────────────────────────────────────────────────────
 
 const CONCIERGE_URL = "http://localhost:3100/api/concierge";
-const CONCIERGE_TIMEOUT_MS = 600_000; // 10 minutos
+const CONCIERGE_TIMEOUT_MS = 900_000; // 15 minutos
 
 const EXEC_TIMEOUT_MS = 10_000; // 10s for hermes kanban show
 const STATUS_EMOJI: Record<string, string> = {
