@@ -908,7 +908,7 @@ export const conciergeHandler = async (req: Request, res: Response) => {
 
       // Re-call Hermes Agent with the extended conversation
       const toolController = new AbortController();
-      const toolTimeoutId = setTimeout(() => toolController.abort(), 300_000);
+      const toolTimeoutId = setTimeout(() => toolController.abort(), 900_000); // 15 minutos
 
       let toolResponse: globalThis.Response;
       try {
