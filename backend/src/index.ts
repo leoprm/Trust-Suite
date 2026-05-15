@@ -200,6 +200,25 @@ app.use(express.json());
 // Uploads
 const uploadsDir = path.join(__dirname, '../uploads');
 if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
+
+// Sandbox base directory — bootstrapped for TreeSandbox service
+const SANDBOX_BASE = '/home/trustmaker/sandboxes';
+if (!fs.existsSync(SANDBOX_BASE)) {
+  const subdirs = ['apps', 'data', 'logs'];
+  for (const sub of subdirs) {
+    fs.mkdirSync(path.join(SANDBOX_BASE, sub), { recursive: true });
+  }
+  // Set permissions: 770, owner leo:leo (non-fatal if not root)
+  try {
+    const { execSync } = require('child_process');
+    execSync(`chmod -R 770 ${SANDBOX_BASE}`);
+    execSync(`chown -R leo:leo ${SANDBOX_BASE}`);
+    console.log(`[Bootstrap] Sandbox base created: ${SANDBOX_BASE} (770 leo:leo)`);
+  } catch {
+    // chown may fail in containers without root or leo user
+    console.warn(`[Bootstrap] Sandbox base created at ${SANDBOX_BASE} (chown/chmod skipped — non-root?)`);
+  }
+}
 app.use('/uploads', (_req, res) => {
   res.status(404).json({ error: 'File access must use protected API routes' });
 });

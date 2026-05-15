@@ -159,6 +159,26 @@ export const getServerStatus = async (req: any, res: Response) => {
   }
 };
 
+// ── Auth helper (API key) ──────────────────────────────────────────────────
+
+const API_SERVER_KEY = process.env.HERMES_API_SERVER_KEY ?? '';
+
+function checkApiKey(req: Request, res: Response): boolean {
+  const authHeader = req.headers.authorization;
+  if (!authHeader) {
+    res.status(401).json({ error: 'Authorization header missing' });
+    return false;
+  }
+  const token = authHeader.startsWith('Bearer ')
+    ? authHeader.slice(7)
+    : authHeader;
+  if (!API_SERVER_KEY || token !== API_SERVER_KEY) {
+    res.status(403).json({ error: 'Invalid API key' });
+    return false;
+  }
+  return true;
+}
+
 // ── POST /api/servers/:id/exec ───────────────────────────────────────────
 
 export const execServerCommand = async (req: any, res: Response) => {
@@ -228,6 +248,76 @@ export const execServerCommand = async (req: any, res: Response) => {
     }
 
     console.error('[execServerCommand] ERROR:', error?.message || error);
+    res.status(500).json({ error: 'Failed to execute command' });
+  }
+};
+
+// ── POST /api/servers/:id/exec-agent ─────────────────────────────────────
+// API key auth (like sandbox endpoints). Hermes Agent calls this.
+// Body: { command: string, treeId?: string }
+
+export const execServerAgentCommand = async (req: Request, res: Response) => {
+  if (!checkApiKey(req, res)) return;
+
+  try {
+    const id = req.params.id as string;
+    const { command, treeId } = req.body;
+
+    // Validate input
+    if (!command || typeof command !== 'string' || command.trim().length === 0) {
+      return res.status(400).json({ error: 'command is required and must be a non-empty string' });
+    }
+    if (!treeId || typeof treeId !== 'string') {
+      return res.status(400).json({ error: 'treeId is required (string)' });
+    }
+
+    // Find the server
+    const server = await prisma.managedServer.findUnique({
+      where: { id },
+      select: { id: true, treeId: true, name: true },
+    });
+
+    if (!server) {
+      return res.status(404).json({ error: 'Server not found' });
+    }
+
+    // Verify server belongs to the specified tree
+    if (server.treeId !== treeId) {
+      return res.status(403).json({ error: 'Server does not belong to the specified tree' });
+    }
+
+    // Execute via SSH gateway — key is decrypted and scrubbed inside sshExecCommand()
+    const result = await sshExecCommand(id, command.trim());
+
+    // Return ONLY { stdout, stderr, exitCode }
+    res.json({
+      stdout: result.stdout,
+      stderr: result.stderr,
+      exitCode: result.exitCode,
+    });
+  } catch (error: any) {
+    const sshCode = error?.code;
+    if (sshCode && typeof sshCode === 'string' && sshCode.startsWith('SSH_')) {
+      const statusMap: Record<string, number> = {
+        SSH_SERVER_NOT_FOUND: 404,
+        SSH_KEY_DECRYPT_FAILED: 500,
+        SSH_TIMEOUT: 504,
+        SSH_CONNECTION_REFUSED: 502,
+        SSH_AUTH_FAILED: 502,
+        SSH_HOST_UNREACHABLE: 502,
+        SSH_EXEC_FAILED: 502,
+        SSH_STREAM_ERROR: 502,
+        SSH_EXEC_TIMEOUT: 504,
+        RATE_LIMITED: 429,
+      };
+      const status = statusMap[sshCode] || 500;
+      return res.status(status).json({
+        error: error.message || 'SSH command failed',
+        code: sshCode,
+      });
+    }
+
+    console.error('[execServerAgentCommand] ERROR:', error?.message || error);
     res.status(500).json({ error: 'Failed to execute command' });
   }
 };
