@@ -252,9 +252,9 @@ Estoy aquí para ayudar a tu comunidad a identificar necesidades, priorizarlas y
 Las necesidades con más puntos suben al podio y son resueltas primero.
 
 **💰 Costo transparente:**
-Cada persona paga solo lo que consume en IAs + su parte de costos fijos.
+El costo del árbol (grupo) se divide en partes iguales entre todos los miembros activos.
 Los primeros 2 meses son gratis para nuevos usuarios.
-Pregúntame "¿cuánto cuesta?" para ver el desglose completo.
+Pregúntame \"¿cuánto cuesta?\" para ver el desglose completo.
 
 **🚀 Para empezar:**
 Envía un mensaje mencionándome (@TrustMakerBot) con tu necesidad o idea.
