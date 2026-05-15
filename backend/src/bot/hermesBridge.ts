@@ -14,7 +14,7 @@
 
 import { PrismaClient } from "@prisma/client";
 
-const HERMES_API = "http://127.0.0.1:8643/v1/chat/completions";
+const HERMES_API = "http://127.0.0.1:8644/v1/chat/completions";
 
 export interface HermesBridgeResponse {
   text: string;
