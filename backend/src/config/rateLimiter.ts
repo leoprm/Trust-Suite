@@ -27,6 +27,19 @@ export const conciergeLimiter = rateLimit({
   message: { error: 'Too many concierge requests. Try again in 1 minute.' },
 });
 
+// ── Server exec limiter: 10 requests per minute per server ──
+export const serverExecLimiter = rateLimit({
+  windowMs: 60 * 1000, // 1 min
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => {
+    // Rate limit per server id, fallback to IP if no :id param
+    return `server-exec:${req.params?.id || req.ip}`;
+  },
+  message: { error: 'Too many exec requests for this server. Try again in 1 minute.' },
+});
+
 // ── Global limiter: 100 requests per 1 minute ──
 export const globalLimiter = rateLimit({
   windowMs: 60 * 1000, // 1 min

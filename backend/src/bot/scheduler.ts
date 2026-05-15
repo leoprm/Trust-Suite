@@ -20,6 +20,7 @@ import {
 import { autoScale } from "../services/autoScaler";
 import { updateSkillPricing } from "../cron/skillPricingCron";
 import { runTalentMigration } from "../cron/talentMigrationCron";
+import { runHealthCheck } from "../cron/healthCheckCron";
 import { prisma } from "../index";
 
 // ── Constantes ─────────────────────────────────────────────────────────────────
@@ -68,6 +69,7 @@ let monthlyFeeTask: ScheduledTask | null = null;
 let disputeResolutionTask: ScheduledTask | null = null;
 let skillPricingTask: ScheduledTask | null = null;
 let talentMigrationTask: ScheduledTask | null = null;
+let healthCheckTask: ScheduledTask | null = null;
 
 /**
  * Arranca todos los schedulers.
@@ -209,6 +211,22 @@ export function startScheduler(
   });
   console.log("[Scheduler] 🔀 Talent Migration programado a las 04:00 (diario)");
 
+  // ── Cron: */15 * * * * (cada 15 min) — SSH Health Check ─────────────
+  healthCheckTask = cron.schedule("*/15 * * * *", async () => {
+    try {
+      const result = await runHealthCheck(prismaClient);
+      if (result.checked > 0) {
+        console.log(
+          `[HealthCheck] 🔍 ${result.checked} servidores chequeados, ` +
+            `${result.failed} fallos, ${result.markedUnreachable} marcados UNREACHABLE.`,
+        );
+      }
+    } catch (err) {
+      console.error("[Scheduler] Error en health check:", err);
+    }
+  });
+  console.log("[Scheduler] 🔍 SSH Health Check programado cada 15 minutos");
+
   // ── Dev mode hint ──
   if (process.env.NODE_ENV !== "production") {
     console.log(
@@ -233,7 +251,7 @@ export async function triggerDailyClose(
  */
 export function stopScheduler(): void {
   let stopped = false;
-  for (const task of [midnightTask, decayTask, rotationTask, autoScaleTask, monthlyFeeTask, disputeResolutionTask, skillPricingTask, talentMigrationTask]) {
+  for (const task of [midnightTask, decayTask, rotationTask, autoScaleTask, monthlyFeeTask, disputeResolutionTask, skillPricingTask, talentMigrationTask, healthCheckTask]) {
     if (task) {
       task.stop();
       stopped = true;
@@ -247,6 +265,7 @@ export function stopScheduler(): void {
   disputeResolutionTask = null;
   skillPricingTask = null;
   talentMigrationTask = null;
+  healthCheckTask = null;
   if (stopped) {
     console.log("[Scheduler] ⏹️ Todos los schedulers detenidos.");
   }
