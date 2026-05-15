@@ -51,6 +51,32 @@ async function generateVoice(text: string): Promise<Buffer | null> {
   }
 }
 
+// ── Simple keyword extraction for onboarding ───────────────────────────
+
+function extractSimpleKeywords(text: string): string[] {
+  const commonKeywords: Record<string, string[]> = {
+    agricultura: ['agricultura', 'cultivo', 'campo', 'siembra', 'cosecha'],
+    tecnologia: ['software', 'tech', 'app', 'web', 'datos', 'ia'],
+    salud: ['salud', 'médico', 'clínica', 'paciente'],
+    educacion: ['educación', 'escuela', 'curso', 'enseñar'],
+    musica: ['música', 'banda', 'componer', 'tocar'],
+    comercio: ['vender', 'venta', 'comercio', 'tienda'],
+    construccion: ['construir', 'obra', 'edificar'],
+    comida: ['comida', 'restaurante', 'cocina', 'alimento'],
+    arte: ['arte', 'diseño', 'dibujo', 'pintar'],
+    comunidad: ['vecinos', 'comunidad', 'barrio', 'junta'],
+  };
+
+  const found: string[] = [];
+  const lower = text.toLowerCase();
+  for (const [category, keywords] of Object.entries(commonKeywords)) {
+    if (keywords.some(k => lower.includes(k))) {
+      found.push(category);
+    }
+  }
+  return found;
+}
+
 export function createBot(prisma: PrismaClient): Bot<BotContext> | null {
   const token = process.env.TELEGRAM_BOT_TOKEN || "";
 
@@ -240,6 +266,92 @@ Ejemplo: *"@TrustMakerBot necesito que alguien rediseñe el logo del grupo"*
     return `🌳 ¡He vuelto! El árbol "${treeName}" sigue activo.`;
   }
 
+  // ── Onboarding: capture response to "¿Qué tipo de organización son?" ──
+
+  async function handleOnboardingResponse(ctx: any, prisma: PrismaClient) {
+    const text = ctx.message.text?.trim();
+    if (!text || text.length < 10) {
+      return ctx.reply('Cuéntame un poco más. ¿Qué hacen y qué quieren lograr?', {
+        reply_markup: { force_reply: true, input_field_placeholder: 'Somos... y queremos...' },
+      });
+    }
+
+    const chatId = ctx.chat.id.toString();
+
+    // Buscar el árbol del grupo
+    const tree = await (prisma as any).tree.findFirst({
+      where: { telegramChatId: chatId },
+    });
+
+    if (!tree) {
+      return ctx.reply('❌ No encontré el árbol de este grupo.');
+    }
+
+    // Guardar descripción y objetivos
+    await (prisma as any).tree.update({
+      where: { id: tree.id },
+      data: {
+        description: text,
+        objectives: text,
+      },
+    });
+
+    // Extraer keywords para feedback
+    const keywords = extractSimpleKeywords(text);
+
+    await ctx.reply(
+      `✅ **¡Configurado!**\n\n` +
+      `Entendí que son:\n` +
+      `_"${text}"_\n\n` +
+      `A partir de ahora, adaptaré mis respuestas y priorizaré soluciones para este contexto.\n\n` +
+      (keywords.length > 0
+        ? `🔍 Skills detectadas: ${keywords.slice(0, 5).join(', ')}\n\n`
+        : '') +
+      `Para cambiar esto, un admin puede usar /objetivos`,
+      { parse_mode: 'Markdown' }
+    );
+
+    // T23: Si el texto es sustancial, intentar recomendar estructura (si el servicio existe)
+    if (text.length > 30) {
+      try {
+        // Lazy-load treeRecommenderService — solo si T23 fue implementado
+        const recommender = await import('../services/treeRecommenderService');
+        if (recommender.generateRecommendationForNewTree) {
+          const recommendation = await recommender.generateRecommendationForNewTree(text);
+          if (recommendation) {
+            await new Promise(r => setTimeout(r, 2000));
+            await ctx.reply(recommendation, { parse_mode: 'Markdown' });
+          }
+        }
+      } catch {
+        // T23 not implemented yet — silently skip
+      }
+    }
+
+    // T26: Recommend tech stack for new trees
+    if (text.length > 20) {
+      try {
+        const techStack = await import('../services/techStackService');
+        if (techStack.recommendTechStack && techStack.formatTechStackRecommendation) {
+          const ranked = await techStack.recommendTechStack(text);
+          if (ranked.length > 0) {
+            // Count similar trees for the header
+            const successful = await import('../services/treeRecommenderService');
+            const allTrees = await successful.findSuccessfulTrees();
+            const similar = await successful.findSimilarTrees(text, allTrees);
+            const formatted = techStack.formatTechStackRecommendation(ranked, similar.length);
+            if (formatted) {
+              await new Promise(r => setTimeout(r, 1500));
+              await ctx.reply(formatted, { parse_mode: 'Markdown' });
+            }
+          }
+        }
+      } catch {
+        // T26 not implemented yet — silently skip
+      }
+    }
+  }
+
   // ── Grupo: auto-crear árbol cuando el bot es agregado ─────────────────
   bot.on("my_chat_member", async (ctx) => {
     const chat = ctx.chat;
@@ -310,6 +422,28 @@ Ejemplo: *"@TrustMakerBot necesito que alguien rediseñe el logo del grupo"*
             await ctx.api.sendMessage(chatId, message, {
               parse_mode: "Markdown",
             });
+
+            // Send onboarding question for new trees
+            if (isNewTree) {
+              await new Promise(r => setTimeout(r, 1500));
+              await ctx.api.sendMessage(chatId,
+                '❓ **¿Qué tipo de organización son y cuáles son sus objetivos?**\n\n' +
+                'Ejemplos:\n' +
+                '• "Somos una cooperativa de agricultores, queremos vender directo"\n' +
+                '• "Startup tech, desarrollamos software para salud"\n' +
+                '• "Comunidad de vecinos, gestionamos áreas comunes"\n' +
+                '• "Banda de música, componemos y tocamos en vivo"\n\n' +
+                '_Responde a este mensaje para configurar el árbol._' +
+                '\u200B[T24_ONBOARDING]',
+                {
+                  parse_mode: 'Markdown',
+                  reply_markup: {
+                    force_reply: true,
+                    input_field_placeholder: 'Somos... y queremos...',
+                  },
+                }
+              );
+            }
           } catch (msgErr: any) {
             console.error(`[Telegram Bot] Error al enviar mensaje de bienvenida:`, msgErr.message);
           }
@@ -318,6 +452,22 @@ Ejemplo: *"@TrustMakerBot necesito que alguien rediseñe el logo del grupo"*
         }
       }
     }
+  });
+
+  // ── Onboarding reply handler (T24): detecta respuestas a la pregunta inicial ──
+  // Se ejecuta antes del handler normal de mensajes. Si es respuesta al
+  // force_reply de "¿Qué tipo de organización son...", captura y guarda.
+  bot.on("message:text", async (ctx, next) => {
+    const msg = ctx.message;
+    if (!msg || !("text" in msg)) return next();
+
+    // Check if this is a reply to the onboarding question
+    if (msg.reply_to_message?.text?.includes('[T24_ONBOARDING]')) {
+      await handleOnboardingResponse(ctx, prisma);
+      return;
+    }
+
+    return next();
   });
 
   // ── DM: Mensajes privados (perfil personal, comandos, concierge) ────

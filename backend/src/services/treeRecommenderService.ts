@@ -2,7 +2,7 @@ import { prisma } from '../index';
 
 // ── Types ───────────────────────────────────────────────────────────────────
 
-interface SuccessfulTreeResult {
+export interface SuccessfulTreeResult {
   id: string;
   name: string;
   icono: string;
@@ -19,7 +19,7 @@ interface SuccessfulTreeResult {
   }>;
 }
 
-interface ScoredTree {
+export interface ScoredTree {
   tree: SuccessfulTreeResult;
   score: number;
 }
@@ -52,7 +52,7 @@ const SPANISH_STOPWORDS = new Set([
   'este', 'esta', 'estos', 'estas', 'ese', 'esa', 'esos', 'esas',
 ]);
 
-function extractKeywords(text: string): string[] {
+export function extractKeywords(text: string): string[] {
   // Normalize: lowercase, strip accents, split on non-alpha
   const normalized = text
     .toLowerCase()
@@ -68,7 +68,7 @@ function extractKeywords(text: string): string[] {
 
 // ── Paso 1: Find successful trees ───────────────────────────────────────────
 
-async function findSuccessfulTrees(): Promise<SuccessfulTreeResult[]> {
+export async function findSuccessfulTrees(): Promise<SuccessfulTreeResult[]> {
   const sixMonthsAgo = new Date();
   sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
 
@@ -143,7 +143,7 @@ async function findSuccessfulTrees(): Promise<SuccessfulTreeResult[]> {
 
 // ── Paso 2: Find similar trees ─────────────────────────────────────────────
 
-async function findSimilarTrees(
+export async function findSimilarTrees(
   description: string,
   successfulTrees: SuccessfulTreeResult[],
 ): Promise<ScoredTree[]> {

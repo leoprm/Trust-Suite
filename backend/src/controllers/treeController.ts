@@ -130,6 +130,24 @@ export const suggestStructure = async (req: any, res: Response) => {
   }
 };
 
+// ── T26: Tree Tech Stack ──────────────────────────────────────────────────────
+
+export const getTechStack = async (req: any, res: Response) => {
+  try {
+    const treeId = req.params.id;
+    if (!treeId) {
+      return res.status(400).json({ error: 'treeId is required' });
+    }
+
+    const { getTreeTechStack } = await import('../services/techStackService');
+    const result = await getTreeTechStack(treeId);
+    res.json(result);
+  } catch (error: any) {
+    console.error('[getTechStack] ERROR:', error?.message || error);
+    res.status(500).json({ error: 'Failed to get tech stack', detail: error?.message || String(error) });
+  }
+};
+
 export const updateTree = async (req: any, res: Response) => {
   try {
     const { id } = req.params;

@@ -85,6 +85,7 @@ import whatsappRoutes from './routes/whatsappRoutes';
 import audioRoutes from './routes/audioRoutes';
 import sandboxRoutes from './routes/sandboxRoutes';
 import costRoutes from './routes/costRoutes';
+import solutionRoutes from './routes/solutionRoutes';
 import { createBot } from './bot/index';
 import { startScheduler } from './bot/scheduler';
 import { initDisputeService } from './services/telegramBotService';
@@ -245,6 +246,7 @@ app.use('/api/stripe', stripeRoutes);
 app.use('/api/whatsapp', whatsappRoutes);
 app.use('/api/audio', audioRoutes);
 app.use('/api/costs', costRoutes);
+app.use('/api/solutions', solutionRoutes);
 
 // Tree-scoped agent endpoints
 app.get('/api/trees/:id/agents', getTreeAgents);

@@ -730,6 +730,34 @@ export const conciergeHandler = async (req: Request, res: Response) => {
     });
     contextLines.push(`  Open needs: ${openNeeds}`);
 
+    // Inject tree objectives into context if set (T24)
+    if (tree.objectives) {
+      contextLines.push('');
+      contextLines.push(`Tree objectives (set by community):`);
+      contextLines.push(`  "${tree.objectives}"`);
+      contextLines.push('Adapt your responses and priorities to this context.');
+      contextLines.push('Suggest solutions relevant to this type of organization.');
+    }
+
+    // Inject tech stack from DB (T26)
+    try {
+      const techStack = await (prisma as any).treeTechStack.findMany({
+        where: { treeId, status: 'active' },
+        include: { stackItem: { select: { name: true, description: true, category: true } } },
+        take: 10,
+      });
+      if (techStack.length > 0) {
+        contextLines.push('');
+        contextLines.push('## Tech Stack (REAL, from DB)');
+        for (const ts of techStack) {
+          contextLines.push(`- ${ts.stackItem.name} (${ts.stackItem.category}): ${ts.stackItem.description}`);
+        }
+        contextLines.push('Mention these tools when relevant. Suggest solutions compatible with this stack.');
+      }
+    } catch {
+      // Non-fatal — tech stack not available yet
+    }
+
     // Add user context
     contextLines.push(userContext);
 

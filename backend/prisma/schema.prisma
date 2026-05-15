@@ -141,6 +141,7 @@ model Tree {
   telegramChatId  String?         @unique
   telegramGroupId BigInt?         @unique
   parentTreeId    String?
+  objectives      String?         @db.Text  // T24: tipo de organización y objetivos
   totalBudget     Float?          // Presupuesto total del árbol (CLP)
   createdAt       DateTime        @default(now())
   members         TreeMember[]
@@ -160,6 +161,41 @@ model Tree {
   budgetAllocationsParent BudgetAllocation[] @relation("ParentBudget")
   parentTree      Tree?            @relation("TreeChildren", fields: [parentTreeId], references: [id])
   childTrees      Tree[]           @relation("TreeChildren")
+  solutions       SolutionCatalog[]
+  treeStacks      TreeTechStack[]
+}
+
+model TreeTechStack {
+  id          String   @id @default(uuid())
+  treeId      String
+  stackItemId String
+  installedAt DateTime @default(now())
+  installedBy String?   // userId
+  status      String   @default("active") // active, deprecated, replaced
+  config      String?   // JSON con configuración específica
+
+  tree      Tree           @relation(fields: [treeId], references: [id], onDelete: Cascade)
+  stackItem TechStackItem  @relation(fields: [stackItemId], references: [id], onDelete: Cascade)
+
+  @@unique([treeId, stackItemId])
+  @@index([treeId])
+}
+
+model TechStackItem {
+  id          String   @id @default(uuid())
+  name        String            // "FarmOS", "Odoo", "WooCommerce"
+  category    String            // "agricultura", "contabilidad", "ecommerce"
+  description String   @db.Text
+  repoUrl     String?           // GitHub URL
+  websiteUrl  String?           // Sitio oficial
+  tags        String?           // JSON: ["open-source", "self-hosted", "php"]
+  addedBy     String            // needId que lo introdujo
+  createdAt   DateTime @default(now())
+
+  treeStacks  TreeTechStack[]
+
+  @@index([category])
+  @@index([tags])
 }
 
 model TreeMember {
@@ -288,6 +324,7 @@ model Need {
   results         Result[]
   tasks           Task[]
   paymentSplits   PaymentSplit[]
+  solutions       SolutionCatalog[]
 }
 
 model Idea {
@@ -691,6 +728,25 @@ model ApiUsage {
   @@index([userId])
   @@index([treeId])
   @@index([createdAt])
+}
+
+// ── Solution Catalog (T25: Resolution hierarchy) ─────────────────────────
+
+model SolutionCatalog {
+  id              String   @id @default(uuid())
+  needId          String
+  treeId          String
+  title           String
+  description     String   @db.Text
+  resolutionLevel Int      // 1=simple, 2=github, 3=custom
+  repoUrl         String?
+  keywords        String?  // JSON array
+  publishedAt     DateTime @default(now())
+
+  need Need @relation(fields: [needId], references: [id])
+  tree Tree @relation(fields: [treeId], references: [id])
+
+  @@index([treeId])
 }
 
 // ── Talent Migration (T22: Auto-regulación) ──────────────────────────────
