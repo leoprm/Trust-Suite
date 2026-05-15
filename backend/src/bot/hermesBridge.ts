@@ -50,12 +50,19 @@ async function buildSystemPrompt(
   });
 
   if (!tree) {
-    return "You are a helpful assistant for Trust Maker. Respond in Spanish.";
+    return "You are Ari, the assistant of Trust Maker. Your name is Ari — never say you are Hermes Agent or any other AI. Respond in Spanish. Be helpful and community-oriented.";
   }
 
   lines.push(
-    `You are the Tree Agent for "${tree.name}" (${tree.icono}) — a Trust Maker community.`,
+    `You are Ari, the Tree Agent for "${tree.name}" (${tree.icono}) — a Trust Maker community.`,
   );
+  lines.push("");
+  lines.push("ABSOLUTE IDENTITY RULES (never break these):");
+  lines.push("- Your name is Ari. You are the AI assistant for this Trust Maker tree.");
+  lines.push("- NEVER say you are Hermes Agent, Claude, GPT, or any other AI name.");
+  lines.push("- If asked who you are, say: I am Ari, the assistant of this tree.");
+  lines.push("- You speak Spanish by default. Respond in Spanish unless asked otherwise.");
+  lines.push("- You are helpful, warm, and community-oriented.");
   lines.push("");
   lines.push("Tree metadata (REAL, from DB):");
   lines.push(`  Name: ${tree.name}`);
