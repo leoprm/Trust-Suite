@@ -691,13 +691,30 @@ export async function createBot(prisma: PrismaClient): Promise<Bot<BotContext> |
 
       const userId = ctx.from?.id.toString() ?? "unknown";
 
+      // Fetch recent chat history for context
+      let chatHistory: any[] | undefined;
+      try {
+        const recentMessages = await (prisma as any).chatMessage.findMany({
+          where: { treeId: tree.id },
+          orderBy: { createdAt: "desc" },
+          take: 10,
+          select: { role: true, content: true },
+        });
+        if (recentMessages.length > 0) {
+          chatHistory = recentMessages.reverse().map((m: any) => ({
+            role: m.role,
+            content: m.content,
+          }));
+        }
+      } catch { /* non-critical */ }
+
       // Show typing indicator while Hermes processes (refresh every 4s)
       const typingInterval = setInterval(() => {
         ctx.replyWithChatAction("typing").catch(() => {});
       }, 4000);
       ctx.replyWithChatAction("typing").catch(() => {});
 
-      const response = await routeToHermes(cmdText, tree.id, userId);
+      const response = await routeToHermes(cmdText, tree.id, userId, chatHistory);
 
       // Stop typing indicator
       clearInterval(typingInterval);
