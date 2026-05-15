@@ -4,6 +4,7 @@ import { randomBytes } from 'crypto';
 import { getRequestContext, getRequestMetadata, logEvent } from '../services/eventLogService';
 import { onTreeCreated } from '../services/genesisService';
 import { TreeSandbox } from '../services/treeSandbox';
+import { suggestTreeStructure, generateRecommendationForNewTree } from '../services/treeRecommenderService';
 
 // ── Tree CRUD ────────────────────────────────────────────────────────────────
 
@@ -81,17 +82,58 @@ export const createTree = async (req: any, res: Response) => {
       }
     }
 
-    res.status(201).json(tree);
+    // T23: Generate structure recommendation based on similar successful trees
+    let suggestion = null;
+    try {
+      suggestion = await generateRecommendationForNewTree(tree.description || '');
+    } catch (err: any) {
+      console.warn('[createTree] Recommendation generation failed (non-blocking):', err?.message || err);
+    }
+
+    if (suggestion) {
+      res.status(201).json({
+        tree,
+        suggestion,
+        message: '🌳 Árbol creado. Basado en árboles exitosos similares, te recomendamos esta estructura.',
+      });
+    } else {
+      res.status(201).json(tree);
+    }
   } catch (error: any) {
     console.error('[createTree] ERROR:', error?.message || error);
     res.status(500).json({ error: 'Failed to create tree', detail: error?.message || String(error) });
   }
 };
 
+// ── T23: Tree Structure Recommender ───────────────────────────────────────────
+
+export const suggestStructure = async (req: any, res: Response) => {
+  try {
+    const { description, objectives } = req.body;
+
+    const result = await suggestTreeStructure(description || '', objectives || '');
+
+    if (result.fallback || !result.recommendation) {
+      return res.json({
+        message: 'No hay suficientes árboles exitosos similares para hacer una recomendación. Crea tu estructura manualmente.',
+        fallback: true,
+      });
+    }
+
+    res.json({
+      recommendation: result.recommendation,
+      similarTrees: result.similarTrees,
+    });
+  } catch (error: any) {
+    console.error('[suggestStructure] ERROR:', error?.message || error);
+    res.status(500).json({ error: 'Failed to suggest tree structure', detail: error?.message || String(error) });
+  }
+};
+
 export const updateTree = async (req: any, res: Response) => {
   try {
     const { id } = req.params;
-    const { name, icono, description, admissionPolicy } = req.body;
+    const { name, icono, description, admissionPolicy, totalBudget } = req.body;
 
     const tree = await prisma.tree.findUnique({ where: { id } });
     if (!tree) return res.status(404).json({ error: 'Tree not found' });
@@ -108,6 +150,7 @@ export const updateTree = async (req: any, res: Response) => {
         ...(icono !== undefined && { icono }),
         ...(description !== undefined && { description }),
         ...(admissionPolicy !== undefined && { admissionPolicy }),
+        ...(totalBudget !== undefined && { totalBudget }),
       }
     });
 
@@ -455,6 +498,206 @@ export const consumeGuestToken = async (req: any, res: Response) => {
   }
 };
 
+// ── Tree Hierarchy ─────────────────────────────────────────────────────────────
+
+export const createSubTree = async (req: any, res: Response) => {
+  try {
+    const parentTreeId = req.params.treeId;
+    const { name, description, icono } = req.body;
+    const userId = req.user!.id;
+
+    if (!name || typeof name !== 'string' || name.trim().length === 0) {
+      return res.status(400).json({ error: 'Tree name is required' });
+    }
+
+    const parentTree = await prisma.tree.findUnique({ where: { id: parentTreeId } });
+    if (!parentTree) return res.status(404).json({ error: 'Parent tree not found' });
+
+    const isAdmin = await prisma.treeMember.findFirst({
+      where: { treeId: parentTreeId, userId, role: 'ADMIN' },
+    });
+    if (!isAdmin) return res.status(403).json({ error: 'Must be admin of parent tree' });
+
+    const subTree = await prisma.tree.create({
+      data: {
+        name: name.trim(),
+        description: description || null,
+        icono: icono || '🌿',
+        parentTreeId,
+        creatorId: userId,
+        admissionPolicy: 'OPEN',
+      },
+    });
+
+    // Creator becomes admin of the subtree
+    await prisma.treeMember.create({
+      data: { userId, treeId: subTree.id, status: 'ACTIVE', role: 'ADMIN' },
+    });
+
+    void logEvent({
+      ...getRequestContext(req),
+      treeId: subTree.id,
+      action: 'SUBTREE_CREATED',
+      entityType: 'Tree',
+      entityId: subTree.id,
+      afterJson: { id: subTree.id, name: subTree.name, parentTreeId },
+      metadataJson: getRequestMetadata(req, { parentTreeId, result: 'success' }),
+      source: 'USER',
+    });
+
+    res.status(201).json(subTree);
+  } catch (error: any) {
+    console.error('[createSubTree] ERROR:', error?.message || error);
+    res.status(500).json({ error: 'Failed to create subtree', detail: error?.message || String(error) });
+  }
+};
+
+export const getTreeHierarchy = async (req: any, res: Response) => {
+  try {
+    const treeId = req.params.id;
+
+    const tree = await prisma.tree.findUnique({
+      where: { id: treeId },
+      include: {
+        childTrees: {
+          include: {
+            _count: { select: { members: true } },
+            childTrees: {
+              include: {
+                _count: { select: { members: true } },
+              },
+            },
+          },
+        },
+        parentTree: { select: { id: true, name: true, icono: true } },
+      },
+    });
+
+    if (!tree) return res.status(404).json({ error: 'Tree not found' });
+
+    res.json(tree);
+  } catch (error: any) {
+    console.error('[getTreeHierarchy] ERROR:', error?.message || error);
+    res.status(500).json({ error: 'Failed to get tree hierarchy', detail: error?.message || String(error) });
+  }
+};
+
+// ── Budget Allocation ────────────────────────────────────────────────────────
+
+export const setBudgetAllocation = async (req: any, res: Response) => {
+  try {
+    const parentTreeId = req.params.treeId;
+    const { childTreeId, percentage } = req.body;
+    const userId = req.user!.id;
+
+    if (percentage === undefined || typeof percentage !== 'number' || percentage < 0 || percentage > 100) {
+      return res.status(400).json({ error: 'Percentage must be a number between 0 and 100' });
+    }
+
+    // Verify parent tree exists and user is admin
+    const parentTree = await prisma.tree.findUnique({ where: { id: parentTreeId } });
+    if (!parentTree) return res.status(404).json({ error: 'Parent tree not found' });
+
+    const isAdmin = await prisma.treeMember.findFirst({
+      where: { treeId: parentTreeId, userId, role: 'ADMIN' },
+    });
+    if (!isAdmin) return res.status(403).json({ error: 'Must be admin of parent tree' });
+
+    // Validate childTree is actually a child of parentTree
+    const childTree = await prisma.tree.findFirst({
+      where: { id: childTreeId, parentTreeId },
+    });
+    if (!childTree) return res.status(400).json({ error: 'Not a child of this tree' });
+
+    // Validate percentages don't exceed 100%
+    const existingAllocations = await prisma.budgetAllocation.findMany({
+      where: { parentTreeId },
+    });
+    const otherTotal = existingAllocations
+      .filter(a => a.childTreeId !== childTreeId)
+      .reduce((sum, a) => sum + a.percentage, 0);
+
+    if (otherTotal + percentage > 100) {
+      return res.status(400).json({
+        error: `Total would be ${otherTotal + percentage}%. Max 100%. Currently allocated: ${otherTotal}%`,
+      });
+    }
+
+    // Upsert allocation
+    const allocation = await prisma.budgetAllocation.upsert({
+      where: { childTreeId },
+      create: { parentTreeId, childTreeId, percentage },
+      update: { percentage, updatedAt: new Date() },
+    });
+
+    void logEvent({
+      ...getRequestContext(req),
+      treeId: parentTreeId,
+      action: 'BUDGET_ALLOCATION_SET',
+      entityType: 'BudgetAllocation',
+      entityId: allocation.id,
+      afterJson: { childTreeId, percentage, parentTreeId },
+      metadataJson: getRequestMetadata(req, { childTreeId, percentage, result: 'success' }),
+      source: 'USER',
+    });
+
+    res.json(allocation);
+  } catch (error: any) {
+    console.error('[setBudgetAllocation] ERROR:', error?.message || error);
+    res.status(500).json({ error: 'Failed to set budget allocation', detail: error?.message || String(error) });
+  }
+};
+
+export const getBudgetOverview = async (req: any, res: Response) => {
+  try {
+    const treeId = req.params.id;
+
+    const tree = await prisma.tree.findUnique({
+      where: { id: treeId },
+      include: {
+        childTrees: {
+          include: {
+            _count: { select: { members: true } },
+            budgetAllocationsChild: {
+              where: { parentTreeId: treeId },
+            },
+          },
+        },
+      },
+    });
+
+    if (!tree) return res.status(404).json({ error: 'Tree not found' });
+
+    const totalBudget = tree.totalBudget || 0;
+    const children = tree.childTrees.map((child: any) => {
+      const allocation = child.budgetAllocationsChild?.[0];
+      const percentage = allocation?.percentage || 0;
+      const amount = totalBudget * (percentage / 100);
+      return {
+        id: child.id,
+        name: child.name,
+        icono: child.icono,
+        percentage,
+        amount,
+        members: child._count?.members || 0,
+      };
+    });
+
+    const totalAllocated = children.reduce((sum: number, c: any) => sum + c.percentage, 0);
+
+    res.json({
+      treeId: tree.id,
+      treeName: tree.name,
+      totalBudget,
+      unallocated: Math.max(0, 100 - totalAllocated),
+      children,
+    });
+  } catch (error: any) {
+    console.error('[getBudgetOverview] ERROR:', error?.message || error);
+    res.status(500).json({ error: 'Failed to get budget overview', detail: error?.message || String(error) });
+  }
+};
+
 // ── Stubbed / Removed Endpoints ───────────────────────────────────────────────
 
 // GET /api/trees/:id/my-level — nivel y xp del usuario autenticado en ese arbol
@@ -595,5 +838,104 @@ export const getTreeLedger = async (req: any, res: Response) => {
   } catch (error: any) {
     console.error('[getTreeLedger]', error);
     res.status(500).json({ error: error.message || 'Failed to fetch ledger' });
+  }
+};
+
+// ── Talent Migration (T22) ───────────────────────────────────────────────────
+
+export const getMigrationSuggestions = async (req: any, res: Response) => {
+  try {
+    const treeId = req.params.id;
+
+    const suggestions = await (prisma as any).talentMigrationSuggestion.findMany({
+      where: { fromTreeId: treeId },
+      orderBy: { createdAt: "desc" },
+      take: 50,
+    });
+
+    const formatted = await Promise.all(
+      suggestions.map(async (s: any) => {
+        const [member, fromTree, toTree] = await Promise.all([
+          (prisma as any).treeMember.findUnique({
+            where: { id: s.memberId },
+            select: { userId: true, user: { select: { username: true } } },
+          }),
+          (prisma as any).tree.findUnique({
+            where: { id: s.fromTreeId },
+            select: { id: true, name: true },
+          }),
+          (prisma as any).tree.findUnique({
+            where: { id: s.toTreeId },
+            select: { id: true, name: true },
+          }),
+        ]);
+
+        const improvement =
+          s.currentRate > 0
+            ? `+${Math.round(((s.betterRate - s.currentRate) / s.currentRate) * 100)}%`
+            : "N/A";
+
+        return {
+          id: s.id,
+          member: member?.user?.username || member?.userId || "unknown",
+          skill: s.skillTag,
+          currentTree: fromTree?.name || s.fromTreeId,
+          currentRate: s.currentRate,
+          suggestedTree: toTree?.name || s.toTreeId,
+          suggestedRate: s.betterRate,
+          improvement,
+          createdAt: s.createdAt,
+        };
+      })
+    );
+
+    res.json({ suggestions: formatted });
+  } catch (error: any) {
+    console.error("[getMigrationSuggestions] ERROR:", error?.message || error);
+    res.status(500).json({
+      error: "Failed to get migration suggestions",
+      detail: error?.message || String(error),
+    });
+  }
+};
+
+// ── Skill Pricing (T21) ─────────────────────────────────────────────────────
+
+export const getSkillPricing = async (req: any, res: Response) => {
+  try {
+    const treeId = req.params.id;
+
+    const tree = await prisma.tree.findUnique({
+      where: { id: treeId },
+      select: { id: true, name: true },
+    });
+
+    if (!tree) {
+      return res.status(404).json({ error: "Tree not found" });
+    }
+
+    const pricing = await prisma.skillPricing.findMany({
+      where: { treeId },
+      orderBy: { ratePerHour: "desc" },
+    });
+
+    const skills = pricing.map((p) => ({
+      skill: p.skillTag,
+      rate: p.ratePerHour,
+      demand: p.demandLevel,
+      supply: p.supplyCount,
+      level: p.demandLevel,
+    }));
+
+    res.json({
+      treeName: tree.name,
+      skills,
+    });
+  } catch (error: any) {
+    console.error("[getSkillPricing]", error);
+    res.status(500).json({
+      error: "Failed to get skill pricing",
+      detail: error?.message || String(error),
+    });
   }
 };

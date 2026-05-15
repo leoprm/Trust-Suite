@@ -18,6 +18,8 @@ import {
   releaseAgent,
 } from "../services/agentProfileService";
 import { autoScale } from "../services/autoScaler";
+import { updateSkillPricing } from "../cron/skillPricingCron";
+import { runTalentMigration } from "../cron/talentMigrationCron";
 import { prisma } from "../index";
 
 // ── Constantes ─────────────────────────────────────────────────────────────────
@@ -64,6 +66,8 @@ let rotationTask: ScheduledTask | null = null;
 let autoScaleTask: ScheduledTask | null = null;
 let monthlyFeeTask: ScheduledTask | null = null;
 let disputeResolutionTask: ScheduledTask | null = null;
+let skillPricingTask: ScheduledTask | null = null;
+let talentMigrationTask: ScheduledTask | null = null;
 
 /**
  * Arranca todos los schedulers.
@@ -180,6 +184,31 @@ export function startScheduler(
   });
   console.log("[Scheduler] ⚖️ Resolución de disputas programada cada 15 minutos");
 
+  // ── Cron: 0 * * * * (cada hora) — Skill Pricing ────────────────────
+  skillPricingTask = cron.schedule("0 * * * *", async () => {
+    try {
+      await updateSkillPricing(prismaClient);
+    } catch (err) {
+      console.error("[Scheduler] Error en skill pricing:", err);
+    }
+  });
+  console.log("[Scheduler] 💲 Skill Pricing programado cada hora");
+
+  // ── Cron: 0 4 * * * (4 AM diario) — Talent Migration ──────────────────
+  talentMigrationTask = cron.schedule("0 4 * * *", async () => {
+    console.log("[Scheduler] 🔀 Análisis de migración de talento…");
+    try {
+      const result = await runTalentMigration(prismaClient, bot);
+      console.log(
+        `[Scheduler] 🔀 Talent Migration: ${result.suggestions} sugerencias ` +
+          `en ${result.treesAnalyzed} árboles analizados.`
+      );
+    } catch (err) {
+      console.error("[Scheduler] Error en talent migration:", err);
+    }
+  });
+  console.log("[Scheduler] 🔀 Talent Migration programado a las 04:00 (diario)");
+
   // ── Dev mode hint ──
   if (process.env.NODE_ENV !== "production") {
     console.log(
@@ -204,7 +233,7 @@ export async function triggerDailyClose(
  */
 export function stopScheduler(): void {
   let stopped = false;
-  for (const task of [midnightTask, decayTask, rotationTask, autoScaleTask, monthlyFeeTask, disputeResolutionTask]) {
+  for (const task of [midnightTask, decayTask, rotationTask, autoScaleTask, monthlyFeeTask, disputeResolutionTask, skillPricingTask, talentMigrationTask]) {
     if (task) {
       task.stop();
       stopped = true;
@@ -216,6 +245,8 @@ export function stopScheduler(): void {
   autoScaleTask = null;
   monthlyFeeTask = null;
   disputeResolutionTask = null;
+  skillPricingTask = null;
+  talentMigrationTask = null;
   if (stopped) {
     console.log("[Scheduler] ⏹️ Todos los schedulers detenidos.");
   }

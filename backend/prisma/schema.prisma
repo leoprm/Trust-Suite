@@ -140,6 +140,8 @@ model Tree {
   admissionPolicy AdmissionPolicy @default(INVITE_ONLY)
   telegramChatId  String?         @unique
   telegramGroupId BigInt?         @unique
+  parentTreeId    String?
+  totalBudget     Float?          // Presupuesto total del árbol (CLP)
   createdAt       DateTime        @default(now())
   members         TreeMember[]
   agentMemberships AgentMembership[]
@@ -153,6 +155,11 @@ model Tree {
   ledgerEntries    TransactionLedger[]
   disputeMessages  DisputeMessage[]
   sandbox          TreeSandbox?
+  skillPricing     SkillPricing[]
+  budgetAllocationsChild BudgetAllocation[] @relation("ChildBudget")
+  budgetAllocationsParent BudgetAllocation[] @relation("ParentBudget")
+  parentTree      Tree?            @relation("TreeChildren", fields: [parentTreeId], references: [id])
+  childTrees      Tree[]           @relation("TreeChildren")
 }
 
 model TreeMember {
@@ -391,6 +398,24 @@ model Task {
   @@index([status])
 }
 
+// ── Skill-based Pricing ───────────────────────────────────────────────────
+
+model SkillPricing {
+  id          String   @id @default(uuid())
+  treeId      String
+  skillTag    String   // "frontend", "backend", "design"
+  ratePerHour Float    // USD por hora
+  demandLevel Int      @default(1)  // 1-10, calculado automáticamente
+  supplyCount Int      @default(0)  // cuántos miembros tienen esta skill
+  updatedAt   DateTime @updatedAt
+  createdAt   DateTime @default(now())
+
+  tree Tree @relation(fields: [treeId], references: [id], onDelete: Cascade)
+
+  @@unique([treeId, skillTag])
+  @@index([treeId])
+}
+
 model Subscription {
   id                   String             @id @default(uuid())
   userId               String
@@ -548,6 +573,25 @@ model TransactionLedger {
   @@index([treeId, createdAt])
 }
 
+// ── Budget Allocation (Tree Hierarchy) ───────────────────────────────────
+
+model BudgetAllocation {
+  id             String   @id @default(uuid())
+  parentTreeId   String
+  childTreeId    String   @unique  // Cada subárbol tiene UNA asignación
+  percentage     Float    // 0-100% del presupuesto del padre
+  fixedAmount    Float?   // Alternativa: monto fijo en vez de %
+  effectiveFrom  DateTime @default(now())
+  effectiveUntil DateTime?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  parentTree Tree @relation("ParentBudget", fields: [parentTreeId], references: [id])
+  childTree  Tree @relation("ChildBudget", fields: [childTreeId], references: [id])
+
+  @@index([parentTreeId])
+}
+
 // ── Telegram Dispute Voting ──────────────────────────────────────────────
 
 enum DisputeMessageStatus {
@@ -647,4 +691,20 @@ model ApiUsage {
   @@index([userId])
   @@index([treeId])
   @@index([createdAt])
+}
+
+// ── Talent Migration (T22: Auto-regulación) ──────────────────────────────
+
+model TalentMigrationSuggestion {
+  id           String   @id @default(uuid())
+  memberId     String
+  fromTreeId   String
+  toTreeId     String
+  skillTag     String
+  currentRate  Float
+  betterRate   Float
+  createdAt    DateTime @default(now())
+
+  @@index([memberId])
+  @@index([fromTreeId, toTreeId])
 }
