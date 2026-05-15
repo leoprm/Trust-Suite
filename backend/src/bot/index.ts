@@ -666,11 +666,28 @@ export async function createBot(prisma: PrismaClient): Promise<Bot<BotContext> |
       });
     }
 
-    // 2. Verificar si el mensaje menciona al bot (SPEC-1)
-    const cmdText = extractCommandText(msg.text);
+    // 2. Verificar si el mensaje menciona al bot o es reply o es comando directo
+    // Priority: reply to bot → direct command → mention (@TrustMakerBot)
+    let cmdText: string | null = null;
+    let isReplyToBot = false;
 
-    // 3. Si no menciona → solo análisis pasivo, no responder
-    if (cmdText === null) return;
+    // Check 1: reply a un mensaje del bot
+    if (
+      msg.reply_to_message &&
+      (msg.reply_to_message.from?.username === "TrustMakerBot" ||
+       msg.reply_to_message.from?.is_bot === true)
+    ) {
+      cmdText = msg.text.trim();
+      isReplyToBot = true;
+    }
+
+    // Check 2-3: comando directo (/) o mención (@TrustMakerBot)
+    if (cmdText === null) {
+      cmdText = extractCommandText(msg.text);
+    }
+
+    // 3. Si no hay comando ni mención → solo análisis pasivo, no responder
+    if (cmdText === null || cmdText === "") return;
 
     // 3.5 Payment check: verificar acceso antes de procesar
     if (chatId) {
@@ -739,6 +756,13 @@ export async function createBot(prisma: PrismaClient): Promise<Bot<BotContext> |
         await ctx.reply("⚠️ El agente no está disponible en este momento. Intenta de nuevo más tarde.");
       }
       return;
+    }
+
+    // If reply-to-bot and not using Hermes Bridge: prepend mention so
+    // handleNaturalMessage/handleMessage can parse it (they call
+    // extractCommandText internally which needs a mention or / prefix).
+    if (isReplyToBot) {
+      (msg as any).text = `@TrustMakerBot ${cmdText}`;
     }
 
     // 4. Si menciona — rutear a comando o conversación natural

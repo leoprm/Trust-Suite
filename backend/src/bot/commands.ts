@@ -59,10 +59,18 @@ const BOT_USERNAME = "TrustMakerBot";
 const MENTION_REGEX = new RegExp(`^@(TrustMakerBot|TrustMaker|[Aa]ri)\\b\\s*`, "i");
 
 /**
- * Extrae el texto después de @TrustMaker del mensaje.
- * Retorna null si el mensaje no menciona al bot al inicio.
+ * Extrae el texto de comando del mensaje.
+ *
+ * Soporta tres modos de direccionamiento:
+ * 1. Comando directo: el texto empieza con "/" (ej: "/info") — no requiere mención.
+ * 2. Mención al inicio: "@TrustMakerBot /info" — extrae el texto después de la mención.
+ *
+ * Retorna null si el mensaje no está dirigido al bot.
  */
 export function extractCommandText(text: string): string | null {
+  // Direct command (starts with "/") — no mention needed (group handler)
+  if (text.startsWith("/")) return text.trim();
+
   const match = text.match(MENTION_REGEX);
   if (!match) return null;
   return text.slice(match[0].length).trim();
