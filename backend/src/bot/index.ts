@@ -7,6 +7,7 @@ import { handleNaturalMessage, showLanguageSelector, handleLanguageCallback, res
 import { handleDM, handleProfileCallback } from "./dm";
 import { analyzeMessage } from "./analyzer";
 import { registerReactionHandler, handleNeedPollAnswer } from "./voting";
+import { findTreeByChat } from "./treeResolver";
 import {
   sendSatisfactionPoll,
   handleSatisfactionPollAnswer,
@@ -18,6 +19,7 @@ import { formatForChannel, sendViaTelegram } from "./channelAdapter";
 import { textToSpeech } from "../services/ttsService";
 import { TreeSandbox } from "../services/treeSandbox";
 import { initI18n, t } from "./i18n";
+import { routeToHermes } from "./hermesBridge";
 
 // ── IPv4 fetch wrapper: undici (Node fetch) no respeta dns.setDefaultResultOrder ──
 // para api.telegram.org. Usamos https.get con family:4 como fallback.
@@ -589,6 +591,59 @@ export async function createBot(prisma: PrismaClient): Promise<Bot<BotContext> |
     const chatType = ctx.chat?.type;
     if (chatType !== "private") return next();
 
+    if (process.env.HERMES_BRIDGE_ENABLED === "true") {
+      // ── Hermes Bridge: enrutar DM al agente ───────────────────────────
+      const msg = ctx.message;
+      if (!msg || !("text" in msg) || !msg.text) return;
+      const text = msg.text.trim();
+      const tgUser = ctx.from;
+      if (!tgUser) return;
+
+      // Find first active tree membership
+      const user = await (prisma as any).user.findUnique({
+        where: { telegramUserId: BigInt(tgUser.id) },
+        select: { id: true, username: true, language: true },
+      });
+      if (!user) {
+        await ctx.reply("⚠️ No tienes una cuenta vinculada. Usa /start en un grupo para vincularte a Trust Maker.");
+        return;
+      }
+
+      const membership = await (prisma as any).treeMember.findFirst({
+        where: { userId: user.id, status: "ACTIVE" },
+        include: { tree: { select: { id: true, name: true } } },
+        orderBy: { joinedAt: "desc" },
+      });
+
+      if (!membership) {
+        await ctx.reply("🌳 No eres miembro activo de ningún árbol. Únete a un grupo de Trust Maker para empezar.");
+        return;
+      }
+
+      const treeId = membership.tree.id;
+      const userId = tgUser.id.toString();
+
+      // Typing indicator
+      ctx.replyWithChatAction("typing").catch(() => {});
+
+      const response = await routeToHermes(text, treeId, userId);
+      if (response) {
+        await ctx.reply(response.text, { parse_mode: "Markdown" });
+
+        // Voice generation: fire-and-forget (TTS se mantiene)
+        const userLang = user.language ?? undefined;
+        generateVoice(response.text, userLang).then((vb) => {
+          if (vb) {
+            const vmsgs = formatForChannel({ text: "", voiceBuffer: vb }, "telegram");
+            sendViaTelegram(ctx, vmsgs).catch(() => {});
+          }
+        });
+      } else {
+        await ctx.reply("⚠️ El agente no está disponible en este momento. Intenta de nuevo más tarde.");
+      }
+      return;
+    }
+
     await handleDM(prisma, ctx as BotContext);
     // Don't call next() — DM handled, group handler won't fire
   });
@@ -624,6 +679,39 @@ export async function createBot(prisma: PrismaClient): Promise<Bot<BotContext> |
         await ctx.reply(paymentResult.reply, { parse_mode: "Markdown" });
         return;
       }
+    }
+
+    // ── Hermes Bridge: si está habilitado, enrutar todo al agente ──────
+    if (process.env.HERMES_BRIDGE_ENABLED === "true") {
+      const tree = await findTreeByChat(prisma, chatId!);
+      if (!tree) {
+        await ctx.reply("⚠️ Este grupo no está vinculado a ningún árbol de Trust Maker.");
+        return;
+      }
+
+      const userId = ctx.from?.id.toString() ?? "unknown";
+      const response = await routeToHermes(cmdText, tree.id, userId);
+
+      if (response) {
+        // Send text immediately
+        const messages = formatForChannel(
+          { text: response.text },
+          "telegram",
+        );
+        await sendViaTelegram(ctx, messages);
+
+        // Voice generation: fire-and-forget (TTS se mantiene)
+        const userLang = ctx.from ? await getUserLanguage(prisma, ctx.from.id) : undefined;
+        generateVoice(response.text, userLang).then((vb) => {
+          if (vb) {
+            const vmsgs = formatForChannel({ text: "", voiceBuffer: vb }, "telegram");
+            sendViaTelegram(ctx, vmsgs).catch(() => {});
+          }
+        });
+      } else {
+        await ctx.reply("⚠️ El agente no está disponible en este momento. Intenta de nuevo más tarde.");
+      }
+      return;
     }
 
     // 4. Si menciona — rutear a comando o conversación natural
