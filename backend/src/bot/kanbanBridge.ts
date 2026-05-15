@@ -1,0 +1,99 @@
+/**
+ * KA-2.1: Kanban Bridge.
+ *
+ * Bridge between Telegram bot messages and the Hermes Kanban task system.
+ * When the complexity detector flags a query or the concierge can't answer,
+ * this module creates a kanban task for async processing by a specialist agent.
+ */
+
+import { exec } from "child_process";
+import { PrismaClient } from "@prisma/client";
+
+// ── Constants ─────────────────────────────────────────────────────────────
+
+const EXEC_TIMEOUT_MS = 10_000; // 10 seconds
+const TITLE_MAX_CHARS = 80;
+const KANBAN_TASK_ID_REGEX = /t_[a-f0-9]+/;
+
+// ── Public API ────────────────────────────────────────────────────────────
+
+/**
+ * Create a kanban task for async specialist processing.
+ *
+ * Spawns `hermes kanban create` with the user's message, treeId, and chatId
+ * embedded in the task body so the assigned worker knows where to respond.
+ *
+ * Returns the kanban task ID on success, or null on failure (caller should
+ * fallback to concierge).
+ */
+export async function createKanbanTask(
+  prisma: PrismaClient,
+  message: string,
+  treeId: string,
+  chatId: string,
+): Promise<string | null> {
+  // ── 1. Build title: "Consulta: <first 80 chars>" ────────────────────
+  const truncated = message.substring(0, TITLE_MAX_CHARS).replace(/\n/g, " ");
+  const title = `Consulta: ${truncated}`;
+
+  // ── 2. Build body with context for the worker ────────────────────────
+  const body = [
+    `**Tree:** ${treeId}`,
+    `**Chat:** ${chatId}`,
+    ``,
+    `> ${message}`,
+  ].join("\n");
+
+  // Shell-escape single quotes inside title and body
+  const safeTitle = title.replace(/'/g, "'\\''");
+  const safeBody = body.replace(/'/g, "'\\''");
+
+  const command =
+    `hermes kanban create '${safeTitle}' ` +
+    `--assignee backend-eng ` +
+    `--workspace 'dir:/home/leo/Documentos/TrustMaker/backend' ` +
+    `--body '${safeBody}'`;
+
+  // ── 3. Execute with 10s timeout ─────────────────────────────────────
+  let stdout: string;
+  try {
+    stdout = await new Promise<string>((resolve, reject) => {
+      exec(command, { timeout: EXEC_TIMEOUT_MS }, (error, stdout, stderr) => {
+        if (error) {
+          resolve(""); // Any failure → null
+          return;
+        }
+        resolve(stdout);
+      });
+    });
+  } catch {
+    return null;
+  }
+
+  if (!stdout) return null;
+
+  // ── 4. Parse task ID from stdout using regex ─────────────────────────
+  const match = stdout.match(KANBAN_TASK_ID_REGEX);
+  if (!match) return null;
+
+  const kanbanTaskId = match[0];
+
+  // ── 5. Persist to DB ─────────────────────────────────────────────────
+  try {
+    await (prisma as any).botKanbanTask.create({
+      data: {
+        kanbanTaskId,
+        chatId,
+        status: "running",
+      },
+    });
+  } catch (err: any) {
+    console.error(
+      `[kanbanBridge] DB write failed for ${kanbanTaskId}:`,
+      err.message,
+    );
+    // Task was created in kanban — return the ID anyway
+  }
+
+  return kanbanTaskId;
+}

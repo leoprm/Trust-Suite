@@ -10,6 +10,8 @@ import { Context } from "grammy";
 import { PrismaClient } from "@prisma/client";
 import { findTreeByChat } from "./treeResolver";
 import { extractCommandText } from "./commands";
+import isComplexQuery from "./complexityDetector";
+import { createKanbanTask } from "./kanbanBridge";
 
 // ── Constantes ─────────────────────────────────────────────────────────────
 
@@ -52,7 +54,16 @@ export async function handleNaturalMessage(
     };
   }
 
-  // 3. Mostrar "typing" persistente (cada 4s)
+  // 3. Complexity check: route complex queries to Kanban (KA-1.2)
+  if (isComplexQuery(cleanText)) {
+    const taskId = await createKanbanTask(prisma, cleanText, tree.id, chatId);
+    if (taskId) {
+      return { text: `⏳ ${taskId}` };
+    }
+    // Fall through to concierge if kanban creation fails
+  }
+
+  // 3.5 Mostrar "typing" persistente (cada 4s)
   const typingInterval = setInterval(() => {
     ctx.replyWithChatAction("typing").catch(() => {});
   }, 4000);

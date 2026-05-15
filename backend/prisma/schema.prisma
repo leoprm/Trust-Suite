@@ -791,3 +791,17 @@ model TalentMigrationSuggestion {
   @@index([memberId])
   @@index([fromTreeId, toTreeId])
 }
+
+// ── Kanban Bot Task Tracking ─────────────────────────────────────────────
+
+model BotKanbanTask {
+  id             String   @id @default(uuid())
+  kanbanTaskId   String
+  chatId         String
+  status         String
+  lastNotifiedAt DateTime?
+  createdAt      DateTime @default(now())
+
+  @@index([kanbanTaskId])
+  @@index([chatId])
+}

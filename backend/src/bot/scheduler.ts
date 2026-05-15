@@ -12,6 +12,7 @@ import type { Bot } from "grammy";
 import type { BotContext } from "./types";
 import { runDailyClose, runMonthlyFee } from "./cron";
 import { runDisputeResolution } from "./disputeResolutionCron";
+import { startKanbanWatchdog, stopKanbanWatchdog } from "./kanbanWatchdog";
 import {
   applyDecay,
   assignAgentToTreeSlot,
@@ -70,6 +71,7 @@ let disputeResolutionTask: ScheduledTask | null = null;
 let skillPricingTask: ScheduledTask | null = null;
 let talentMigrationTask: ScheduledTask | null = null;
 let healthCheckTask: ScheduledTask | null = null;
+let kanbanWatchdogInterval: NodeJS.Timeout | null = null;
 
 /**
  * Arranca todos los schedulers.
@@ -227,6 +229,9 @@ export function startScheduler(
   });
   console.log("[Scheduler] 🔍 SSH Health Check programado cada 15 minutos");
 
+  // ── Kanban Watchdog: 150s interval ──
+  kanbanWatchdogInterval = startKanbanWatchdog(prismaClient, bot);
+
   // ── Dev mode hint ──
   if (process.env.NODE_ENV !== "production") {
     console.log(
@@ -257,6 +262,7 @@ export function stopScheduler(): void {
       stopped = true;
     }
   }
+  stopKanbanWatchdog(kanbanWatchdogInterval);
   midnightTask = null;
   decayTask = null;
   rotationTask = null;
@@ -266,6 +272,7 @@ export function stopScheduler(): void {
   skillPricingTask = null;
   talentMigrationTask = null;
   healthCheckTask = null;
+  kanbanWatchdogInterval = null;
   if (stopped) {
     console.log("[Scheduler] ⏹️ Todos los schedulers detenidos.");
   }
