@@ -2,7 +2,7 @@ import { prisma } from '../index';
 import fs from 'fs';
 import path from 'path';
 
-const TREES_BASE = process.env.SANDBOX_BASE_DIR || '/home/trustmaker/sandboxes';
+const TREES_BASE = process.env.SANDBOX_BASE_DIR || '/home/leo/trees';
 const PORT_RANGE = { min: 4100, max: 4999 };
 
 interface SandboxInfo {
