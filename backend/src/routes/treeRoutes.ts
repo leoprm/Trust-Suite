@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { createTree, joinTree, getMyTrees, getGlobalTrees, getTreeMembers, getTree, leaveTree, inviteMember, removeMember, generateGuestToken, consumeGuestToken, updateTree, deleteTree, getNetworkGraph, getPendingEvidence, toggleCrisisMode, broadcastCrisisSignal, updateMemberPower, inviteAI, getMyLevel, getTreeLedger, createSubTree, getTreeHierarchy, suggestStructure, setBudgetAllocation, getBudgetOverview, getSkillPricing, getMigrationSuggestions, getTechStack } from '../controllers/treeController';
+import { createTree, joinTree, getMyTrees, getGlobalTrees, getTreeMembers, getTree, leaveTree, inviteMember, removeMember, generateGuestToken, consumeGuestToken, updateTree, deleteTree, getNetworkGraph, getPendingEvidence, toggleCrisisMode, broadcastCrisisSignal, updateMemberPower, inviteAI, getMyLevel, getTreeLedger, createSubTree, getTreeHierarchy, suggestStructure, setBudgetAllocation, getBudgetOverview, getSkillPricing, getMigrationSuggestions, getTechStack, getTreeServers } from '../controllers/treeController';
 import { authenticateJWT, optionalAuth } from '../middleware/authMiddleware';
 
 const router = Router();
@@ -35,6 +35,7 @@ router.post('/:id/guest-token', generateGuestToken);
 router.post('/:id/crisis', toggleCrisisMode);
 router.post('/:id/crisis/broadcast', broadcastCrisisSignal);
 router.get('/:id/ledger', getTreeLedger);
+router.get('/:id/servers', getTreeServers);
 router.delete('/:treeId/members/:userId', removeMember);
 router.patch('/:id/members/:userId/power', updateMemberPower);
 router.delete('/:id/leave', leaveTree);

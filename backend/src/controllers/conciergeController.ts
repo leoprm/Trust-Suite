@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import { prisma } from '../index';
 import { evaluateAndAssignTask } from './taskController';
+import { execCommand } from '../services/sshGateway';
 
 // ── POST /api/concierge ────────────────────────────────────────────────────────
 // Proxies a concierge query to the local Hermes Agent API.
@@ -758,6 +759,37 @@ export const conciergeHandler = async (req: Request, res: Response) => {
       // Non-fatal — tech stack not available yet
     }
 
+    // Inject SSH servers from DB (F3-SSH)
+    try {
+      const servers = await (prisma as any).managedServer.findMany({
+        where: { treeId },
+        select: { id: true, name: true, ip: true, port: true, status: true },
+      });
+      if (servers.length > 0) {
+        contextLines.push('');
+        contextLines.push('## Servidores SSH (REAL, from DB)');
+        for (const s of servers) {
+          contextLines.push(`- ${s.name} (${s.id}) — ${s.ip}:${s.port} — ${s.status}`);
+        }
+        contextLines.push('Use these servers for deployment, diagnostics, or SSH-related questions.');
+      }
+    } catch {
+      // Non-fatal — managedServer table not available yet
+    }
+
+    // ── ssh_exec tool instruction (F3-SSH) ─────────────────────────────────
+    contextLines.push('');
+    contextLines.push('## SSH Command Execution');
+    contextLines.push('Puedes ejecutar comandos en los servidores SSH del árbol usando ssh_exec(serverId, command).');
+    contextLines.push('Para ejecutar un comando, responde con el siguiente formato exacto:');
+    contextLines.push('[TOOL:ssh_exec serverId="<server-id>" command="<comando-a-ejecutar>"]');
+    contextLines.push('');
+    contextLines.push('Ejemplo: para instalar algo en un servidor:');
+    contextLines.push('[TOOL:ssh_exec serverId="550e8400-e29b-41d4-a716-446655440000" command="sudo apt update && sudo apt install -y nginx"]');
+    contextLines.push('');
+    contextLines.push('El sistema detectará este formato y ejecutará el comando en el servidor correspondiente vía sshGateway.');
+    contextLines.push('Usa los IDs reales de la lista de servidores de arriba. No inventes IDs.');
+
     // Add user context
     contextLines.push(userContext);
 
@@ -831,12 +863,89 @@ export const conciergeHandler = async (req: Request, res: Response) => {
     // ── Parse and return ──────────────────────────────────────────────────
     const data = (await response.json()) as any;
 
-    const reply =
+    let reply =
       data?.choices?.[0]?.message?.content ??
       data?.choices?.[0]?.text ??
       data?.content ??
       data?.reply ??
       '';
+
+    // ── SSH tool call detection and execution loop (F3-SSH) ──────────────
+    // After receiving Hermes Agent's response, detect [TOOL:ssh_exec ...]
+    // tool calls, execute the commands via sshGateway, inject results as
+    // system messages, and re-call Hermes Agent for a final response.
+    // Maximum 3 rounds of tool calls per request.
+    const MAX_TOOL_ROUNDS = 3;
+    const SSH_EXEC_REGEX = /\[TOOL:ssh_exec\s+serverId="([^"]+)"\s+command="([^"]+)"]/;
+    let toolRound = 0;
+
+    while (toolRound < MAX_TOOL_ROUNDS) {
+      const toolMatch = reply.match(SSH_EXEC_REGEX);
+      if (!toolMatch) break;
+
+      const serverId = toolMatch[1];
+      const command = toolMatch[2];
+      console.log(
+        `[concierge] Round ${toolRound + 1}: ssh_exec serverId=${serverId.slice(0,8)}... command="${command.slice(0, 80)}"`,
+      );
+
+      // Execute the command via sshGateway (rate-limited, key-decrypted, 30s timeout)
+      let toolResult: string;
+      try {
+        const result = await execCommand(serverId, command, { timeoutMs: 30_000 });
+        const output = result.stdout || result.stderr || '(command produced no output)';
+        const exitInfo = result.exitCode !== null ? ` (exit code: ${result.exitCode})` : '';
+        toolResult = `[RESULTADO ssh_exec serverId="${serverId}" command="${command}"]${exitInfo}\n${output}`;
+        console.log(`[concierge] ssh_exec OK: ${output.slice(0, 80)}`);
+      } catch (err: any) {
+        toolResult = `[ERROR ssh_exec serverId="${serverId}" command="${command}"]\n${err.code || 'SSH_ERROR'}: ${err.message}`;
+        console.error(`[concierge] ssh_exec FAILED [${err.code}]: ${err.message}`);
+      }
+
+      // Inject the assistant's tool-call message and the tool result as system
+      messages.push({ role: 'assistant', content: reply });
+      messages.push({ role: 'system', content: toolResult });
+
+      // Re-call Hermes Agent with the extended conversation
+      const toolController = new AbortController();
+      const toolTimeoutId = setTimeout(() => toolController.abort(), 300_000);
+
+      let toolResponse: globalThis.Response;
+      try {
+        toolResponse = await fetch(HERMES_API, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({ messages, stream: false }),
+          signal: toolController.signal,
+        });
+      } finally {
+        clearTimeout(toolTimeoutId);
+      }
+
+      if (!toolResponse.ok) {
+        const errorText = await toolResponse.text().catch(() => '');
+        console.error(
+          `[concierge] Hermes API returned ${toolResponse.status} on tool round ${toolRound + 1}: ${errorText.slice(0, 300)}`,
+        );
+        break; // Return the last good reply
+      }
+
+      const toolData = (await toolResponse.json()) as any;
+      const newReply =
+        toolData?.choices?.[0]?.message?.content ??
+        toolData?.choices?.[0]?.text ??
+        toolData?.content ??
+        toolData?.reply ??
+        '';
+
+      if (!newReply) {
+        console.error('[concierge] Empty response from Hermes on tool round');
+        break;
+      }
+
+      reply = newReply;
+      toolRound++;
+    }
 
     // ── Track API usage ──────────────────────────────────────────────────
     const usage = data?.usage;

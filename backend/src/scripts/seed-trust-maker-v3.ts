@@ -11,6 +11,7 @@
  * - IdeaLike votes (weighted)
  * - 8 phase deliverables (resultados), some evaluated
  * - Calculated levels per tree (100-500 XP → level 1-5)
+ * - 3 ManagedServers (1 per tree) with encrypted SSH keys
  * 
  * RE-RUNNABLE: cleans demo data before creating.
  * NUNCA commit ni push.
@@ -19,6 +20,7 @@
 import { PrismaClient } from '@prisma/client';
 import bcrypt from 'bcryptjs';
 import crypto from 'crypto';
+import { encryptKey } from '../services/encryptionService';
 
 const prisma = new PrismaClient();
 const uuid = () => crypto.randomUUID();
@@ -272,6 +274,7 @@ async function main() {
     () => prisma.$executeRawUnsafe('DELETE FROM Rating') as any,
     () => (prisma as any).agentMembership?.deleteMany() ?? Promise.resolve(),
     () => (prisma as any).agent?.deleteMany() ?? Promise.resolve(),
+    () => (prisma as any).managedServer?.deleteMany() ?? Promise.resolve(),
     () => (prisma as any).tree?.deleteMany({ where: { name: { in: DEMO_TREE_NAMES } } }),
   ];
 
@@ -647,6 +650,43 @@ async function main() {
   }
   console.log(`   ✅ ${totalResults} results created (${evaluatedResults} evaluated, ${totalResults - evaluatedResults} unevaluated)\\n`);
 
+  // ═══════════════════════════════════════════════
+  // 8. MANAGED SERVERS (1 per tree) — F3-SSH
+  // ═══════════════════════════════════════════════
+  console.log('🖥️  Creating ManagedServers...');
+
+  // Dummy RSA private key for demo (passes BEGIN RSA PRIVATE KEY validation)
+  const demoPrivateKey = crypto.generateKeyPairSync('rsa', {
+    modulusLength: 2048,
+    publicKeyEncoding: { type: 'spki', format: 'pem' },
+    privateKeyEncoding: { type: 'pkcs1', format: 'pem' },
+  }).privateKey;
+
+  const serverDefs = [
+    { treeName: 'TechMakers',   name: 'dev-server-1',   ip: '127.0.0.1',     port: 2222, username: 'deploy' },
+    { treeName: 'EcoLabs',      name: 'sensor-hub',     ip: '192.168.1.100', port: 22,   username: 'pi' },
+    { treeName: 'SaludDigital', name: 'med-api',        ip: '10.0.0.50',     port: 22,   username: 'admin' },
+  ];
+
+  for (const sd of serverDefs) {
+    const treeId = treeIds[sd.treeName];
+    const encrypted = encryptKey(demoPrivateKey, treeId);
+    await prisma.managedServer.create({
+      data: {
+        id: uuid(),
+        treeId,
+        name: sd.name,
+        ip: sd.ip,
+        port: sd.port,
+        username: sd.username,
+        encryptedKey: encrypted,
+        status: 'ACTIVE',
+        lastCheck: new Date(),
+      },
+    });
+  }
+  console.log(`   ✅ ${serverDefs.length} ManagedServers created (1 per tree)\\n`);
+
   // ── SUMMARY ────────────────────────────────────────────────────────────────
   const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
   console.log('═══════════════════════════════════════════');
@@ -661,6 +701,7 @@ async function main() {
   console.log(`  Ideas:            34 (12 TechMakers, 10 EcoLabs, 12 SaludDigital)`);
   console.log(`  IdeaVotes:        ${totalVotes}`);
   console.log(`  Results:          ${totalResults} (${evaluatedResults} evaluated, ${totalResults - evaluatedResults} pending)`);
+  console.log(`  ManagedServers:   ${serverDefs.length} (1 per tree)`);
   console.log(`  Admin login:      leo@demo.com / demo123`);
   console.log(`  Time:             ${elapsed}s`);
   console.log('═══════════════════════════════════════════\n');

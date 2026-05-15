@@ -163,6 +163,7 @@ model Tree {
   childTrees      Tree[]           @relation("TreeChildren")
   solutions       SolutionCatalog[]
   treeStacks      TreeTechStack[]
+  managedServers  ManagedServer[]
 }
 
 model TreeTechStack {
@@ -745,6 +746,32 @@ model SolutionCatalog {
 
   need Need @relation(fields: [needId], references: [id])
   tree Tree @relation(fields: [treeId], references: [id])
+
+  @@index([treeId])
+}
+
+// ── Managed Server (F3-SSH) ──────────────────────────────────────────────
+
+enum ManagedServerStatus {
+  PENDING_VERIFICATION
+  ACTIVE
+  UNREACHABLE
+}
+
+model ManagedServer {
+  id           String               @id @default(uuid())
+  treeId       String
+  name         String
+  ip           String
+  port         Int                  @default(22)
+  username     String
+  encryptedKey String               @db.Text
+  status           ManagedServerStatus  @default(PENDING_VERIFICATION)
+  lastCheck        DateTime?
+  consecutiveFails Int                  @default(0)
+  createdAt        DateTime             @default(now())
+
+  tree Tree @relation(fields: [treeId], references: [id], onDelete: Cascade)
 
   @@index([treeId])
 }

@@ -14,7 +14,7 @@ export const createServer = async (req: any, res: Response) => {
     }
 
     // Validate SSH key is a private key
-    if (!/BEGIN\s+(?:RSA\s+)?PRIVATE\s+KEY/i.test(sshKey)) {
+    if (!/BEGIN\s+(?:(?:OPENSSH|RSA)\s+)?PRIVATE\s+KEY/i.test(sshKey)) {
       return res.status(400).json({ error: 'Invalid SSH key: must be a private key (BEGIN ... PRIVATE KEY)' });
     }
 

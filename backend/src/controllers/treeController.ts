@@ -957,3 +957,29 @@ export const getSkillPricing = async (req: any, res: Response) => {
     });
   }
 };
+
+// ── Managed Servers (SSH) ─────────────────────────────────────────────────
+
+export const getTreeServers = async (req: any, res: Response) => {
+  try {
+    const { id: treeId } = req.params;
+
+    const servers = await prisma.managedServer.findMany({
+      where: { treeId },
+      select: {
+        id: true,
+        name: true,
+        ip: true,
+        port: true,
+        status: true,
+        lastCheck: true,
+      },
+      orderBy: { name: 'asc' },
+    });
+
+    res.json(servers);
+  } catch (error: any) {
+    console.error("[getTreeServers]", error);
+    res.status(500).json({ error: "Failed to get tree servers" });
+  }
+};

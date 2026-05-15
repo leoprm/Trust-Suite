@@ -86,6 +86,7 @@ import audioRoutes from './routes/audioRoutes';
 import sandboxRoutes from './routes/sandboxRoutes';
 import costRoutes from './routes/costRoutes';
 import solutionRoutes from './routes/solutionRoutes';
+import serverRoutes from './routes/serverRoutes';
 import { createBot } from './bot/index';
 import { startScheduler } from './bot/scheduler';
 import { initDisputeService } from './services/telegramBotService';
@@ -247,6 +248,7 @@ app.use('/api/whatsapp', whatsappRoutes);
 app.use('/api/audio', audioRoutes);
 app.use('/api/costs', costRoutes);
 app.use('/api/solutions', solutionRoutes);
+app.use('/api/servers', serverRoutes);
 
 // Tree-scoped agent endpoints
 app.get('/api/trees/:id/agents', getTreeAgents);
