@@ -5,6 +5,11 @@ import {
   removeTreeSandbox,
   healthCheckTreeSandbox,
 } from '../controllers/sandboxController';
+import {
+  execTreeSandbox,
+  readTreeSandbox,
+  writeTreeSandbox,
+} from '../controllers/treeSandboxController';
 import { authenticateJWT } from '../middleware/authMiddleware';
 
 const router = Router();
@@ -16,5 +21,10 @@ router.get('/:id/sandbox/health', healthCheckTreeSandbox);
 // ── JWT-protected endpoints ───────────────────────────────────────────────────
 router.post('/:id/sandbox', authenticateJWT, createTreeSandbox);
 router.delete('/:id/sandbox', authenticateJWT, removeTreeSandbox);
+
+// ── API Key-protected sandbox ops (Hermes agent calls) ────────────────────────
+router.post('/:id/sandbox/exec', execTreeSandbox);
+router.post('/:id/sandbox/read', readTreeSandbox);
+router.post('/:id/sandbox/write', writeTreeSandbox);
 
 export default router;

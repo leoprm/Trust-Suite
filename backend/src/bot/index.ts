@@ -690,6 +690,10 @@ export async function createBot(prisma: PrismaClient): Promise<Bot<BotContext> |
       }
 
       const userId = ctx.from?.id.toString() ?? "unknown";
+
+      // Show typing indicator while Hermes processes
+      ctx.replyWithChatAction("typing").catch(() => {});
+
       const response = await routeToHermes(cmdText, tree.id, userId);
 
       if (response) {

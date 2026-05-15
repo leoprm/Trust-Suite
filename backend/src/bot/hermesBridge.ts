@@ -142,6 +142,65 @@ async function buildSystemPrompt(
     lines.push("Address this user by their username when responding.");
   }
 
+  // ── Sandbox tools ────────────────────────────────────────────────────
+  lines.push("");
+  lines.push("═══ HERRAMIENTAS DISPONIBLES (SANDBOX) ═══");
+  lines.push("");
+  lines.push(`Tu Tree ID es: ${treeId}`);
+  lines.push("Para ejecutar operaciones de archivos o comandos, usa EXCLUSIVAMENTE");
+  lines.push("los siguientes endpoints REST del sandbox del árbol:");
+  lines.push("");
+  lines.push("1. EJECUTAR COMANDOS:");
+  lines.push(`   POST /api/trees/${treeId}/sandbox/exec`);
+  lines.push('   Body: { "command": "ls -la", "cwd": "/sandbox" }');
+  lines.push('   Response: { "stdout": "...", "stderr": "...", "exitCode": 0 }');
+  lines.push("");
+  lines.push("2. LEER ARCHIVOS:");
+  lines.push(`   POST /api/trees/${treeId}/sandbox/read`);
+  lines.push('   Body: { "path": "archivo.txt" }');
+  lines.push('   Response: { "content": "...", "exists": true }');
+  lines.push("");
+  lines.push("3. ESCRIBIR ARCHIVOS:");
+  lines.push(`   POST /api/trees/${treeId}/sandbox/write`);
+  lines.push('   Body: { "path": "archivo.txt", "content": "contenido..." }');
+  lines.push('   Response: { "success": true }');
+  lines.push("");
+  lines.push(
+    "Formato de solicitud HTTP — usa fetch con Authorization Bearer HERMES_API_SERVER_KEY:",
+  );
+  lines.push("");
+  lines.push("```javascript");
+  lines.push(
+    `fetch("http://localhost:3100/api/trees/${treeId}/sandbox/exec", {`,
+  );
+  lines.push('  method: "POST",');
+  lines.push("  headers: {");
+  lines.push('    "Content-Type": "application/json",');
+  lines.push('    "Authorization": "Bearer HERMES_API_SERVER_KEY"');
+  lines.push("  },");
+  lines.push(
+    '  body: JSON.stringify({ command: "...", cwd: "/sandbox" })',
+  );
+  lines.push("});");
+  lines.push("```");
+  lines.push("");
+  lines.push("⚠️  ADVERTENCIA CRÍTICA:");
+  lines.push(
+    "- NO uses herramientas nativas de terminal ni file system.",
+  );
+  lines.push(
+    "- Toda operación de archivos o comandos DEBE pasar por la API sandbox de este árbol listada arriba.",
+  );
+  lines.push(
+    "- Este árbol NUNCA debe acceder archivos fuera de su sandbox.",
+  );
+  lines.push(
+    "- Las rutas de archivos son relativas a la raíz del sandbox del árbol.",
+  );
+  lines.push(
+    "- Si la API sandbox no está disponible (error de conexión), informa al usuario y NO uses workarounds con herramientas nativas.",
+  );
+
   // ── Response guidelines ───────────────────────────────────────────────
   lines.push("");
   lines.push(
