@@ -457,6 +457,102 @@ export async function createBot(prisma: PrismaClient): Promise<Bot<BotContext> |
         const chatId = chat.id.toString();
         const adderId = ctx.update.my_chat_member.from.id.toString();
         try {
+          // ── Beta admin bypass ──────────────────────────────────────────
+          const BETA_ADMIN_IDS = (process.env.BETA_ADMIN_TELEGRAM_IDS || "")
+            .split(",")
+            .map((id) => id.trim())
+            .filter(Boolean);
+
+          const isBetaAdmin = BETA_ADMIN_IDS.includes(adderId);
+
+          // ── Gate: capacity limit (MAX_TREES) ──────────────────────────
+          const MAX_TREES = parseInt(process.env.MAX_TREES || "5", 10);
+          const treeCount = await (prisma as any).tree.count({
+            where: { telegramChatId: { not: null } },
+          });
+
+          if (!isBetaAdmin && treeCount >= MAX_TREES) {
+            // Check if tree already exists (rejoin case — don't block re-adds)
+            const existingTree = await (prisma as any).tree.findUnique({
+              where: { telegramChatId: chatId },
+            });
+            if (existingTree) {
+              // Rejoin: existing tree, skip capacity gate
+              await ctx.api.sendMessage(chatId, rejoinMessage(existingTree.name), {
+                parse_mode: "Markdown",
+              });
+              return;
+            }
+
+            // No slots — reject with friendly message
+            const fallbackLang = "es";
+            const CAREERS_URL = process.env.CAREERS_URL || "https://trustmaker.app/careers";
+            const CONTACT_EMAIL = process.env.CONTACT_EMAIL || "hello@trustmaker.app";
+
+            const msg = t("common.beta_closed", fallbackLang, {
+              careersUrl: CAREERS_URL,
+              contactEmail: CONTACT_EMAIL,
+            });
+            await ctx.api.sendMessage(chatId, msg, { parse_mode: "Markdown" });
+
+            // Optional: save to waitlist
+            try {
+              await (prisma as any).waitlist.create({
+                data: {
+                  treeName: chat.title || `Grupo ${chatId}`,
+                  telegramChatId: chatId,
+                  contactUserId: adderId,
+                },
+              });
+            } catch (wlErr: any) {
+              console.warn("[Telegram Bot] Waitlist save failed:", wlErr.message);
+            }
+
+            console.log(
+              `[Telegram Bot] Capacity gate: rejected group ${chatId} (${chat.title || "unnamed"}) — ${treeCount}/${MAX_TREES} trees`
+            );
+            return;
+          }
+
+          // ── Gate: 1 group per user during beta ──────────────────────────
+          // Check if the adder already administers a tree
+          const adderTgId = BigInt(adderId);
+          const adderUser = await (prisma as any).user.findUnique({
+            where: { telegramUserId: adderTgId },
+            select: { id: true },
+          });
+
+          if (adderUser) {
+            const adminTrees = await (prisma as any).treeMember.count({
+              where: {
+                userId: adderUser.id,
+                role: "ADMIN",
+                status: "ACTIVE",
+              },
+            });
+
+            const MAX_USER_TREES = parseInt(process.env.MAX_TREES_PER_USER || "2", 10);
+            if (!isBetaAdmin && adminTrees >= MAX_USER_TREES) {
+              // Check if tree already exists (rejoin to same tree)
+              const existingTree = await (prisma as any).tree.findUnique({
+                where: { telegramChatId: chatId },
+              });
+              if (!existingTree) {
+                const fallbackLang = "es";
+                const CONTACT_EMAIL = process.env.CONTACT_EMAIL || "hello@trustmaker.app";
+
+                const msg = t("common.one_tree_per_user", fallbackLang, {
+                  contactEmail: CONTACT_EMAIL,
+                });
+                await ctx.api.sendMessage(chatId, msg, { parse_mode: "Markdown" });
+                console.log(
+                  `[Telegram Bot] 1-per-user gate: rejected group ${chatId} — user ${adderId} already admins a tree`
+                );
+                return;
+              }
+            }
+          }
+
           // Check if tree already exists for this group
           let tree = await (prisma as any).tree.findUnique({
             where: { telegramChatId: chatId },
@@ -722,10 +818,13 @@ export async function createBot(prisma: PrismaClient): Promise<Bot<BotContext> |
       }, 4000);
       ctx.replyWithChatAction("typing").catch(() => {});
 
-      const response = await routeToHermes(fullMessage, tree.id, userId, chatHistory, displayName);
-
-      // Stop typing indicator
-      clearInterval(typingInterval);
+      let response;
+      try {
+        response = await routeToHermes(fullMessage, tree.id, userId, chatHistory, displayName);
+      } finally {
+        // Stop typing indicator
+        clearInterval(typingInterval);
+      }
 
       if (response) {
         // Send text immediately

@@ -210,6 +210,35 @@ async function buildSystemPrompt(
     "- Si la API sandbox no está disponible (error de conexión), informa al usuario y NO uses workarounds con herramientas nativas.",
   );
 
+  // ── Office skills ─────────────────────────────────────────────────────
+  lines.push("");
+  lines.push("═══════ HABILIDADES DE OFIMÁTICA ═══════");
+  lines.push("");
+  lines.push("Como asistente del árbol, tienes capacidad de generar y entregar documentos:");
+  lines.push("");
+  lines.push("1. CONVERTIR MARKDOWN A PDF/HTML:");
+  lines.push(`   POST /api/trees/${treeId}/sandbox/convert`);
+  lines.push('   Body: { "content": "<markdown>", "format": "pdf" }');
+  lines.push('   Response: { "path": "documents/analysis_NNN.pdf", "format": "pdf", "size": N }');
+  lines.push("");
+  lines.push("2. ENVIAR DOCUMENTO AL CHAT DE TELEGRAM:");
+  lines.push("   POST /api/bot/send-document");
+  lines.push(`   Body: { "treeId": "${treeId}", "filePath": "<path del convert>", "caption": "..." }`);
+  lines.push('   Response: { "success": true, "messageId": N }');
+  lines.push("");
+  lines.push("⚠️  REGLA DE ORO DE OFIMÁTICA:");
+  lines.push("- Cuando termines cualquier análisis, DEBES:");
+  lines.push("  1. Guardar el .md en el sandbox (POST .../sandbox/write)");
+  lines.push("  2. Convertirlo a PDF (POST .../sandbox/convert)");
+  lines.push("  3. Enviarlo al chat (POST /api/bot/send-document)");
+  lines.push('- Luego responde: "He terminado el análisis. Te envío el documento 📄"');
+  lines.push("- Por defecto: formato PDF (mejor para compartir)");
+  lines.push('- Si el usuario pide otro formato: "¿Prefieres PDF o HTML?"');
+  lines.push("- Usa Authorization: Bearer HERMES_API_SERVER_KEY en todas las llamadas.");
+  lines.push("- La URL base es: http://localhost:3100");
+  lines.push("- Formatos soportados: PDF (por defecto), HTML");
+  lines.push("- Los documentos se entregan automáticamente, sin que el usuario lo pida.");
+
   // ── Response guidelines ───────────────────────────────────────────────
   lines.push("");
   lines.push(

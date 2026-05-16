@@ -43,5 +43,7 @@
   "language_selected": "✅ Idioma configurado. Usa /help para ver los comandos disponibles.",
   "language_help": "Usa /language para cambiar tu idioma en cualquier momento.",
   "language_button_en": "🇺🇸 English",
-  "language_button_es": "🇲🇽 Español"
+  "language_button_es": "🇲🇽 Español",
+  "beta_closed": "🏕️ ¡Hola! Trust Maker está en fase beta con cupos limitados, y en este momento ya estamos al máximo.\n\nSi te interesa:\n• ¿Quieres trabajar con nosotros? {{careersUrl}}\n• ¿Quieres invertir? Escríbenos a {{contactEmail}}\n\nTe guardamos en lista de espera y te avisamos cuando haya cupo. 🌳",
+  "one_tree_per_user": "🏕️ Cada persona puede administrar un solo grupo durante la beta. Ya tienes un árbol activo.\n\nSi necesitas otro, escríbenos a {{contactEmail}} y lo revisamos contigo. 🌳"
 }

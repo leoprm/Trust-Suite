@@ -1,6 +1,9 @@
 node_modules/
 dist/
 .env
+BACKLOG.md
+*.beta.*
+.env.*
 uploads/*
 !uploads/.gitkeep
 backend/uploads/*

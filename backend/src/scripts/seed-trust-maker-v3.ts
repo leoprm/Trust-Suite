@@ -286,13 +286,28 @@ async function main() {
     });
   }
 
-  // Delete demo users (don't silently ignore FK errors — they shouldn't happen if tree cleanup worked)
+  // Delete demo users — use raw SQL to bypass FK constraints from orphan tables
   const usernamesToDelete = [...USER_DEFS.map(u => u.username), ...AGENT_USER_DEFS.map(a => a.username)];
-  await prisma.user.deleteMany({ where: { username: { in: usernamesToDelete } } }).catch(() => {});
-  // Also clean up any remaining users with demo emails
   const demoEmails = ['@demo.com', '@demo.trust', '@trustmaker.demo', '@trustmaker.ai'];
-  for (const p of demoEmails) {
-    await prisma.user.deleteMany({ where: { email: { contains: p } } }).catch(() => {});
+
+  // Collect IDs of users that match demo patterns
+  const demoUserIds = await prisma.user.findMany({
+    where: {
+      OR: [
+        { username: { in: usernamesToDelete } },
+        ...demoEmails.map(p => ({ email: { contains: p } })),
+      ],
+    },
+    select: { id: true, username: true },
+  });
+
+  if (demoUserIds.length > 0) {
+    const ids = demoUserIds.map(u => `'${u.id}'`).join(',');
+    // Temporarily disable FK checks for seed cleanup — safe since we already cleaned
+    // the main dependency chain (Ideas, Needs, TreeMembers, Trees, etc.) above
+    await prisma.$executeRawUnsafe(`SET FOREIGN_KEY_CHECKS = 0`);
+    await prisma.$executeRawUnsafe(`DELETE FROM User WHERE id IN (${ids})`);
+    await prisma.$executeRawUnsafe(`SET FOREIGN_KEY_CHECKS = 1`);
   }
 
   console.log('   ✅ Cleaned.\n');

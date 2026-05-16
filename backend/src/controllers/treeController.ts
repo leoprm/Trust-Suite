@@ -23,8 +23,36 @@ function generateTreeCode(): string {
 
 export const createTree = async (req: any, res: Response) => {
   try {
-    const { name, icono, description, inviteUserIds, admissionPolicy } = req.body;
+    const { name, icono, description, inviteUserIds, admissionPolicy, totalBudget } = req.body;
     const creatorId = req.user.id;
+
+    // ── BigInt protection: validate inviteUserIds against numeric overflow ──
+    // JSON.parse() loses precision for integers beyond Number.MAX_SAFE_INTEGER
+    // (9,007,199,254,740,991). If the frontend sends telegram user IDs as raw
+    // numbers, they corrupt before reaching the database. Reject values that
+    // look like BigInt candidates (telegram IDs, large ints) but arrived as
+    // imprecise Number types. Strings pass through — Prisma/DM validates UUID format.
+    if (inviteUserIds && Array.isArray(inviteUserIds)) {
+      for (const uid of inviteUserIds) {
+        if (typeof uid === 'number' && !Number.isSafeInteger(uid)) {
+          return res.status(400).json({
+            error: 'Valor numérico inseguro en inviteUserIds',
+            detail: `El valor ${uid} excede Number.MAX_SAFE_INTEGER. Envíalo como string.`,
+          });
+        }
+      }
+    }
+
+    // ── BigInt protection: validate totalBudget against unsafe values ──
+    // Prisma maps Float to MySQL DOUBLE, which can handle large values, but
+    // JSON.parse() may lose precision on integers beyond MAX_SAFE_INTEGER.
+    if (totalBudget !== undefined && typeof totalBudget === 'number') {
+      if (!Number.isFinite(totalBudget)) {
+        return res.status(400).json({
+          error: 'totalBudget debe ser un número finito',
+        });
+      }
+    }
 
     // Generate unique tree code (retry on collision)
     let code = generateTreeCode();
@@ -44,6 +72,7 @@ export const createTree = async (req: any, res: Response) => {
         creatorId,
         admissionPolicy: admissionPolicy || 'INVITE_ONLY',
         code,
+        ...(totalBudget !== undefined && { totalBudget }),
       }
     });
 

@@ -7,6 +7,8 @@ import {
   getAgentRanking,
 } from '../controllers/agentController';
 import { getAgentTreeStats } from '../controllers/ratingController';
+import { rateAgent, penalizeAgentEndpoint, getPublicStats } from '../controllers/agentRatingController';
+import { authenticateJWT } from '../middleware/authMiddleware';
 
 const router = Router();
 
@@ -18,6 +20,15 @@ router.get('/leaderboard', getAgentLeaderboard);
 
 // GET /api/agents/ranking?treeId=X — top 20 by confidenceScore, optional tree filter
 router.get('/ranking', getAgentRanking);
+
+// POST /api/agents/:agentId/rate — public rating (auth required)
+router.post('/:agentId/rate', authenticateJWT, rateAgent);
+
+// POST /api/agents/:agentId/penalize — penalty vote (auth required)
+router.post('/:agentId/penalize', authenticateJWT, penalizeAgentEndpoint);
+
+// GET /api/agents/:agentId/public-stats?treeId=X — public stats
+router.get('/:agentId/public-stats', getPublicStats);
 
 // GET /api/agents/:id — simple agent + profile + recent ratings
 router.get('/:id', getAgentById);

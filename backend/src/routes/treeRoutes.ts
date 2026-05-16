@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { createTree, joinTree, getMyTrees, getGlobalTrees, getTreeMembers, getTree, leaveTree, inviteMember, removeMember, generateGuestToken, consumeGuestToken, updateTree, deleteTree, getNetworkGraph, getPendingEvidence, toggleCrisisMode, broadcastCrisisSignal, updateMemberPower, inviteAI, getMyLevel, getTreeLedger, createSubTree, getTreeHierarchy, suggestStructure, setBudgetAllocation, getBudgetOverview, getSkillPricing, getMigrationSuggestions, getTechStack, getTreeServers } from '../controllers/treeController';
+import { upsertInvestmentProfileHandler, getInvestmentProfileHandler } from '../controllers/investmentController';
 import { authenticateJWT, optionalAuth } from '../middleware/authMiddleware';
 
 const router = Router();
@@ -40,6 +41,8 @@ router.delete('/:treeId/members/:userId', removeMember);
 router.patch('/:id/members/:userId/power', updateMemberPower);
 router.delete('/:id/leave', leaveTree);
 router.put('/:id', updateTree);
+router.put('/:id/investment-profile', upsertInvestmentProfileHandler);
+router.get('/:id/investment-profile', getInvestmentProfileHandler);
 router.post('/:id/invite-ai', inviteAI);
 router.delete('/:id', deleteTree);
 

@@ -89,6 +89,10 @@ import solutionRoutes from './routes/solutionRoutes';
 import serverRoutes from './routes/serverRoutes';
 import botRoutes from './routes/botRoutes';
 import teamRoutes from './routes/teamRoutes';
+import adminRoutes from './routes/adminRoutes';
+import structureRoutes from './routes/structureRoutes';
+import investmentRoutes from './routes/investmentRoutes';
+// Note: roleRoutes is registered inline below to avoid circular dependency with eventLogService
 import { createBot } from './bot/index';
 import { startScheduler } from './bot/scheduler';
 import { initDisputeService } from './services/telegramBotService';
@@ -266,6 +270,14 @@ app.use('/api/solutions', solutionRoutes);
 app.use('/api/servers', serverRoutes);
 app.use('/api/bot', botRoutes);
 app.use('/api/teams', teamRoutes);
+app.use('/api/admin', adminRoutes);
+app.use('/api/structure', structureRoutes);
+app.use('/api/investment', investmentRoutes);
+
+// Role recommendation endpoints
+import { recommendRoles, feedbackRoles } from './controllers/roleRecommendationController';
+app.post('/api/roles/recommend', recommendRoles);
+app.post('/api/roles/feedback', authenticateJWT, feedbackRoles);
 
 // Tree-scoped agent endpoints
 app.get('/api/trees/:id/agents', getTreeAgents);

@@ -52,10 +52,10 @@ export async function buildTreeContext(treeId: string, opts?: { maxNeeds?: numbe
       take: maxNeeds,
     }),
     prisma.treeMember.findMany({
-      where: { treeId, status: 'ACTIVE' },
+      where: { treeId, status: 'ACTIVE', user: { isNot: null } },
       include: { user: { select: { username: true, skills: true } } },
       take: maxMembers,
-    }),
+    }).catch(() => []),
     prisma.treeMember.count({ where: { treeId, status: 'ACTIVE' } }),
     prisma.need.count({ where: { treeId } }),
     prisma.need.count({ where: { treeId, status: 'OPEN' } }),
