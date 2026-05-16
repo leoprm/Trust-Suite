@@ -166,12 +166,11 @@ Los árboles pueden gestionar servidores remotos vía SSH. Hermes Agent ejecuta 
 
 ## 💰 Reglas económicas
 
-Trust Maker separa estrictamente tres formas de valor:
+Trust Maker separa estrictamente dos formas de valor:
 
 | Capa | Rol | Regla |
 |---|---|---|
 | **Fiat** | Ledger externo | Financia recursos e infraestructura. **No compra autoridad.** |
-| **Berries** | Circulación interna | Coordinan trabajo dentro del Tree. Caducan a 12 meses. |
 | **XP** | Reputación verificable | Se gana con trabajo, no se compra. |
 
 ---
