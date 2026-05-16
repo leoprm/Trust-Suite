@@ -294,6 +294,30 @@ export async function createBot(prisma: PrismaClient): Promise<Bot<BotContext> |
     }
   }
 
+  /** Track Ari's 2nd/3rd message per tree — used as welcome-reply anchor. */
+  const _introCounts = new Map<string, number>();
+  async function trackIntroMessage(
+    prisma: PrismaClient,
+    treeId: string,
+    messageId: number,
+  ) {
+    const count = (_introCounts.get(treeId) || 0) + 1;
+    _introCounts.set(treeId, count);
+    if (count === 2 || count === 3) {
+      // Save if not already set
+      const tree = await (prisma as any).tree.findUnique({
+        where: { id: treeId },
+        select: { introMessageId: true },
+      });
+      if (!tree?.introMessageId) {
+        await (prisma as any).tree.update({
+          where: { id: treeId },
+          data: { introMessageId: BigInt(messageId) },
+        });
+      }
+    }
+  }
+
   // ── Onboarding multi-step: flujo de configuración del árbol ──────────
   // Paso 1: objetivos → Paso 2: subárbol? (inline buttons) → Paso 3: árbol padre → Paso 4: WhatsApp
 
@@ -1331,12 +1355,22 @@ export async function createBot(prisma: PrismaClient): Promise<Bot<BotContext> |
       }
 
       if (response) {
-        // Send text immediately
-        const messages = formatForChannel(
-          { text: response.text },
-          "telegram",
-        );
-        await sendViaTelegram(ctx, messages);
+        // Send text immediately (with Markdown fallback + intro tracking)
+        let sentMsg: any;
+        try {
+          sentMsg = await ctx.reply(response.text, { parse_mode: "Markdown" });
+        } catch (markdownErr: any) {
+          if (markdownErr.message?.includes("can't parse entities")) {
+            sentMsg = await ctx.reply(response.text);
+          } else {
+            throw markdownErr;
+          }
+        }
+
+        // Track Ari's intro message ID (2nd or 3rd msg per tree → reply anchor)
+        if (sentMsg?.message_id) {
+          trackIntroMessage(prisma, tree.id, sentMsg.message_id).catch(() => {});
+        }
 
         // Voice generation: fire-and-forget (TTS se mantiene)
         const userLang = ctx.from ? await getUserLanguage(prisma, ctx.from.id) : undefined;
@@ -1893,6 +1927,54 @@ export async function createBot(prisma: PrismaClient): Promise<Bot<BotContext> |
       }
     } catch (err) {
       // Non-critical — silently ignore
+    }
+  });
+
+  // ── Chat member: saludar a nuevos miembros ───────────────────────────
+  bot.on("chat_member", async (ctx) => {
+    const chatType = ctx.chat?.type;
+    if (chatType !== "group" && chatType !== "supergroup") return;
+
+    const newMember = ctx.update.chat_member.new_chat_member;
+    const oldMember = ctx.update.chat_member.old_chat_member;
+
+    // Solo cuando alguien ENTRA (estaba left/kicked, ahora member)
+    if (oldMember.status !== "left" && oldMember.status !== "kicked") return;
+    if (newMember.status !== "member") return;
+
+    // No saludar al bot mismo
+    if (newMember.user.is_bot) return;
+
+    const chatId = ctx.chat.id.toString();
+    try {
+      const tree = await (prisma as any).tree.findUnique({
+        where: { telegramChatId: chatId },
+        select: { id: true, language: true, introMessageId: true },
+      });
+      if (!tree) return;
+
+      const lang = tree.language || "es";
+      const userName = newMember.user.first_name || "nuevo miembro";
+      const mention = newMember.user.username
+        ? `@${newMember.user.username}`
+        : userName;
+
+      const welcomeText = lang === "en"
+        ? `Hi! ${mention} I'm Ari, the multi-agent assistant for this group 👋`
+        : `¡Hola! ${mention} soy Ari, la asistente multi agente del grupo 👋`;
+
+      if (tree.introMessageId) {
+        await ctx.api.sendMessage(chatId, welcomeText, {
+          reply_parameters: {
+            message_id: Number(tree.introMessageId),
+            chat_id: chatId,
+          },
+        });
+      } else {
+        await ctx.api.sendMessage(chatId, welcomeText);
+      }
+    } catch (err: any) {
+      console.error("[welcome] Error greeting new member:", err.message);
     }
   });
 
