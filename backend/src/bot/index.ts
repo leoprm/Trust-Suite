@@ -15,6 +15,7 @@ import {
 } from "./satisfaction";
 import { recoverPendingApprovals } from "./approval";
 import { checkPaymentAccess } from "./payment";
+import { initPaymentService, computePaymentObligations, formatPagarResult } from "../services/telegramBotService";
 import { formatForChannel, sendViaTelegram } from "./channelAdapter";
 import { textToSpeech } from "../services/ttsService";
 import { TreeSandbox } from "../services/treeSandbox";
@@ -200,58 +201,42 @@ export async function createBot(prisma: PrismaClient): Promise<Bot<BotContext> |
     await ctx.reply(lines.join("\n"), { parse_mode: "Markdown" });
   });
 
-  // ── /pagar: mostrar info de pago ───────────────────────────────────────
+  // ── /pagar: mostrar info de pago (centralizado + individual) ──────────
   bot.command("pagar", async (ctx) => {
     const tgUser = ctx.from;
     if (!tgUser) {
-      await ctx.reply("⚠️ No se pudo identificar tu cuenta de Telegram.");
+      await ctx.reply(t("common:not_identified", "es"));
       return;
     }
 
-    const telegramId = BigInt(tgUser.id);
+    // Resolve user language for i18n
+    const lng = await resolveUserLanguage(prisma, ctx) ?? "es";
+
     const user = await (prisma as any).user.findUnique({
-      where: { telegramUserId: telegramId },
+      where: { telegramUserId: BigInt(tgUser.id) },
       select: { id: true },
     });
 
     if (!user) {
       await ctx.reply(
-        "⚠️ No tienes una cuenta vinculada. Usa /start para vincularte a Trust Maker."
+        lng === "en"
+          ? "⚠️ No account linked. Use /start to link your Trust Maker account."
+          : "⚠️ No tienes una cuenta vinculada. Usa /start para vincularte a Trust Maker.",
+        { parse_mode: "Markdown" },
       );
       return;
     }
 
-    const memberships = await (prisma as any).treeMember.findMany({
-      where: { userId: user.id, status: "ACTIVE" },
-      include: {
-        tree: { select: { name: true, icono: true } },
-      },
-    });
-
-    if (memberships.length === 0) {
-      await ctx.reply("🌳 No eres miembro activo de ningún árbol.");
+    const result = await computePaymentObligations(tgUser.id);
+    if (!result) {
+      await ctx.reply(
+        "⚠️ Error al calcular tus obligaciones de pago. Intenta más tarde.",
+      );
       return;
     }
 
-    const paymentLink = process.env.PAYMENT_LINK || "https://trustmaker.app/pagos";
-    const lines: string[] = ["💳 *Pagos*:\n"];
-
-    let total = 0;
-    for (const m of memberships) {
-      const fee = m.monthlyFee ?? 0;
-      total += fee;
-      const icono = m.tree.icono ?? "🌳";
-      lines.push(`${icono} *${m.tree.name}*: ${fee} CLP`);
-    }
-
-    lines.push(
-      "",
-      `💰 Total: ${total} CLP/mes`,
-      "",
-      `Para pagar, visita: ${paymentLink}`
-    );
-
-    await ctx.reply(lines.join("\n"), { parse_mode: "Markdown" });
+    const message = formatPagarResult(result, lng);
+    await ctx.reply(message, { parse_mode: "Markdown" });
   });
 
   // ── Welcome / rejoin messages ─────────────────────────────────────────
@@ -1317,6 +1302,9 @@ export async function createBot(prisma: PrismaClient): Promise<Bot<BotContext> |
   }).catch((err) => {
     console.error("[Telegram Bot] ERROR al iniciar polling:", err.message);
   });
+
+  // Initialize payment service (used by /pagar command)
+  initPaymentService(prisma, bot);
 
   return bot;
 }

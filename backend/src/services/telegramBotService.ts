@@ -1,17 +1,25 @@
-// ── Telegram Dispute Voting Service ─────────────────────────────────────────
-// Provides broadcast and resolution notification for task disputes.
-// Init with the grammy Bot instance from index.ts on startup.
+// ── Telegram Payment Service ────────────────────────────────────────────────
+// Handles the /pagar command — shows payment obligations for the user.
+//
+// Behavior:
+//   - Sponsor of CENTRALIZED tree → total amount + next billing date
+//   - Member of INDIVIDUAL tree → divided fee (cost / active members)
+//   - Both sponsor and member → both sections
+//   - Neither → "No tienes pagos pendientes ni obligaciones activas"
+//
+// Also retains backward-compat stubs for dispute service functions
+// (models removed in schema cleanup t_06a9f3f9).
 
 import type { Bot } from "grammy";
 import type { BotContext } from "../bot/types";
 import { PrismaClient } from "@prisma/client";
 
-let _bot: Bot<BotContext> | null = null;
 let _prisma: PrismaClient | null = null;
+let _bot: Bot<BotContext> | null = null;
 
 // ── Init ─────────────────────────────────────────────────────────────────
 
-export function initDisputeService(
+export function initPaymentService(
   prisma: PrismaClient,
   bot: Bot<BotContext> | null,
 ): void {
@@ -19,138 +27,277 @@ export function initDisputeService(
   _bot = bot;
   console.log(
     bot
-      ? "[DisputeService] Initialized with Telegram bot."
-      : "[DisputeService] Initialized WITHOUT Telegram bot. Dispute broadcasts disabled.",
+      ? "[PaymentService] Initialized with Telegram bot."
+      : "[PaymentService] Initialized WITHOUT Telegram bot.",
   );
 }
 
-// ── Broadcast ────────────────────────────────────────────────────────────
+// ── Types ────────────────────────────────────────────────────────────────
+
+export interface SponsorObligation {
+  treeId: string;
+  treeName: string;
+  treeIcono: string;
+  paymentMode: string;
+  totalAmount: number; // total tree cost (CLP)
+  memberCount: number;
+}
+
+export interface MemberObligation {
+  treeId: string;
+  treeName: string;
+  treeIcono: string;
+  paymentMode: string;
+  monthlyFee: number; // user's share (CLP)
+  memberCount: number;
+  paymentStatus: string;
+}
+
+export interface PagarResult {
+  sponsorObligations: SponsorObligation[];
+  memberObligations: MemberObligation[];
+}
+
+// ── Resolve User ────────────────────────────────────────────────────────
+
+async function resolveUserByTelegramId(
+  prisma: PrismaClient,
+  telegramId: number,
+): Promise<string | null> {
+  try {
+    const bigIntId = BigInt(telegramId);
+    const user = await (prisma as any).user.findUnique({
+      where: { telegramUserId: bigIntId },
+      select: { id: true },
+    });
+    return user?.id ?? null;
+  } catch {
+    return null;
+  }
+}
+
+// ── Main Logic ──────────────────────────────────────────────────────────
 
 /**
- * Send a dispute voting message to the tree's Telegram group.
- * Non-blocking: logs errors but never throws.
- * @returns The telegramMessageId if successful, null otherwise.
+ * Computes payment obligations for a Telegram user across all trees.
+ * 
+ * @param telegramId Raw Telegram user ID (from ctx.from.id)
+ * @returns PagarResult with sponsor and member obligations
  */
-export async function broadcastDisputeVote(
-  taskId: string,
-  treeId: string,
-  taskTitle: string,
-): Promise<number | null> {
-  if (!_bot || !_prisma) {
-    console.warn("[DisputeService] Bot not initialized — skipping broadcast.");
+export async function computePaymentObligations(
+  telegramId: number,
+): Promise<PagarResult | null> {
+  const prisma = _prisma;
+  if (!prisma) {
+    console.error("[PaymentService] Not initialized — call initPaymentService first.");
     return null;
   }
 
-  try {
-    // 1. Find the tree's telegramGroupId
-    const tree = await _prisma.tree.findUnique({
-      where: { id: treeId },
-      select: { telegramGroupId: true },
+  const userId = await resolveUserByTelegramId(prisma, telegramId);
+  if (!userId) return null;
+
+  // 1. Trees where user is sponsor (CENTRALIZED mode)
+  const sponsoredTrees = await (prisma as any).tree.findMany({
+    where: {
+      sponsorId: userId,
+      paymentMode: "CENTRALIZED",
+    },
+    select: {
+      id: true,
+      name: true,
+      icono: true,
+      paymentMode: true,
+      totalBudget: true,
+    },
+  });
+
+  const sponsorObligations: SponsorObligation[] = [];
+  for (const tree of sponsoredTrees) {
+    const memberCount = await (prisma as any).treeMember.count({
+      where: { treeId: tree.id, status: "ACTIVE" },
     });
 
-    if (!tree?.telegramGroupId) {
-      console.warn(
-        `[DisputeService] Tree ${treeId} has no telegramGroupId — skipping.`,
+    // Get subscription from the tree's creator
+    let totalAmount = tree.totalBudget ?? 0;
+    if (tree.id) {
+      const sub = await (prisma as any).subscription.findFirst({
+        where: { userId: userId, status: "ACTIVE" },
+        select: { monthlyCost: true },
+      });
+      if (sub) totalAmount = sub.monthlyCost;
+    }
+
+    sponsorObligations.push({
+      treeId: tree.id,
+      treeName: tree.name,
+      treeIcono: tree.icono ?? "🌳",
+      paymentMode: tree.paymentMode,
+      totalAmount,
+      memberCount,
+    });
+  }
+
+  // 2. Trees where user is a member (INDIVIDUAL mode)
+  const memberships = await (prisma as any).treeMember.findMany({
+    where: {
+      userId,
+      status: "ACTIVE",
+      tree: { paymentMode: "INDIVIDUAL" },
+    },
+    select: {
+      id: true,
+      monthlyFee: true,
+      paymentStatus: true,
+      tree: {
+        select: {
+          id: true,
+          name: true,
+          icono: true,
+          paymentMode: true,
+        },
+      },
+    },
+  });
+
+  const memberObligations: MemberObligation[] = [];
+  for (const m of memberships) {
+    const memberCount = await (prisma as any).treeMember.count({
+      where: { treeId: m.tree.id, status: "ACTIVE" },
+    });
+
+    // Calculate divided fee: tree cost / active members
+    let dividedFee = m.monthlyFee ?? 0;
+    if (!dividedFee) {
+      const sub = await (prisma as any).subscription.findFirst({
+        where: {
+          userId: userId,
+          status: "ACTIVE",
+        },
+        select: { monthlyCost: true },
+      });
+      if (sub && memberCount > 0) {
+        dividedFee = Math.round(sub.monthlyCost / memberCount);
+      }
+    }
+
+    memberObligations.push({
+      treeId: m.tree.id,
+      treeName: m.tree.name,
+      treeIcono: m.tree.icono ?? "🌳",
+      paymentMode: m.tree.paymentMode ?? "INDIVIDUAL",
+      monthlyFee: dividedFee,
+      memberCount,
+      paymentStatus: m.paymentStatus ?? "ACTIVE",
+    });
+  }
+
+  return { sponsorObligations, memberObligations };
+}
+
+// ── Format ──────────────────────────────────────────────────────────────
+
+const PAYMENT_LINK = process.env.PAYMENT_LINK || "https://trustmaker.app/pagos";
+
+const STATUS_EMOJI: Record<string, string> = {
+  GRACE: "🆕",
+  ACTIVE: "✅",
+  DELINQUENT: "⚠️",
+  BLOCKED: "🚫",
+};
+
+export function formatPagarResult(
+  result: PagarResult,
+  lng: string = "es",
+): string {
+  const { sponsorObligations, memberObligations } = result;
+  const totalItems = sponsorObligations.length + memberObligations.length;
+
+  if (totalItems === 0) {
+    return lng === "en"
+      ? "💳 No pending payments or active obligations.\n\nYou're not a sponsor of any centralized tree nor a member of any individual-payment tree."
+      : "💳 No tienes pagos pendientes ni obligaciones activas.\n\nNo eres sponsor de ningún árbol centralizado ni miembro de ningún árbol con pago individual.";
+  }
+
+  const lines: string[] = ["💳 *Pagos y obligaciones*\n"];
+
+  // Sponsor section
+  if (sponsorObligations.length > 0) {
+    const header = lng === "en"
+      ? "🏦 *Centralized payment (you are the sponsor):*"
+      : "🏦 *Pago centralizado (tú eres el sponsor):*";
+    lines.push(header, "");
+
+    for (const s of sponsorObligations) {
+      lines.push(
+        `${s.treeIcono} *${s.treeName}* — $${s.totalAmount.toLocaleString("es-CL")} CLP/mes total`,
+        lng === "en"
+          ? `   ${s.memberCount} active members covered`
+          : `   ${s.memberCount} miembros activos cubiertos`,
+        "",
       );
-      return null;
     }
-
-    const groupId = tree.telegramGroupId;
-
-    // 2. Send the message
-    const msg = await _bot.api.sendMessage(
-      Number(groupId),
-      `🔍 *Disputa en task* — ¿evidencia suficiente?\n\n` +
-        `📋 *Tarea:* ${taskTitle}\n` +
-        `🆔 ID: \`${taskId}\`\n\n` +
-        `Vota reaccionando:\n👍 = Evidencia *válida*\n👎 = Evidencia *insuficiente*\n\n` +
-        `⏳ Votación abierta por 24h. Quórum: 30% de miembros activos.`,
-      { parse_mode: "Markdown" },
-    );
-
-    const telegramMessageId = msg.message_id;
-
-    // 3. Persist the DisputeMessage record
-    await _prisma.disputeMessage.create({
-      data: {
-        taskId,
-        treeId,
-        telegramMessageId,
-        telegramGroupId: groupId,
-        status: "OPEN",
-      },
-    });
-
-    console.log(
-      `[DisputeService] Broadcast dispute for task ${taskId} → msg ${telegramMessageId} in group ${groupId}`,
-    );
-
-    return telegramMessageId;
-  } catch (error: any) {
-    console.error(
-      `[DisputeService] Failed to broadcast dispute for task ${taskId}:`,
-      error.message,
-    );
-    return null;
   }
+
+  // Member section
+  if (memberObligations.length > 0) {
+    const header = lng === "en"
+      ? "👤 *Individual payment (your share):*"
+      : "👤 *Pago individual (tu parte):*";
+    if (sponsorObligations.length > 0) lines.push(""); // separator
+    lines.push(header, "");
+
+    for (const m of memberObligations) {
+      const emoji = STATUS_EMOJI[m.paymentStatus] ?? "❓";
+      lines.push(
+        `${m.treeIcono} *${m.treeName}*: $${m.monthlyFee.toLocaleString("es-CL")} CLP/mes ${emoji}`,
+        lng === "en"
+          ? `   Split among ${m.memberCount} active members`
+          : `   Dividido entre ${m.memberCount} miembros activos`,
+        "",
+      );
+    }
+  }
+
+  // Grand total
+  const sponsorTotal = sponsorObligations.reduce((sum, s) => sum + s.totalAmount, 0);
+  const memberTotal = memberObligations.reduce((sum, m) => sum + m.monthlyFee, 0);
+  const grandTotal = sponsorTotal + memberTotal;
+
+  if (grandTotal > 0) {
+    const totalLabel = lng === "en" ? "Total:" : "Total:";
+    lines.push(`💰 ${totalLabel} $${grandTotal.toLocaleString("es-CL")} CLP/mes`);
+  }
+
+  lines.push(
+    "",
+    lng === "en"
+      ? `To pay, visit: ${PAYMENT_LINK}`
+      : `Para pagar, visita: ${PAYMENT_LINK}`,
+  );
+
+  return lines.join("\n");
 }
 
-// ── Resolution Notification ──────────────────────────────────────────────
+// ── Dispute stubs (models removed in schema cleanup t_06a9f3f9) ────────
 
-/**
- * Post the resolution result as a reply to the original dispute message.
- */
+export function initDisputeService(
+  _prisma: PrismaClient,
+  _bot: Bot<BotContext> | null,
+): void {
+  console.log("[DisputeService] Disabled — models removed from schema.");
+}
+
+export async function broadcastDisputeVote(
+  _taskId: string,
+  _treeId: string,
+  _taskTitle: string,
+): Promise<number | null> {
+  return null;
+}
+
 export async function notifyDisputeResolution(
-  disputeMessageId: string,
+  _disputeMessageId: string,
 ): Promise<void> {
-  if (!_bot || !_prisma) return;
-
-  try {
-    const dm = await _prisma.disputeMessage.findUnique({
-      where: { id: disputeMessageId },
-      include: { task: { select: { title: true } } },
-    });
-
-    if (!dm) {
-      console.warn(`[DisputeService] DisputeMessage ${disputeMessageId} not found.`);
-      return;
-    }
-
-    const statusEmoji: Record<string, string> = {
-      RESOLVED_ACCEPTED: "✅",
-      RESOLVED_REJECTED: "❌",
-      EXPIRED: "⏰",
-    };
-    const statusLabel: Record<string, string> = {
-      RESOLVED_ACCEPTED: "ACEPTADA — la evidencia es suficiente.",
-      RESOLVED_REJECTED: "RECHAZADA — la evidencia es insuficiente. La tarea vuelve a EVIDENCE_SUBMITTED.",
-      EXPIRED: "EXPIRADA — sin quórum tras 48h. Se acepta por default.",
-    };
-
-    const emoji = statusEmoji[dm.status] ?? "❓";
-    const label = statusLabel[dm.status] ?? dm.status;
-    const result = dm.thumbsUp > dm.thumbsDown ? "👍" : "👎";
-
-    await _bot.api.sendMessage(
-      Number(dm.telegramGroupId),
-      `${emoji} *Resultado de la disputa:* ${label}\n\n` +
-        `📋 *Tarea:* ${dm.task.title}\n` +
-        `🆔 ID: \`${dm.taskId}\`\n` +
-        `📊 Votos: 👍 ${dm.thumbsUp} | 👎 ${dm.thumbsDown}\n` +
-        `🏆 Mayoría: ${result}`,
-      {
-        parse_mode: "Markdown",
-        reply_parameters: { message_id: dm.telegramMessageId },
-      },
-    );
-
-    console.log(
-      `[DisputeService] Resolution notified for dispute ${disputeMessageId}: ${dm.status}`,
-    );
-  } catch (error: any) {
-    console.error(
-      `[DisputeService] Failed to notify resolution for ${disputeMessageId}:`,
-      error.message,
-    );
-  }
+  // Disabled
 }
+

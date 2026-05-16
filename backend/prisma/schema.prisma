@@ -102,6 +102,11 @@ enum PaymentStatus {
   BLOCKED
 }
 
+enum PaymentMode {
+  INDIVIDUAL
+  CENTRALIZED
+}
+
 model User {
   id              String    @id @default(uuid())
   username        String    @unique
@@ -140,13 +145,14 @@ model Tree {
   creatorId       String?
   admissionPolicy AdmissionPolicy @default(INVITE_ONLY)
   telegramChatId  String?         @unique
-  telegramGroupId BigInt?         @unique
   parentTreeId    String?
   whatsappGroupId String?         // ID del grupo de WhatsApp vinculado
   code            String?         @unique  // Código corto para vincular subárboles (ej: ABC123)
   language        String          @default("es")
   objectives      String?         @db.Text  // T24: tipo de organización y objetivos
   totalBudget     Float?          // Presupuesto total del árbol (CLP)
+  paymentMode     PaymentMode     @default(INDIVIDUAL)
+  sponsorId       String?         // User ID del sponsor si paymentMode = CENTRALIZED
   createdAt       DateTime        @default(now())
   members         TreeMember[]
   agentMemberships AgentMembership[]
@@ -158,7 +164,6 @@ model Tree {
   ratings          Rating[]
   chatMessages     ChatMessage[]
   ledgerEntries    TransactionLedger[]
-  disputeMessages  DisputeMessage[]
   sandbox          TreeSandbox?
   skillPricing     SkillPricing[]
   budgetAllocationsChild BudgetAllocation[] @relation("ChildBudget")
@@ -433,7 +438,6 @@ model Task {
   creator    User  @relation("TaskCreator", fields: [creatorId], references: [id])
   disputedBy User? @relation("TaskDisputer", fields: [disputedById], references: [id], onDelete: SetNull)
   ratings    Rating[]
-  disputeMessages DisputeMessage[]
 
   @@index([treeId])
   @@index([assigneeId])
@@ -634,53 +638,7 @@ model BudgetAllocation {
   @@index([parentTreeId])
 }
 
-// ── Telegram Dispute Voting ──────────────────────────────────────────────
 
-enum DisputeMessageStatus {
-  OPEN
-  RESOLVED_ACCEPTED
-  RESOLVED_REJECTED
-  EXPIRED
-}
-
-enum DisputeVoteChoice {
-  UP
-  DOWN
-}
-
-model DisputeMessage {
-  id                String               @id @default(uuid())
-  taskId            String
-  treeId            String
-  telegramMessageId Int
-  telegramGroupId   BigInt
-  status            DisputeMessageStatus @default(OPEN)
-  thumbsUp          Int                  @default(0)
-  thumbsDown        Int                  @default(0)
-  createdAt         DateTime             @default(now())
-  resolvedAt        DateTime?
-
-  task  Task                 @relation(fields: [taskId], references: [id], onDelete: Cascade)
-  tree  Tree                 @relation(fields: [treeId], references: [id], onDelete: Cascade)
-  votes TelegramDisputeVote[]
-
-  @@index([taskId])
-  @@index([treeId])
-  @@index([status])
-  @@index([telegramMessageId, telegramGroupId])
-}
-
-model TelegramDisputeVote {
-  id                String            @id @default(uuid())
-  disputeMessageId  String
-  telegramUserId    BigInt
-  vote              DisputeVoteChoice
-  createdAt         DateTime          @default(now())
-
-  disputeMessage DisputeMessage @relation(fields: [disputeMessageId], references: [id], onDelete: Cascade)
-
-  @@unique([disputeMessageId, telegramUserId])
-}
 
 model TreeSandbox {
   id        String   @id @default(uuid())

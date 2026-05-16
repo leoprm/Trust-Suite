@@ -34,7 +34,6 @@ import {
   createNeedHelp,
   noMemberError,
   formatCuota,
-  formatPagar,
 } from "./formatters";
 import { isComplexNeed, sendApprovalPoll, scheduleApprovalClose } from "./approval";
 
@@ -504,35 +503,18 @@ async function handlePagar(
 ): Promise<string> {
   if (!tree) return noTreeError(lng);
 
-  const userId = await resolveTelegramUser(prisma, ctx);
-  if (!userId) return t("errors:not_identified_cuota", lng);
+  const tgUser = ctx.from;
+  if (!tgUser) return t("errors:not_identified_cuota", lng);
 
-  const member = await (prisma as any).treeMember.findUnique({
-    where: { userId_treeId: { userId, treeId: tree.id } },
-    select: { id: true },
-  });
-  if (!member) return noMemberError(lng);
+  const { computePaymentObligations, formatPagarResult } = await import("../services/telegramBotService");
+  const result = await computePaymentObligations(tgUser.id);
+  if (!result) {
+    return lng === "en"
+      ? "⚠️ Could not compute your payment obligations. Try again later."
+      : "⚠️ Error al calcular tus obligaciones de pago. Intenta más tarde.";
+  }
 
-  // Balance
-  const balance = await (prisma as any).memberBalance.findUnique({
-    where: { memberId: member.id },
-    select: { availableBalance: true, pendingBalance: true },
-  });
-
-  // Splits
-  const splitsRaw = await (prisma as any).paymentSplit.findMany({
-    where: { memberId: member.id },
-    include: { need: { select: { title: true } } },
-    orderBy: { createdAt: "desc" },
-  });
-
-  const splits = splitsRaw.map((s: any) => ({
-    needTitle: s.need?.title ?? "(sin necesidad)",
-    percentage: s.percentage,
-    reason: s.reason,
-  }));
-
-  return formatPagar(balance, splits, lng);
+  return formatPagarResult(result, lng);
 }
 
 // ── Dispatcher ─────────────────────────────────────────────────────────────
