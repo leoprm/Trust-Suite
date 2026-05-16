@@ -33,6 +33,7 @@ async function buildSystemPrompt(
   prisma: PrismaClient,
   treeId: string,
   userId: string,
+  displayName?: string,
 ): Promise<string> {
   const lines: string[] = [];
 
@@ -143,10 +144,11 @@ async function buildSystemPrompt(
     where: { telegramUserId: BigInt(userId) },
     select: { username: true, id: true },
   });
-  if (tgUser) {
+  if (tgUser || displayName) {
+    const name = displayName || tgUser?.username || userId;
     lines.push("");
-    lines.push(`Current user: ${tgUser.username} (id: ${tgUser.id})`);
-    lines.push("Address this user by their username when responding.");
+    lines.push(`Current user: ${name} (Telegram ID: ${userId})`);
+    lines.push("Address this user by their name when responding.");
   }
 
   // ── Sandbox tools ────────────────────────────────────────────────────
@@ -246,13 +248,14 @@ export async function routeToHermes(
   treeId: string,
   userId: string,
   chatHistory?: ChatMessage[],
+  displayName?: string,
 ): Promise<HermesBridgeResponse | null> {
   const API_SERVER_KEY = process.env.HERMES_API_SERVER_KEY ?? "";
 
   // ── Build system prompt with tree context from DB ─────────────────────
   // We need a Prisma instance — use dynamic import to avoid circular deps
   const { prisma } = await import("../index");
-  const systemPrompt = await buildSystemPrompt(prisma, treeId, userId);
+  const systemPrompt = await buildSystemPrompt(prisma, treeId, userId, displayName);
 
   // ── Build messages array ──────────────────────────────────────────────
   const messages: ChatMessage[] = [

@@ -628,7 +628,7 @@ export async function createBot(prisma: PrismaClient): Promise<Bot<BotContext> |
       // Typing indicator
       ctx.replyWithChatAction("typing").catch(() => {});
 
-      const response = await routeToHermes(fullMessage, treeId, userId);
+      const response = await routeToHermes(fullMessage, treeId, userId, undefined, displayName);
       if (response) {
         await ctx.reply(response.text, { parse_mode: "Markdown" });
 
@@ -737,7 +737,7 @@ export async function createBot(prisma: PrismaClient): Promise<Bot<BotContext> |
       }, 4000);
       ctx.replyWithChatAction("typing").catch(() => {});
 
-      const response = await routeToHermes(fullMessage, tree.id, userId, chatHistory);
+      const response = await routeToHermes(fullMessage, tree.id, userId, chatHistory, displayName);
 
       // Stop typing indicator
       clearInterval(typingInterval);
