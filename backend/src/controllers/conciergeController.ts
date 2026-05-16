@@ -1,7 +1,126 @@
 import { Request, Response } from 'express';
-import { prisma } from '../index';
+import { prisma, telegramBot } from '../index';
 import { evaluateAndAssignTask } from './taskController';
 import { execCommand } from '../services/sshGateway';
+import { getTreeSocialProfiles, formatSocialMapContext } from '../services/socialMapService';
+import {
+  buildSnapshot, buildDelta, TreeSnapshot, TreeDelta,
+  writeSnapshotToDisk, readSnapshotFromDisk,
+  writeDeltaToDisk, readDeltaFromDisk,
+  getHistory as getHistoryFromService,
+} from '../services/conciergeContextService';
+
+// ── Centralized context builder ────────────────────────────────────────────────
+
+/** Safely parse user skills JSON, return null on failure */
+function parseSkills(raw: any): Record<string, number> | null {
+  if (!raw) return null;
+  try {
+    const parsed = typeof raw === 'string' ? JSON.parse(raw) : JSON.parse(JSON.stringify(raw));
+    if (typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)) {
+      return parsed as Record<string, number>;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Centralized context builder — single source of truth for tree context.
+ * Used by both the concierge endpoint and hermesBridge (bot).
+ * Includes social map data if available (MemberSocialProfile).
+ */
+export async function buildTreeContext(treeId: string, opts?: { maxNeeds?: number; maxMembers?: number }) {
+  const maxNeeds = opts?.maxNeeds ?? 10;
+  const maxMembers = opts?.maxMembers ?? 20;
+
+  const tree = await prisma.tree.findUnique({
+    where: { id: treeId },
+    select: {
+      id: true, name: true, icono: true, description: true,
+      objectives: true, admissionPolicy: true, createdAt: true,
+    },
+  });
+  if (!tree) return null;
+
+  const [needs, members, totalMembers, totalNeeds, openNeeds, socialProfiles] = await Promise.all([
+    prisma.need.findMany({
+      where: { treeId, status: 'OPEN' },
+      select: { id: true, title: true, description: true, importance: true, status: true },
+      orderBy: { importance: 'desc' },
+      take: maxNeeds,
+    }),
+    prisma.treeMember.findMany({
+      where: { treeId, status: 'ACTIVE' },
+      include: { user: { select: { username: true, skills: true } } },
+      take: maxMembers,
+    }),
+    prisma.treeMember.count({ where: { treeId, status: 'ACTIVE' } }),
+    prisma.need.count({ where: { treeId } }),
+    prisma.need.count({ where: { treeId, status: 'OPEN' } }),
+    getTreeSocialProfiles(treeId).catch(() => []),
+  ]);
+
+  // Build social map summary for Ari
+  let socialMapText = '';
+  if (socialProfiles.length > 0) {
+    socialMapText = formatSocialMapContext(socialProfiles);
+  }
+
+  return {
+    tree: {
+      id: tree.id,
+      name: tree.name,
+      icono: tree.icono,
+      description: tree.description,
+      objectives: tree.objectives,
+      admissionPolicy: tree.admissionPolicy,
+      createdAt: tree.createdAt.toISOString(),
+    },
+    needs: needs.map((n) => ({
+      id: n.id,
+      title: n.title,
+      description: n.description,
+      importance: n.importance,
+      status: n.status,
+    })),
+    members: members.map((m) => ({
+      username: m.user?.username || '(anónimo)',
+      skills: parseSkills(m.user?.skills),
+    })),
+    stats: { totalMembers, totalNeeds, openNeeds },
+    socialMap: socialProfiles.map((p: any) => ({
+      username: p.username,
+      contributionSummary: p.contributionSummary,
+      proposedNeedTopics: p.proposedNeedTopics,
+      votingPatterns: p.votingPatterns,
+      taskCompletionRate: p.taskCompletionRate,
+      chatActivity: p.chatActivity,
+    })),
+    socialMapText,
+    generatedAt: new Date().toISOString(),
+  };
+}
+
+// ── POST /api/concierge/context ────────────────────────────────────────────────
+
+export const contextHandler = async (req: Request, res: Response) => {
+  try {
+    const { treeId } = req.body;
+    if (!treeId || typeof treeId !== 'string') {
+      return res.status(400).json({ error: 'treeId (string) is required' });
+    }
+    const context = await buildTreeContext(treeId);
+    if (!context) {
+      return res.status(404).json({ error: 'Tree not found' });
+    }
+    res.json(context);
+  } catch (error: any) {
+    console.error('[concierge/context] Error:', error.message || error);
+    res.status(500).json({ error: 'Failed to build tree context' });
+  }
+};
 
 // ── POST /api/concierge ────────────────────────────────────────────────────────
 // Proxies a concierge query to the local Hermes Agent API.
@@ -1122,6 +1241,77 @@ export const conciergeHandler = async (req: Request, res: Response) => {
   }
 };
 
+// ── POST /api/concierge/suggest ──────────────────────────────────────────────
+// System endpoint for cron-driven proactive notifications (Ari).
+// Authenticated via HERMES_API_SERVER_KEY header (no JWT required).
+// Body: { type, message, treeId, priority }
+// Sends the message to the tree's linked Telegram group if one exists.
+export const suggestHandler = async (req: Request, res: Response) => {
+  try {
+    // ── Auth: require HERMES_API_SERVER_KEY ───────────────────────────────
+    const authHeader = req.headers.authorization || '';
+    const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : '';
+    const expectedKey = process.env.HERMES_API_SERVER_KEY;
+    if (!expectedKey || token !== expectedKey) {
+      return res.status(401).json({ error: 'Unauthorized — valid HERMES_API_SERVER_KEY required' });
+    }
+
+    const { type, message, treeId, priority } = req.body;
+
+    if (!message || typeof message !== 'string' || !message.trim()) {
+      return res.status(400).json({ error: 'message (string) is required' });
+    }
+    if (!treeId || typeof treeId !== 'string') {
+      return res.status(400).json({ error: 'treeId (string) is required' });
+    }
+
+    // ── Find tree and its Telegram chat ────────────────────────────────────
+    const tree = await prisma.tree.findUnique({
+      where: { id: treeId },
+      select: { id: true, name: true, telegramChatId: true },
+    });
+
+    if (!tree) {
+      return res.status(404).json({ error: 'Tree not found' });
+    }
+
+    // ── Send to Telegram if linked ─────────────────────────────────────────
+    const emoji = type === 'inactivity_nudge' ? '💤'
+      : type === 'stagnation_alert' ? '⚠️'
+      : type === 'pending_summary' ? '📋'
+      : '🤖';
+
+    const formattedMessage = `${emoji} *Ari · ${tree.name}*\n\n${message}`;
+    let telegramSent = false;
+
+    if (tree.telegramChatId && telegramBot) {
+      try {
+        await telegramBot.api.sendMessage(tree.telegramChatId, formattedMessage, {
+          parse_mode: 'Markdown',
+          
+        });
+        telegramSent = true;
+        console.log(`[concierge:suggest] Sent to Telegram chat ${tree.telegramChatId}: ${type}`);
+      } catch (tgErr: any) {
+        console.error(`[concierge:suggest] Telegram send failed for ${tree.telegramChatId}:`, tgErr.message);
+      }
+    }
+
+    res.json({
+      ok: true,
+      treeId,
+      treeName: tree.name,
+      type,
+      priority: priority || 'medium',
+      telegramSent,
+      hasTelegramChat: !!tree.telegramChatId,
+    });
+  } catch (error: any) {
+    console.error('[concierge:suggest] Error:', error.message || error);
+    res.status(500).json({ error: 'Failed to process suggestion' });
+  }
+};
+
 // ── GET /api/concierge/history ────────────────────────────────────────────────
 // Returns paginated chat history for a tree, scoped to the authenticated user
 // and sorted by createdAt asc (oldest first).
@@ -1162,5 +1352,121 @@ export const getHistoryHandler = async (req: Request, res: Response) => {
   } catch (error: any) {
     console.error('[concierge] History fetch error:', error.message || error);
     res.status(500).json({ error: 'Failed to fetch chat history' });
+  }
+};
+
+// ════════════════════════════════════════════════════════════════════════════════
+// Ari: Caché local + delta sync — new endpoints
+// ════════════════════════════════════════════════════════════════════════════════
+
+// ── POST /api/concierge/delta ──────────────────────────────────────────────────
+// Lightweight push of external-only data that Ari cannot know himself.
+// Body: { treeId }
+// Auth: HERMES_API_SERVER_KEY (same as suggest)
+// Response: TreeDelta with provider ratings, token costs, maintenance,
+//   financial health, cross-tree benchmarks, resource consumption,
+//   agent availability, external alerts.
+export const deltaHandler = async (req: Request, res: Response) => {
+  try {
+    // ── Auth ────────────────────────────────────────────────────────────────
+    const authHeader = req.headers.authorization || '';
+    const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : '';
+    const expectedKey = process.env.HERMES_API_SERVER_KEY;
+    if (!expectedKey || token !== expectedKey) {
+      return res.status(401).json({ error: 'Unauthorized — valid HERMES_API_SERVER_KEY required' });
+    }
+
+    const { treeId } = req.body;
+    if (!treeId || typeof treeId !== 'string') {
+      return res.status(400).json({ error: 'treeId (string) is required' });
+    }
+
+    // Verify tree exists
+    const tree = await prisma.tree.findUnique({ where: { id: treeId }, select: { id: true } });
+    if (!tree) {
+      return res.status(404).json({ error: 'Tree not found' });
+    }
+
+    const delta = await buildDelta(treeId);
+    // Write to sandbox cache
+    try { writeDeltaToDisk(treeId, delta); } catch {}
+
+    res.json(delta);
+  } catch (error: any) {
+    console.error('[concierge/delta] Error:', error.message || error);
+    res.status(500).json({ error: 'Failed to build delta context' });
+  }
+};
+
+// ── GET /api/concierge/snapshot ────────────────────────────────────────────────
+// Full snapshot of all local tree data. Called ONCE on startup/reconnect.
+// Query: ?treeId=X
+// Auth: HERMES_API_SERVER_KEY (Ari calls this from sandbox)
+// Returns cached copy if fresh (<5 min), otherwise rebuilds.
+export const snapshotHandler = async (req: Request, res: Response) => {
+  try {
+    // ── Auth ────────────────────────────────────────────────────────────────
+    const authHeader = req.headers.authorization || '';
+    const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : '';
+    const expectedKey = process.env.HERMES_API_SERVER_KEY;
+    if (!expectedKey || token !== expectedKey) {
+      return res.status(401).json({ error: 'Unauthorized — valid HERMES_API_SERVER_KEY required' });
+    }
+
+    const treeId = req.query.treeId as string;
+    if (!treeId || typeof treeId !== 'string') {
+      return res.status(400).json({ error: 'treeId (query string) is required' });
+    }
+
+    // Check for fresh cached snapshot (≤5 min old)
+    const cacheHit = readSnapshotFromDisk(treeId);
+    if (cacheHit) {
+      const cacheAge = Date.now() - new Date(cacheHit.generatedAt).getTime();
+      if (cacheAge < 5 * 60 * 1000) {
+        return res.json({ ...cacheHit, _source: 'cache', _ageMs: cacheAge });
+      }
+    }
+
+    // Build fresh snapshot
+    const snapshot = await buildSnapshot(treeId);
+    if (!snapshot) {
+      return res.status(404).json({ error: 'Tree not found' });
+    }
+
+    // Write to sandbox cache
+    try { writeSnapshotToDisk(treeId, snapshot); } catch {}
+
+    res.json(snapshot);
+  } catch (error: any) {
+    console.error('[concierge/snapshot] Error:', error.message || error);
+    res.status(500).json({ error: 'Failed to build snapshot' });
+  }
+};
+
+// ── GET /api/concierge/history-events ──────────────────────────────────────────
+// Returns event log timeline for a tree with optional date range.
+// NOTE: This is a separate path from GET /api/concierge/history (chat messages).
+// Query: ?treeId=X&from=YYYY-MM-DD&limit=100
+// Auth: JWT (user must be member of the tree)
+export const historyEventsHandler = async (req: Request, res: Response) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({ error: 'Authentication required' });
+    }
+
+    const treeId = req.query.treeId as string;
+    if (!treeId || typeof treeId !== 'string') {
+      return res.status(400).json({ error: 'treeId (query string) is required' });
+    }
+
+    const from = req.query.from as string | undefined;
+    const limit = Math.min(parseInt(req.query.limit as string) || 100, 500);
+
+    const result = await getHistoryFromService(treeId, { userId, from, limit });
+    res.json(result);
+  } catch (error: any) {
+    console.error('[concierge/history-events] Error:', error.message || error);
+    res.status(500).json({ error: 'Failed to fetch event history' });
   }
 };

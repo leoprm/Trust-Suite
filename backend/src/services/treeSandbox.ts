@@ -57,6 +57,7 @@ export class TreeSandbox {
     fs.mkdirSync(path.join(workspacePath, 'apps'), { recursive: true });
     fs.mkdirSync(path.join(workspacePath, 'data'), { recursive: true });
     fs.mkdirSync(path.join(workspacePath, 'logs'), { recursive: true });
+    fs.mkdirSync(path.join(workspacePath, 'context'), { recursive: true });
 
     // 3. Assign a free port
     const port = await findFreePort();

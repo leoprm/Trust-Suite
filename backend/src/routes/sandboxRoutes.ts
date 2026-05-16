@@ -9,6 +9,7 @@ import {
   execTreeSandbox,
   readTreeSandbox,
   writeTreeSandbox,
+  convertTreeSandbox,
 } from '../controllers/treeSandboxController';
 import { authenticateJWT } from '../middleware/authMiddleware';
 
@@ -26,5 +27,6 @@ router.delete('/:id/sandbox', authenticateJWT, removeTreeSandbox);
 router.post('/:id/sandbox/exec', execTreeSandbox);
 router.post('/:id/sandbox/read', readTreeSandbox);
 router.post('/:id/sandbox/write', writeTreeSandbox);
+router.post('/:id/sandbox/convert', convertTreeSandbox);
 
 export default router;
