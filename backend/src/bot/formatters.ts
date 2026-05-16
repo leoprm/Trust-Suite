@@ -25,6 +25,7 @@ export function helpMessage(lng = "es"): string {
     t("common:help_create", lng),
     t("common:help_ideas", lng),
     t("common:help_vote", lng),
+    t("common:help_todo", lng),
     t("common:help_cuota", lng),
     t("common:help_pagar", lng),
     "",
@@ -276,4 +277,75 @@ export function formatPagar(
   );
 
   return truncar(lines.join("\n"));
+}
+
+// ── Todo ───────────────────────────────────────────────────────────────────
+
+/** Longitud máxima del resumen automático de un todo. */
+export const TODO_SUMMARY_MAX_LENGTH = 80;
+
+/**
+ * Resume un texto para mostrarlo como resumen de un todo.
+ * Si el texto es <= TODO_SUMMARY_MAX_LENGTH, se usa tal cual.
+ * Si es mayor, se trunca en el último espacio antes del límite y se agrega "...".
+ */
+export function summarizeTodo(text: string): string {
+  if (text.length <= TODO_SUMMARY_MAX_LENGTH) return text;
+  const truncated = text.slice(0, TODO_SUMMARY_MAX_LENGTH);
+  const lastSpace = truncated.lastIndexOf(" ");
+  return (lastSpace > 10 ? truncated.slice(0, lastSpace) : truncated) + "...";
+}
+
+/**
+ * Formatea la lista de tareas pendientes rankeada por likeCount.
+ */
+export function formatTodoList(
+  todos: Array<{
+    id: string;
+    summary: string;
+    likeCount: number;
+    createdByName: string | null;
+    status: string;
+    deadline?: Date | string | null;
+  }>,
+  lng = "es",
+): string {
+  if (todos.length === 0) {
+    return t("common:todo_list_empty", lng);
+  }
+
+  const lines: string[] = [
+    t("common:todo_list_header", lng, { count: todos.length }),
+  ];
+
+  const now = new Date();
+  let rank = 0;
+  for (const todo of todos) {
+    rank++;
+    const name = todo.createdByName ? `@${todo.createdByName}` : "anon";
+    const icon = todo.status === "DONE" ? "✅" : "📝";
+
+    // Deadline display
+    let suffix = "";
+    if (todo.deadline) {
+      const dl = typeof todo.deadline === "string" ? new Date(todo.deadline) : todo.deadline;
+      const isOverdue = dl < now;
+      const dateStr = dl.toLocaleDateString("es-CL", {
+        day: "numeric", month: "short",
+      });
+      suffix = isOverdue ? ` ⚠️ vencía ${dateStr}` : ` 📅 ${dateStr}`;
+    }
+
+    lines.push(
+      t("common:todo_list_item", lng, {
+        rank,
+        icon,
+        summary: todo.summary + suffix,
+        likes: todo.likeCount,
+        name,
+      }),
+    );
+  }
+
+  return lines.join("\n");
 }

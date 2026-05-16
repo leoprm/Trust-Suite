@@ -139,6 +139,26 @@ async function buildSystemPrompt(
     }
   }
 
+  // ── Community Todo List ────────────────────────────────────────────────
+  const todos = await (prisma as any).todo.findMany({
+    where: { treeId, status: "PENDING" },
+    orderBy: { likeCount: "desc" },
+    take: 10,
+  });
+
+  if (todos.length > 0) {
+    lines.push("");
+    lines.push("Community TODO list (ranked by likes — reference when giving advice):");
+    todos.forEach((t: any, i: number) => {
+      const heartStr = t.likeCount > 0 ? ` (${t.likeCount} likes)` : "";
+      const assignedStr = t.assignedToName ? ` [assigned: ${t.assignedToName}]` : "";
+      lines.push(`  ${i + 1}. ${t.summary}${heartStr}${assignedStr}`);
+    });
+    lines.push("");
+    lines.push("When suggesting plans or tools, check if any of these TODOs align with your suggestion. Mention relevant TODOs naturally: e.g., \"Veo que tienen pendiente X — esta app tambien cubre eso\".");
+    lines.push("If a TODO has an assignee, acknowledge that someone is already working on it — don't suggest reassigning it unless there is a crisis.");
+  }
+
   // ── User context ──────────────────────────────────────────────────────
   const tgUser = await (prisma as any).user.findFirst({
     where: { telegramUserId: BigInt(userId) },

@@ -173,6 +173,7 @@ model Tree {
   whatsappGroupId String?         // ID del grupo de WhatsApp vinculado
   code            String?         @unique  // Código corto para vincular subárboles (ej: ABC123)
   language        String          @default("es")
+  introMessageId  BigInt?         // message_id del mensaje intro de Ari (reply target para bienvenidas)
   objectives      String?         @db.Text  // T24: tipo de organización y objetivos
   totalBudget     Float?          // Presupuesto total del árbol (CLP)
   paymentMode     PaymentMode     @default(INDIVIDUAL)
@@ -203,6 +204,7 @@ model Tree {
   investmentProfile         TreeInvestmentProfile?
   investorMatches           InvestmentMatch[]          @relation("InvestorMatches")
   seekerMatches             InvestmentMatch[]          @relation("SeekerMatches")
+  todos                     Todo[]
 }
 
 model TreeTechStack {
@@ -1041,4 +1043,31 @@ model InvestmentRating {
 
   @@unique([matchId, raterTreeId])
   @@index([ratedTreeId])
+}
+
+// ── Todo Items ──────────────────────────────────────────────────────────
+
+model Todo {
+  id            String   @id @default(uuid())
+  treeId        String
+  chatId        BigInt
+  messageId     BigInt
+  createdBy     BigInt
+  createdByName String?
+  text          String
+  summary       String
+  likeCount     Int      @default(0)
+  status         String   @default("PENDING")
+  assignedTo     BigInt?              // Telegram user ID who claimed the task
+  assignedToName String?              // Display name of who claimed the task
+  deadline       DateTime?
+  reminderSent   Boolean  @default(false)
+  reminderSentAt DateTime?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  tree Tree @relation(fields: [treeId], references: [id], onDelete: Cascade)
+
+  @@index([treeId, chatId])
+  @@index([messageId, chatId])
 }

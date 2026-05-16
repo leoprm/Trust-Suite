@@ -21,6 +21,10 @@ import { textToSpeech } from "../services/ttsService";
 import { TreeSandbox } from "../services/treeSandbox";
 import { initI18n, t } from "./i18n";
 import { routeToHermes } from "./hermesBridge";
+import { parseDeadline } from "./deadlineParser";
+import { checkTodoReminders } from "./todoReminders";
+import { detectNaturalAddIntent } from "./todoNaturalAdd";
+import { summarizeTodo } from "./formatters";
 
 // ── IPv4 fetch wrapper: undici (Node fetch) no respeta dns.setDefaultResultOrder ──
 // para api.telegram.org. Usamos https.get con family:4 como fallback.
@@ -92,6 +96,35 @@ function extractSimpleKeywords(text: string): string[] {
     }
   }
   return found;
+}
+
+// ── Message counter per tree: track intro message for new member welcomes ──
+const treeMessageCounter = new Map<string, number>();
+
+async function trackBotMessage(
+  prisma: PrismaClient,
+  treeId: string,
+  messageId: number
+): Promise<void> {
+  const count = (treeMessageCounter.get(treeId) ?? 0) + 1;
+  treeMessageCounter.set(treeId, count);
+
+  if (count === 2 || count === 3) {
+    try {
+      await (prisma as any).tree.update({
+        where: { id: treeId },
+        data: { introMessageId: BigInt(messageId) },
+      });
+      console.log(
+        `[Telegram Bot] Intro message #${count} saved for tree ${treeId}: msg_id=${messageId}`
+      );
+    } catch (err: any) {
+      console.warn(
+        `[Telegram Bot] Failed to save introMessageId for tree ${treeId}:`,
+        err.message
+      );
+    }
+  }
 }
 
 export async function createBot(prisma: PrismaClient): Promise<Bot<BotContext> | null> {
@@ -609,7 +642,7 @@ export async function createBot(prisma: PrismaClient): Promise<Bot<BotContext> |
           try {
             if (isNewTree) {
               // New tree: show language selector first (bilingual prompt + TTS in English)
-              await ctx.api.sendMessage(
+              const langMsg = await ctx.api.sendMessage(
                 chatId,
                 "\uD83C\uDF10 Select your language / Selecciona tu idioma",
                 {
@@ -627,11 +660,15 @@ export async function createBot(prisma: PrismaClient): Promise<Bot<BotContext> |
                   },
                 }
               );
+              // Track message #1 for intro capture
+              trackBotMessage(prisma, tree.id, langMsg.message_id);
 
               // Send TTS audio in English (non-blocking)
               try {
                 const voiceBuffer = await textToSpeech("Select your language", "en");
-                await ctx.api.sendVoice(chatId, new InputFile(voiceBuffer));
+                const voiceMsg = await ctx.api.sendVoice(chatId, new InputFile(voiceBuffer));
+                // Track message #2 for intro capture
+                trackBotMessage(prisma, tree.id, voiceMsg.message_id);
               } catch {
                 // Non-blocking — voice is a nice-to-have
               }
@@ -648,6 +685,63 @@ export async function createBot(prisma: PrismaClient): Promise<Bot<BotContext> |
           console.error(`[Telegram Bot] Error al crear árbol para grupo ${chatId}:`, err.message);
         }
       }
+    }
+  });
+
+  // ── New member welcome: greet members joining the group ─────────────────
+  bot.on("chat_member", async (ctx) => {
+    const chat = ctx.chat;
+    if (chat.type !== "group" && chat.type !== "supergroup") return;
+
+    const oldStatus = ctx.chatMember.old_chat_member.status;
+    const newMember = ctx.chatMember.new_chat_member;
+
+    // Only greet on join (left/kicked → member)
+    if (
+      (oldStatus !== "left" && oldStatus !== "kicked") ||
+      newMember.status !== "member"
+    ) {
+      return;
+    }
+
+    // Don't greet the bot itself
+    if (newMember.user.is_bot) return;
+
+    const chatId = chat.id.toString();
+    // Mention with @username if available; first_name otherwise (user spec)
+    const newUserName = newMember.user.username
+      ? "@" + newMember.user.username
+      : newMember.user.first_name || "nuevo miembro";
+
+    try {
+      // Find tree for this group
+      const tree = await (prisma as any).tree.findUnique({
+        where: { telegramChatId: chatId },
+        select: { id: true, introMessageId: true, language: true },
+      });
+
+      if (!tree) return; // Not a TrustMaker group
+
+      const lang = tree.language || "es";
+      const welcomeText = t("common.welcome_new_member", lang, { name: newUserName });
+
+      if (tree.introMessageId) {
+        // Reply to the intro message with reply_parameters (modern API)
+        await ctx.api.sendMessage(chatId, welcomeText, {
+          reply_parameters: { message_id: Number(tree.introMessageId) },
+          parse_mode: "Markdown",
+        });
+      } else {
+        // No intro saved — send normal welcome
+        await ctx.api.sendMessage(chatId, welcomeText, {
+          parse_mode: "Markdown",
+        });
+      }
+    } catch (err: any) {
+      console.error(
+        `[Telegram Bot] Error greeting new member in group ${chatId}:`,
+        err.message,
+      );
     }
   });
 
@@ -747,6 +841,416 @@ export async function createBot(prisma: PrismaClient): Promise<Bot<BotContext> |
       analyzeMessage(prisma, ctx, chatId).catch((err: Error) => {
         console.error("[analyzer] Unhandled rejection:", err.message);
       });
+    }
+
+    // ── Todo scanner: detect /todo anywhere in group messages ──
+    const todoMatch = msg.text.match(/\/todo\b\s*(.*)/i);
+    if (todoMatch && chatId && chatType !== "private") {
+      const todoText = todoMatch[1]?.trim();
+      const tree = await findTreeByChat(prisma, chatId);
+      if (tree) {
+        if (!todoText) {
+          // Show ranked list — urgent unassigned first, then by likes
+          const todos = await (prisma as any).todo.findMany({
+            where: { treeId: tree.id, status: "PENDING" },
+            orderBy: { likeCount: "desc" },
+            take: 20,
+          });
+          if (todos.length === 0) {
+            await ctx.reply("📋 No hay tareas pendientes. Agrega una con /todo <texto>");
+          } else {
+            const now = new Date();
+            // Sort: unassigned tasks with deadline <6h first, then by likes
+            const sorted = [...todos].sort((a: any, b: any) => {
+              const aUrgent = a.deadline && !a.assignedTo
+                && new Date(a.deadline).getTime() - now.getTime() < 6 * 3600_000 ? 1 : 0;
+              const bUrgent = b.deadline && !b.assignedTo
+                && new Date(b.deadline).getTime() - now.getTime() < 6 * 3600_000 ? 1 : 0;
+              if (aUrgent !== bUrgent) return bUrgent - aUrgent;
+              return (b.likeCount ?? 0) - (a.likeCount ?? 0);
+            });
+            const list = sorted.map((t: any, i: number) => {
+              let suffix = "";
+              if (t.deadline) {
+                const dl = new Date(t.deadline);
+                const isOverdue = dl < now;
+                const isUrgent = !isOverdue && !t.assignedTo
+                  && dl.getTime() - now.getTime() < 6 * 3600_000;
+                const dateStr = dl.toLocaleDateString("es-CL", {
+                  day: "numeric", month: "short",
+                });
+                suffix = isOverdue ? ` ⚠️ vencía ${dateStr}`
+                  : isUrgent ? ` 🚨 ${dateStr}`
+                  : ` 📅 ${dateStr}`;
+              }
+              const assigned = t.assignedToName ? ` 🔒 ${t.assignedToName}` : "";
+              return `${i + 1}. ${t.summary}${suffix}${assigned}${t.likeCount ? ` (${t.likeCount} 👍)` : ""}`;
+            }).join("\n");
+            await ctx.reply(`📋 *Tareas pendientes:*\n\n${list}`, { parse_mode: "Markdown" });
+          }
+        } else {
+          // Add todo item — parse deadline from text
+          const deadline = parseDeadline(todoText);
+          const summary = todoText.length > 80 ? todoText.slice(0, 77) + "..." : todoText;
+          const todo = await (prisma as any).todo.create({
+            data: {
+              treeId: tree.id,
+              chatId: BigInt(chatId),
+              messageId: BigInt(msg.message_id),
+              createdBy: BigInt(ctx.from?.id || 0),
+              createdByName: ctx.from?.first_name || null,
+              text: todoText,
+              summary,
+              deadline: deadline || undefined,
+            },
+          });
+          await ctx.react("✅");
+        }
+      }
+      return; // Don't continue to command/natural processing
+    }
+
+    // ── Natural language todo add: detectar "anota X", "agrega X a la lista", etc. ──
+    // Solo si el mensaje menciona a @Ari y NO contiene /todo
+    if (chatId) {
+      const addIntent = detectNaturalAddIntent(msg.text);
+      if (addIntent) {
+        const tree = await findTreeByChat(prisma, chatId);
+        if (tree) {
+          // Resolve tree language for i18n
+          let lng = "es";
+          try {
+            const treeData = await (prisma as any).tree.findUnique({
+              where: { id: tree.id },
+              select: { language: true },
+            });
+            if (treeData?.language) lng = treeData.language;
+          } catch { /* fallback es */ }
+
+          // Check for duplicate: exact summary match in PENDING todos
+          const existing = await (prisma as any).todo.findFirst({
+            where: {
+              treeId: tree.id,
+              status: "PENDING",
+              summary: addIntent,
+            },
+          });
+          if (existing) {
+            await ctx.reply(
+              lng === "en"
+                ? "📋 That task is already on the list"
+                : "📋 Esa tarea ya está en la lista",
+            );
+            return;
+          }
+
+          // Parse deadline from text
+          const deadline = parseDeadline(addIntent);
+          const summary = addIntent.length > 80 ? summarizeTodo(addIntent) : addIntent;
+          await (prisma as any).todo.create({
+            data: {
+              treeId: tree.id,
+              chatId: BigInt(chatId),
+              messageId: BigInt(msg.message_id),
+              createdBy: BigInt(ctx.from?.id || 0),
+              createdByName: ctx.from?.first_name || null,
+              text: addIntent,
+              summary,
+              deadline: deadline || undefined,
+            },
+          });
+
+          try { await ctx.react("✅"); } catch { /* react may not be available */ }
+
+          const replyText = lng === "en"
+            ? `Added to list: '${summary}'`
+            : `Agregado a la lista: '${summary}'`;
+          await ctx.reply(replyText);
+
+          return; // Don't continue to claim/unclaim/command processing
+        }
+      }
+    }
+
+    // ── Todo claim/unclaim: detectar frases de asignación/liberación ──
+    // Priority: /todo > add NL > claim/unclaim > completar > comando normal
+    if (chatId) {
+      const tree = await findTreeByChat(prisma, chatId);
+      if (tree) {
+        // Resolve tree language for i18n
+        let lng = "es";
+        try {
+          const treeData = await (prisma as any).tree.findUnique({
+            where: { id: tree.id },
+            select: { language: true },
+          });
+          if (treeData?.language) lng = treeData.language;
+        } catch { /* fallback es */ }
+
+        const pendingTodos = await (prisma as any).todo.findMany({
+          where: { treeId: tree.id, status: "PENDING" },
+          orderBy: { likeCount: "desc" },
+          take: 50,
+        });
+
+        if (pendingTodos.length > 0) {
+          const replyMsgText = msg.reply_to_message?.text
+            || msg.reply_to_message?.caption;
+          const isReplyBot =
+            msg.reply_to_message?.from?.username === "TrustMakerBot"
+            || msg.reply_to_message?.from?.is_bot === true;
+
+          const {
+            detectClaim, detectUnclaim, checkUrgency,
+            formatTimeRemaining, formatDeadlineTime,
+            hasClaimLanguage, hasUnclaimLanguage,
+          } = await import("./todoCompletion");
+
+          const todos = pendingTodos.map((t: any) => ({
+            id: t.id,
+            summary: t.summary,
+            text: t.text,
+            createdByName: t.createdByName,
+            status: t.status,
+            messageId: t.messageId,
+            assignedTo: t.assignedTo,
+            assignedToName: t.assignedToName,
+            deadline: t.deadline,
+            likeCount: t.likeCount,
+          }));
+
+          const tgUser = ctx.from;
+          const tgUserId = tgUser ? BigInt(tgUser.id) : null;
+          const tgUserName = tgUser?.first_name || tgUser?.username || "alguien";
+
+          // ── CLAIM ──────────────────────────────────────────
+          if (hasClaimLanguage(msg.text)) {
+            const claimResult = detectClaim(
+              msg.text, todos, isReplyBot ?? false, replyMsgText,
+            );
+
+            if (claimResult) {
+              const todo = claimResult.todo;
+
+              // Already claimed by someone else → warn
+              if (todo.assignedTo && todo.assignedTo !== tgUserId) {
+                const assignee = todo.assignedToName || "alguien";
+                await ctx.reply(
+                  lng === "en"
+                    ? `👀 That task is already assigned to ${assignee}`
+                    : `👀 Esa tarea ya la tiene asignada ${assignee}`,
+                );
+                return;
+              }
+
+              // Already claimed by same user → notify
+              if (todo.assignedTo === tgUserId) {
+                await ctx.reply(
+                  lng === "en"
+                    ? "👀 You already claimed that task"
+                    : "👀 Ya te habías apuntado a esa tarea",
+                );
+                return;
+              }
+
+              // Assign
+              await (prisma as any).todo.update({
+                where: { id: todo.id },
+                data: {
+                  assignedTo: tgUserId,
+                  assignedToName: tgUserName,
+                },
+              });
+
+              try { await ctx.react("👍"); } catch { /* react may not be available */ }
+
+              await ctx.reply(
+                lng === "en"
+                  ? `👍 ${tgUserName} volunteered for '*${todo.summary}*'`
+                  : `👍 ${tgUserName} se apuntó a '*${todo.summary}*'`,
+                { parse_mode: "Markdown" },
+              );
+              return;
+            }
+          }
+
+          // ── UNCLAIM ────────────────────────────────────────
+          if (hasUnclaimLanguage(msg.text)) {
+            const unclaimResult = detectUnclaim(
+              msg.text, todos, isReplyBot ?? false, replyMsgText,
+            );
+
+            if (unclaimResult) {
+              const todo = unclaimResult.todo;
+
+              // Not assigned to anyone
+              if (!todo.assignedTo) {
+                await ctx.reply(
+                  lng === "en"
+                    ? "🤷 That task isn't assigned to anyone"
+                    : "🤷 Esa tarea no está asignada a nadie",
+                );
+                return;
+              }
+
+              // Not assigned to this user — only release your own
+              if (todo.assignedTo !== tgUserId) {
+                const assignee = todo.assignedToName || "alguien";
+                await ctx.reply(
+                  lng === "en"
+                    ? `🤷 That task is assigned to ${assignee}, not you`
+                    : `🤷 Esa tarea está asignada a ${assignee}, no a ti`,
+                );
+                return;
+              }
+
+              // Check urgency before releasing
+              const urgency = checkUrgency(todo.deadline);
+
+              // Release
+              await (prisma as any).todo.update({
+                where: { id: todo.id },
+                data: {
+                  assignedTo: null,
+                  assignedToName: null,
+                },
+              });
+
+              try { await ctx.react("🔄"); } catch { /* react may not be available */ }
+
+              await ctx.reply(
+                lng === "en"
+                  ? `🔄 ${tgUserName} dropped '*${todo.summary}*'`
+                  : `🔄 ${tgUserName} se bajó de '*${todo.summary}*'`,
+                { parse_mode: "Markdown" },
+              );
+
+              // ── URGENCY ESCALATION ────────────────────────
+              if (urgency) {
+                const timeFmt = formatDeadlineTime(urgency.deadlineDate, lng);
+                const remainingFmt = formatTimeRemaining(urgency.hoursRemaining, lng);
+
+                // Get tree member count
+                let memberCount = 0;
+                try {
+                  memberCount = await (prisma as any).treeMember.count({
+                    where: { treeId: tree.id, status: "ACTIVE" },
+                  });
+                } catch { /* fallback */ }
+
+                if (memberCount < 15 && memberCount > 0) {
+                  // Get member Telegram IDs for mentions
+                  let members: any[] = [];
+                  try {
+                    members = await (prisma as any).treeMember.findMany({
+                      where: { treeId: tree.id, status: "ACTIVE" },
+                      include: {
+                        user: { select: { telegramUserId: true, username: true } },
+                      },
+                      take: 15,
+                    });
+                  } catch { /* fallback */ }
+
+                  // Build mention string
+                  const mentionNames: string[] = [];
+                  for (const m of members) {
+                    const u = m.user;
+                    if (u?.telegramUserId && BigInt(u.telegramUserId) !== tgUserId) {
+                      mentionNames.push(`[${u.username || "miembro"}](tg://user?id=${u.telegramUserId})`);
+                    }
+                  }
+
+                  const mentions = mentionNames.slice(0, 14).join(" "); // max 14 mentions
+                  await ctx.reply(
+                    (lng === "en"
+                      ? `🚨 Urgent! ${tgUserName} can't do '*${todo.summary}*' by ${timeFmt} (${remainingFmt}). Who can take it? ${mentions}`
+                      : `🚨 ¡Urgente! ${tgUserName} no puede '*${todo.summary}*' para ${timeFmt} (${remainingFmt}). ¿Quién puede hacerla? ${mentions}`),
+                    { parse_mode: "Markdown" },
+                  );
+                } else {
+                  // Large group — no individual mentions
+                  await ctx.reply(
+                    lng === "en"
+                      ? `🚨 Urgent! ${tgUserName} can't do '*${todo.summary}*' by ${timeFmt} (${remainingFmt}). Anyone from the group?`
+                      : `🚨 ¡Urgente! ${tgUserName} no puede '*${todo.summary}*' para ${timeFmt} (${remainingFmt}). ¿Alguien del grupo puede hacerla?`,
+                    { parse_mode: "Markdown" },
+                  );
+                }
+              }
+
+              return;
+            }
+          }
+        }
+      }
+    }
+
+    // ── Todo completion: detectar lenguaje de completitud natural ──
+    // Solo si NO contiene /todo (el scanner tiene prioridad)
+    if (chatId) {
+      const tree = await findTreeByChat(prisma, chatId);
+      if (tree) {
+        const pendingTodos = await (prisma as any).todo.findMany({
+          where: { treeId: tree.id, status: "PENDING" },
+          orderBy: { likeCount: "desc" },
+          take: 50,
+        });
+
+        if (pendingTodos.length > 0) {
+          const replyMsgText = msg.reply_to_message?.text
+            || msg.reply_to_message?.caption;
+          const isReplyBot =
+            msg.reply_to_message?.from?.username === "TrustMakerBot"
+            || msg.reply_to_message?.from?.is_bot === true;
+
+          const { detectCompletion } = await import("./todoCompletion");
+          const result = detectCompletion(
+            msg.text,
+            pendingTodos.map((t: any) => ({
+              id: t.id,
+              summary: t.summary,
+              text: t.text,
+              createdByName: t.createdByName,
+              status: t.status,
+              messageId: t.messageId,
+            })),
+            isReplyBot ?? false,
+            replyMsgText,
+          );
+
+          if (result) {
+            if (result.ambiguous && result.ambiguous.length > 1) {
+              // Ambiguity: ask for clarification
+              const options = result.ambiguous
+                .map((t: any, i: number) => `${i + 1}) ${t.summary}`)
+                .join("\n");
+              await ctx.reply(
+                `🤔 ¿Te refieres a...\n\n${options}\n\n_Responde con el número._`,
+                { parse_mode: "Markdown" },
+              );
+              return;
+            }
+
+            // Mark as DONE
+            await (prisma as any).todo.update({
+              where: { id: result.todoId },
+              data: { status: "DONE" },
+            });
+
+            // React
+            try {
+              await ctx.react("🎉");
+            } catch { /* react may not be available */ }
+
+            // Reply with stats
+            const remaining = pendingTodos.length - 1;
+            const name = result.createdByName || "Alguien";
+            const msgText = `✅ ¡${name} completó *${result.summary}*!\n\n📋 Quedan ${remaining} pendiente${remaining !== 1 ? "s" : ""}`;
+            await ctx.reply(msgText, { parse_mode: "Markdown" });
+            return;
+          }
+        }
+      }
     }
 
     // 2. Verificar si el mensaje menciona al bot o es reply o es comando directo
@@ -1250,9 +1754,11 @@ export async function createBot(prisma: PrismaClient): Promise<Bot<BotContext> |
           }
 
           // Send welcome message in the selected language
-          await ctx.reply(t("onboarding.welcome_group", lang), {
+          const welcomeMsg = await ctx.reply(t("onboarding.welcome_group", lang), {
             parse_mode: "Markdown",
           });
+          // Track as potential intro message (message #3 in new-tree flow)
+          trackBotMessage(prisma, treeId, welcomeMsg.message_id);
 
           // Start onboarding after a brief pause
           await new Promise(r => setTimeout(r, 1500));
@@ -1364,6 +1870,32 @@ export async function createBot(prisma: PrismaClient): Promise<Bot<BotContext> |
     return next();
   });
 
+  // ── Todo reaction handler: track likeCount from message reactions ──
+  bot.on("message_reaction", async (ctx) => {
+    const chatId = ctx.chat?.id;
+    const msgId = ctx.messageReaction?.message_id;
+    if (!chatId || !msgId) return;
+
+    try {
+      const todo = await (prisma as any).todo.findFirst({
+        where: { chatId: BigInt(chatId), messageId: BigInt(msgId) },
+      });
+      if (todo) {
+        const oldLen = (ctx.messageReaction?.old_reaction || []).length;
+        const newLen = (ctx.messageReaction?.new_reaction || []).length;
+        const delta = newLen - oldLen;
+        if (delta !== 0) {
+          await (prisma as any).todo.update({
+            where: { id: todo.id },
+            data: { likeCount: Math.max(0, todo.likeCount + delta) },
+          });
+        }
+      }
+    } catch (err) {
+      // Non-critical — silently ignore
+    }
+  });
+
   // ── Global error boundary: evita que el polling muera silenciosamente ─
   bot.catch((err) => {
     console.error(
@@ -1404,6 +1936,24 @@ export async function createBot(prisma: PrismaClient): Promise<Bot<BotContext> |
 
   // Initialize payment service (used by /pagar command)
   initPaymentService(prisma, bot);
+
+  // ── Todo reminders cron: cada 30 minutos ─────────────────────────
+  // Solo activo si HERMES_BRIDGE_ENABLED=true (el bot está activo en modo agente)
+  if (process.env.HERMES_BRIDGE_ENABLED === "true") {
+    const REMINDER_INTERVAL_MS = 30 * 60 * 1000; // 30 minutos
+    console.log(
+      `[TodoReminders] Cron iniciado — se ejecutará cada ${REMINDER_INTERVAL_MS / 60000} min`
+    );
+    // Run once on startup, then on interval
+    checkTodoReminders(prisma, bot).catch((err) =>
+      console.error("[TodoReminders] Startup check error:", err.message)
+    );
+    setInterval(() => {
+      checkTodoReminders(prisma, bot).catch((err) =>
+        console.error("[TodoReminders] Cron error:", err.message)
+      );
+    }, REMINDER_INTERVAL_MS);
+  }
 
   return bot;
 }

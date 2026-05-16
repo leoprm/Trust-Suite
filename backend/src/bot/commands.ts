@@ -34,8 +34,11 @@ import {
   createNeedHelp,
   noMemberError,
   formatCuota,
+  formatTodoList,
+  summarizeTodo,
 } from "./formatters";
 import { isComplexNeed, sendApprovalPoll, scheduleApprovalClose } from "./approval";
+import { parseDeadline } from "./deadlineParser";
 
 // ── Tipos ──────────────────────────────────────────────────────────────────
 
@@ -49,6 +52,7 @@ export type ParsedCommand =
   | { type: "cuota" }
   | { type: "pagar" }
   | { type: "help" }
+  | { type: "todo"; text?: string }
   | { type: "unknown" };
 
 // ── Parser ─────────────────────────────────────────────────────────────────
@@ -92,6 +96,10 @@ export function parseCommand(raw: string): ParsedCommand {
 
   // ── help / ayuda ──
   if (/^(help|ayuda)$/i.test(cmd)) return { type: "help" };
+
+  // ── todo [texto] ──
+  const todoMatch = cmd.match(/^todo(?:\s+(.+))?$/i);
+  if (todoMatch) return { type: "todo", text: todoMatch[1]?.trim() };
 
   // ── lista necesidades ──
   if (/^lista\s+necesidades$/i.test(cmd)) return { type: "lista" };
@@ -517,6 +525,66 @@ async function handlePagar(
   return formatPagarResult(result, lng);
 }
 
+// ── todo ──
+
+async function handleTodo(
+  prisma: PrismaClient,
+  ctx: Context,
+  tree: TreeInfo | null,
+  text: string | undefined,
+  lng: string,
+): Promise<string> {
+  if (!tree) return noTreeError(lng);
+
+  const chatId = ctx.chat?.id;
+  if (!chatId) return t("errors:no_chat_id", lng);
+
+  if (!text || text.trim() === "") {
+    // Mostrar lista rankeada
+    const todos = await (prisma as any).todo.findMany({
+      where: { treeId: tree.id, chatId: BigInt(chatId), status: "PENDING" },
+      orderBy: { likeCount: "desc" },
+      take: 20,
+    });
+    return formatTodoList(todos, lng);
+  }
+
+  // Crear nuevo todo
+  const summary = summarizeTodo(text.trim());
+  const tgUser = ctx.from;
+  const messageId = ctx.message?.message_id;
+  const deadline = parseDeadline(text.trim());
+
+  await (prisma as any).todo.create({
+    data: {
+      treeId: tree.id,
+      chatId: BigInt(chatId),
+      messageId: BigInt(messageId || 0),
+      createdBy: BigInt(tgUser?.id || 0),
+      createdByName: tgUser?.username || tgUser?.first_name || null,
+      text: text.trim(),
+      summary,
+      status: "PENDING",
+      deadline: deadline || undefined,
+    },
+  });
+
+  // Posición en el ranking (cuántos tienen más likes)
+  const higherCount = await (prisma as any).todo.count({
+    where: {
+      treeId: tree.id,
+      chatId: BigInt(chatId),
+      status: "PENDING",
+      likeCount: { gt: 0 },
+    },
+  });
+
+  return t("common:todo_created", lng, {
+    summary,
+    position: higherCount + 1,
+  });
+}
+
 // ── Dispatcher ─────────────────────────────────────────────────────────────
 
 /**
@@ -559,7 +627,7 @@ export async function handleMessage(
 
   // Only look up tree for commands that need it
   const needsTree: ParsedCommand["type"][] = [
-    "info", "lista", "crea", "vota", "ideas", "cuota", "pagar",
+    "info", "lista", "crea", "vota", "ideas", "cuota", "pagar", "todo",
   ];
 
   if (needsTree.includes(parsed.type)) {
@@ -591,6 +659,9 @@ export async function handleMessage(
 
     case "pagar":
       return { text: await handlePagar(prisma, ctx, tree, lng) };
+
+    case "todo":
+      return { text: await handleTodo(prisma, ctx, tree, parsed.text, lng) };
 
     case "help":
       return { text: helpMessage(lng) };
