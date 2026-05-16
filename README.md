@@ -29,7 +29,7 @@ cp .env.example .env
 
 # 4. Crear usuario aislado trustmaker (Hermes Agent dedicado)
 sudo useradd -m -s /bin/bash trustmaker
-sudo usermod -aG leo trustmaker
+sudo usermod -aG $USER trustmaker
 
 # 5. Instalar Hermes Agent como trustmaker
 sudo -u trustmaker bash -c "$(curl -fsSL https://raw.githubusercontent.com/NousResearch/hermes-agent/main/scripts/install.sh)"
@@ -61,12 +61,12 @@ Trust Maker corre con **dos usuarios de sistema separados**:
 
 | Componente | Usuario | Acceso |
 |---|---|---|
-| Backend + Bot | `leo` | Normal |
-| Hermes Agent | `trustmaker` | **Aislado** — no puede leer `/home/leo/` |
+| Backend + Bot | tu usuario | Normal |
+| Hermes Agent | `trustmaker` | **Aislado** — no puede leer `/home/$USER/` |
 
 Hermes Agent (trustmaker) ejecuta comandos de sandbox y SSH **sin acceso al sistema host**. Incluso un prompt injection no compromete tus archivos personales.
 
-Cada árbol tiene su propio sandbox (`/home/leo/trees/{treeId}/`) con path isolation, timeout 5 min, y output cap 50 KB.
+Cada árbol tiene su propio sandbox (`~/trees/{treeId}/`) con path isolation, timeout 5 min, y output cap 50 KB.
 
 ---
 
