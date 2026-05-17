@@ -13,9 +13,49 @@
  */
 
 import { PrismaClient } from "@prisma/client";
+import { spawn } from "child_process";
+import path from "path";
 import { messageQueue } from "./messageQueue";
 
 const HERMES_API = "http://127.0.0.1:8644/v1/chat/completions";
+
+// ── ConversationWindow ───────────────────────────────────────────────────
+// In-memory throttle per tree. Each openWindow starts a countdown of 20
+// interactions. tickWindow decrements; when it hits 0 the window auto-closes.
+
+interface WindowState {
+  active: boolean;
+  remaining: number;
+}
+
+const conversationWindows = new Map<string, WindowState>();
+
+export function openWindow(treeId: string): void {
+  conversationWindows.set(treeId, { active: true, remaining: 20 });
+}
+
+export function resetWindow(treeId: string): void {
+  conversationWindows.set(treeId, { active: true, remaining: 20 });
+}
+
+export function tickWindow(treeId: string): void {
+  const w = conversationWindows.get(treeId);
+  if (!w || !w.active) return;
+  w.remaining = Math.max(0, w.remaining - 1);
+  if (w.remaining <= 0) {
+    w.active = false;
+  }
+}
+
+export function isWindowActive(treeId: string): boolean {
+  const w = conversationWindows.get(treeId);
+  return w?.active === true && w.remaining > 0;
+}
+
+export function closeWindow(treeId: string): void {
+  const w = conversationWindows.get(treeId);
+  if (w) w.active = false;
+}
 
 export interface HermesBridgeResponse {
   text: string | null;
@@ -27,9 +67,116 @@ export interface HermesBridgeResponse {
   saturationMessage?: string;
 }
 
+export interface ShouldRespondResult {
+  shouldRespond: boolean;
+  text?: string;
+}
+
+interface RecentMessage {
+  senderName: string;
+  content: string;
+}
+
+/** Lightweight message returned by collectRecentMessages */
+interface CollectedMessage {
+  displayName: string;
+  text: string;
+}
+
+/**
+ * Fetch the last `count` text messages from a Telegram group.
+ *
+ * Spawns `lib/tg_messages.py` which uses Telethon (MTProto) — the Bot API
+ * has no endpoint for historical message retrieval.
+ *
+ * @returns Array of {displayName, text}, chronological order (oldest first).
+ */
+export async function collectRecentMessages(
+  chatId: number,
+  count: number,
+): Promise<CollectedMessage[]> {
+  const apiId = process.env.TELEGRAM_API_ID;
+  const apiHash = process.env.TELEGRAM_API_HASH;
+  const botToken = process.env.TELEGRAM_BOT_TOKEN;
+
+  if (!apiId || !apiHash) {
+    throw new Error("TELEGRAM_API_ID / TELEGRAM_API_HASH not set");
+  }
+  if (!botToken) {
+    throw new Error("TELEGRAM_BOT_TOKEN not set");
+  }
+
+  const script = path.resolve(__dirname, "../../lib/tg_messages.py");
+  const input = JSON.stringify({
+    api_id: Number(apiId),
+    api_hash: apiHash,
+    chat_id: chatId,
+    bot_token: botToken,
+    count,
+  });
+
+  return new Promise<CollectedMessage[]>((resolve, reject) => {
+    const child = spawn("python3", [script], {
+      stdio: ["pipe", "pipe", "pipe"],
+      timeout: 60_000,
+    });
+
+    let stdout = "";
+    let stderr = "";
+
+    child.stdout.on("data", (chunk: Buffer) => {
+      stdout += chunk.toString("utf-8");
+    });
+    child.stderr.on("data", (chunk: Buffer) => {
+      stderr += chunk.toString("utf-8");
+    });
+    child.on("error", (err) => {
+      reject(new Error(`tg_messages.py spawn failed: ${err.message}`));
+    });
+    child.on("close", (code) => {
+      if (code !== 0) {
+        reject(new Error(`tg_messages.py exited ${code}: ${stderr.slice(0, 500)}`));
+        return;
+      }
+      try {
+        resolve(JSON.parse(stdout) as CollectedMessage[]);
+      } catch {
+        reject(new Error(`tg_messages.py invalid JSON: ${stdout.slice(0, 300)}`));
+      }
+    });
+
+    child.stdin.write(input);
+    child.stdin.end();
+  });
+}
+
 interface ChatMessage {
   role: "system" | "user" | "assistant";
   content: string;
+}
+
+// ── Keyword scanning ────────────────────────────────────────────────────
+const BRIDGE_KEYWORDS = [
+  "ari",
+  "trust maker",
+  "trustmaker",
+  "árbol",
+  "tree",
+  "agente",
+  "asistente",
+  "@TrustMakerBot",
+];
+
+/**
+ * Escanea texto en busca de keywords del bridge.
+ * Case-insensitive. Sin DB ni I/O. Solo string matching.
+ */
+export function scanForKeywords(text: string): boolean {
+  const lower = text.toLowerCase();
+  for (const kw of BRIDGE_KEYWORDS) {
+    if (lower.includes(kw)) return true;
+  }
+  return false;
 }
 
 /**
@@ -108,7 +255,7 @@ async function buildSystemPrompt(
   const members = await (prisma as any).treeMember.findMany({
     where: { treeId, status: "ACTIVE" },
     include: {
-      user: { select: { username: true, skills: true } },
+      user: { select: { username: true, firstName: true, skills: true } },
     },
     take: 20,
   });
@@ -121,7 +268,7 @@ async function buildSystemPrompt(
     lines.push("  (no active members)");
   } else {
     for (const m of members) {
-      const username = m.user?.username || "(anónimo)";
+      const displayName = m.user?.firstName || m.user?.username || "(anónimo)";
       let skillsStr = "";
       if (m.user?.skills) {
         try {
@@ -142,7 +289,7 @@ async function buildSystemPrompt(
           // ignore
         }
       }
-      lines.push(`  - ${username}${skillsStr}`);
+      lines.push(`  - ${displayName}${skillsStr}`);
     }
   }
 
@@ -169,13 +316,13 @@ async function buildSystemPrompt(
   // ── User context ──────────────────────────────────────────────────────
   const tgUser = await (prisma as any).user.findFirst({
     where: { telegramUserId: BigInt(userId) },
-    select: { username: true, id: true },
+    select: { username: true, firstName: true, id: true },
   });
   if (tgUser || displayName) {
-    const name = displayName || tgUser?.username || userId;
+    const name = displayName || tgUser?.firstName || tgUser?.username || userId;
     lines.push("");
-    lines.push(`Current user: ${name} (Telegram ID: ${userId})`);
-    lines.push("Address this user by their name when responding.");
+    lines.push(`Current user: ${name}`);
+    lines.push("Address this user by their name when responding. Never use internal IDs.");
   }
 
   // ── Sandbox tools ────────────────────────────────────────────────────
@@ -266,6 +413,33 @@ async function buildSystemPrompt(
   lines.push("- Formatos soportados: PDF (por defecto), HTML");
   lines.push("- Los documentos se entregan automáticamente, sin que el usuario lo pida.");
 
+  // ── Memory classification rules ───────────────────────────────────────
+  lines.push("");
+  lines.push("═══ REGLAS DE CLASIFICACIÓN DE MEMORIA ═══");
+  lines.push("");
+  lines.push("Cuando guardes información en memoria, clasifica CADA dato:");
+  lines.push("");
+  lines.push("📍 MEMORIA SITUACIONAL (target: 'memory'):");
+  lines.push("   - Datos del árbol: miembros, necesidades, contexto");
+  lines.push("   - Nombres, montos, fechas, datos financieros");
+  lines.push("   - Conversaciones específicas, preferencias de usuarios");
+  lines.push("   - Configuraciones del sandbox, API keys, rutas");
+  lines.push("");
+  lines.push("🧠 LECCIONES DE IA (target: 'lessons'):");
+  lines.push("   - Patrones de prompting que funcionaron bien");
+  lines.push("   - Workflows de tools efectivos descubiertos");
+  lines.push("   - Errores comunes y cómo resolverlos");
+  lines.push("   - Optimizaciones de código/algoritmo");
+  lines.push("   - Técnicas de análisis de datos útiles");
+  lines.push("   ⚠️ NUNCA incluyas: nombres, montos, IDs, API keys, datos personales");
+  lines.push("");
+  lines.push("REGLA: Si un dato ES una lección de IA sin PII → dual-write:");
+  lines.push("  1. memory(target='memory', ...) ← contexto situacional");
+  lines.push("  2. memory(target='lessons', ...) ← lección exportable sin PII");
+  lines.push("Si NO es lección o tiene PII → solo memory(target='memory', ...)");
+  lines.push("Las lecciones se comparten entre árboles para mejorar la IA global.");
+  lines.push("Los datos situacionales NUNCA salen de este árbol.");
+
   // ── Response guidelines ───────────────────────────────────────────────
   lines.push("");
   lines.push(
@@ -278,10 +452,185 @@ async function buildSystemPrompt(
     "IMPORTANT: You have REAL user and tree data above. Use it. Do NOT invent or hallucinate.",
   );
   lines.push(
+    "When referring to tree members in chat, ALWAYS use their Telegram display name (first name). Never use internal IDs, database IDs, or numeric identifiers. If a user's name is unknown, ask them.",
+  );
+  lines.push(
     "If the user asks about membership, trees, or stats, the data above IS authoritative.",
   );
 
   return lines.join("\n");
+}
+
+/**
+ * Decisión mode for Ari — pre-filter to decide whether Ari should respond.
+ *
+ * Sends the last 10 messages + sender names to Hermes Agent with a lightweight
+ * decision system prompt. The agent returns "NO_RESPONSE" to stay silent, or
+ * the response text if Ari should engage.
+ *
+ * This avoids the heavy routeToHermes() call (which builds a full system prompt
+ * with tree context, needs, and members from DB) for messages Ari should ignore.
+ *
+ * Decision rules (injected via system prompt):
+ *   - MUST respond when tagged, replied to, or directly questioned
+ *   - When keywords appear but not addressed: evaluate if input adds value
+ *   - In conversation window: respond only when meaningful
+ *   - Stay silent on off-topic chat, greetings, logistics
+ *
+ * @param message        Current message text (includes "DisplayName: " prefix)
+ * @param treeId         Tree ID for session routing
+ * @param recentMessages Last 10 messages as {senderName, content} — newest last
+ * @param isReplyToBot   Whether the message is a reply to Ari's message
+ * @param isTagged       Whether Ari is explicitly mentioned/tagged
+ * @returns              {shouldRespond: boolean, text?: string}
+ */
+export async function shouldAriRespond(
+  message: string,
+  treeId: string,
+  recentMessages: RecentMessage[],
+  isReplyToBot?: boolean,
+  isTagged?: boolean,
+): Promise<ShouldRespondResult> {
+  const API_SERVER_KEY = process.env.HERMES_API_SERVER_KEY ?? "";
+
+  // ── Build lightweight decision system prompt ──────────────────────────
+  const systemPrompt = [
+    "You are a DECISION FILTER for Ari, the AI assistant of a Trust Maker community.",
+    "Decide whether Ari should respond to the current message or stay completely silent.",
+    "",
+    "DECISION RULES (in priority order):",
+    "",
+    "1. MUST respond when:",
+    "   - Ari is explicitly mentioned/tagged by name",
+    "   - The message is a direct reply to Ari's message",
+    "   - Someone asks Ari a direct question or requests something from Ari",
+    "",
+    "2. When keywords or tree-related topics appear but Ari is NOT directly addressed:",
+    "   - Respond ONLY if Ari's input clearly adds meaningful value to the discussion",
+    "   - If the conversation doesn't need Ari's participation, stay silent",
+    "",
+    "3. In an active conversation window where Ari has been participating:",
+    "   - Respond only when the contribution advances the topic or provides new information",
+    "   - Don't respond just to keep the conversation going or to be polite",
+    "",
+    "4. STAY SILENT on (NO_RESPONSE):",
+    "   - Off-topic casual chat between members",
+    "   - Simple greetings without follow-up (\"hola\", \"buenos días\", \"qué tal\")",
+    "   - Logistics/coordination between members (\"nos vemos a las 5\", \"quién lleva las sillas\")",
+    "   - Messages clearly between other members, not involving Ari",
+    "   - Thank-you messages, acknowledgments, or simple agreements (\"gracias Ari\", \"ok\", \"de acuerdo\")",
+    "   - Emoji-only messages, stickers, or reactions",
+    "",
+    "RESPONSE FORMAT:",
+    '- If Ari should stay silent: respond with exactly "NO_RESPONSE" (no quotes, no punctuation, no explanation)',
+    "- If Ari should respond: write the response Ari would give (in neutral Spanish, concise, helpful, use \"tú\")",
+    "",
+    "You are deciding for the MOST RECENT message in the context below.",
+  ].join("\n");
+
+  // ── Build messages array ──────────────────────────────────────────────
+  const messages: ChatMessage[] = [
+    { role: "system", content: systemPrompt },
+  ];
+
+  // Inject recent messages as context (last 10, newest last)
+  const last10 = recentMessages.slice(-10);
+  const separator = "─".repeat(40);
+  if (last10.length > 0) {
+    messages.push({
+      role: "user",
+      content:
+        `RECENT CONVERSATION (${last10.length} messages):\n${separator}\n` +
+        last10
+          .map((m) => `${m.senderName}: ${m.content}`)
+          .join("\n") +
+        `\n${separator}\n\nCURRENT MESSAGE (decide on this one):\n${message}`,
+    });
+  } else {
+    messages.push({
+      role: "user",
+      content: `CURRENT MESSAGE:\n${message}`,
+    });
+  }
+
+  // Signal explicit triggers so the agent knows
+  if (isReplyToBot) {
+    messages.push({
+      role: "user",
+      content:
+        "CONTEXT: This message is a direct REPLY to Ari's message. Rule 1 applies — MUST respond unless it's just a thank-you.",
+    });
+  }
+  if (isTagged) {
+    messages.push({
+      role: "user",
+      content:
+        "CONTEXT: Ari is explicitly mentioned/tagged in this message. Rule 1 applies — MUST respond.",
+    });
+  }
+
+  // ── Call Hermes Agent API (non-streaming — decision is short) ────────
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 30_000); // 30s is plenty for a decision
+
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+    "X-Hermes-Session-Key": `tree-agent-decision-${treeId}`,
+  };
+  if (API_SERVER_KEY) {
+    headers["Authorization"] = `Bearer ${API_SERVER_KEY}`;
+  }
+
+  try {
+    const response = await fetch(HERMES_API, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        messages,
+        stream: false, // non-streaming: decision is a single short line
+      }),
+      signal: controller.signal,
+    });
+
+    clearTimeout(timeoutId);
+
+    if (!response.ok) {
+      const errorText = await response.text().catch(() => "");
+      console.error(
+        `[shouldAriRespond] Hermes API returned ${response.status}: ${errorText.slice(0, 200)}`,
+      );
+      // On API error, default to silent — better to miss one message than spam
+      return { shouldRespond: false };
+    }
+
+    const data = await response.json();
+    const content: string =
+      data?.choices?.[0]?.message?.content ?? "";
+
+    if (!content) {
+      console.warn("[shouldAriRespond] Empty response from Hermes API");
+      return { shouldRespond: false };
+    }
+
+    const trimmed = content.trim();
+
+    // Check for silence signal
+    if (trimmed === "NO_RESPONSE" || trimmed === '"NO_RESPONSE"') {
+      return { shouldRespond: false };
+    }
+
+    // Anything else is a real response
+    return { shouldRespond: true, text: trimmed };
+  } catch (err) {
+    clearTimeout(timeoutId);
+    if (err instanceof Error && err.name === "AbortError") {
+      console.error("[shouldAriRespond] Decision timed out after 30s");
+    } else {
+      console.error("[shouldAriRespond] API call failed:", err);
+    }
+    // On error, default to silent
+    return { shouldRespond: false };
+  }
 }
 
 /**
@@ -497,4 +846,128 @@ export async function routeToHermes(
       messageQueue.dequeue();
     }
   }
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// Conversation Window — proactive engagement for ambient group messages
+// ═══════════════════════════════════════════════════════════════════════
+
+interface WindowState {
+  treeId: string;
+  keyword: string | null;
+  remaining: number;
+  openedAt: Date;
+}
+
+class ConversationWindowManager {
+  private windows: Map<string, WindowState> = new Map();
+
+  /** Open a conversation window on a tree. Default 5-message lifespan. */
+  openWindow(treeId: string, keyword?: string): WindowState {
+    const state: WindowState = {
+      treeId,
+      keyword: keyword ?? null,
+      remaining: 5,
+      openedAt: new Date(),
+    };
+    this.windows.set(treeId, state);
+    return state;
+  }
+
+  /** Decrement remaining count. Returns null when window expires. */
+  tickWindow(treeId: string): WindowState | null {
+    const state = this.windows.get(treeId);
+    if (!state) return null;
+    state.remaining--;
+    if (state.remaining <= 0) {
+      this.windows.delete(treeId);
+      return null;
+    }
+    return state;
+  }
+
+  /** Extend window lifespan back to 5 messages. */
+  resetWindow(treeId: string): WindowState | null {
+    const state = this.windows.get(treeId);
+    if (!state) return null;
+    state.remaining = 5;
+    return state;
+  }
+
+  /** Force-close a window. */
+  closeWindow(treeId: string): void {
+    this.windows.delete(treeId);
+  }
+
+  /** Check if a tree has an active conversation window. */
+  hasActiveWindow(treeId: string): boolean {
+    return this.windows.has(treeId);
+  }
+
+  /** Get current window state (null if none). */
+  getWindow(treeId: string): WindowState | null {
+    return this.windows.get(treeId) ?? null;
+  }
+}
+
+export const conversationWindows = new ConversationWindowManager();
+
+// ── Keyword patterns that signal Ari should join a conversation ───────
+const ENGAGEMENT_KEYWORDS = [
+  // Spanish question starters
+  /\b(qué|que|quién|quien|quiénes|quienes|cómo|como|cuándo|cuando|dónde|donde|por qu[ée]|cuál|cual|cuáles|cuales)\b/i,
+  // Help / need signals
+  /\b(ayuda|help|necesito|necesitamos|alguien\s+sabe|alguien\s+me\s+puede|se\s+necesita)\b/i,
+  // Engagement / opinion requests
+  /\b(qué\s+opinan|qué\s+piensan|alguien\s+ha\s+(hecho|probado|usado)|recomiendan|sugerencias|consejos?)\b/i,
+  // Direct addressing of Ari in ambient chat (not a command)
+  /\b(ari[\s,!?]|ari\s+(dime|cu[ée]ntame|qu[ée]\s+(opinas|piensas|sabes)|ay[úu]dame|expl[íi]came))\b/i,
+  // Urgent / time-sensitive
+  /\b(urgente|emergencia|rápido|rapido|ahora mismo|para\s+ya|cu[áa]nto\s+antes)\b/i,
+  // Technical / project questions
+  /\b(c[óo]mo\s+se\s+hace|c[óo]mo\s+funciona|qu[ée]\s+es\s+(un|una|el|la)|para\s+qu[ée]\s+sirve)\b/i,
+];
+
+/**
+ * Scan a message for keywords that should trigger a conversation window.
+ * Returns the matched keyword pattern string, or null if no match.
+ */
+export function scanForKeywords(text: string): string | null {
+  if (!text || text.length < 3) return null;
+  for (const re of ENGAGEMENT_KEYWORDS) {
+    const m = text.match(re);
+    if (m) return m[0];
+  }
+  return null;
+}
+
+/**
+ * Decide whether Ari should respond given the window state and current message.
+ *
+ * Heuristics:
+ *  - Always respond on first message of a new window (keyword-triggered open).
+ *  - Respond if window.remaining is at 5 (fresh engagement).
+ *  - Respond if message contains a question mark (explicit question).
+ *  - Respond probabilistically (~30%) on mid-window messages to feel natural.
+ *  - Never respond if remaining is 0 (window closed).
+ */
+export function shouldAriRespond(
+  window: WindowState | null,
+  messageText: string,
+): boolean {
+  if (!window) return false;
+  if (window.remaining <= 0) return false;
+
+  // Always respond on window open (fresh engagement)
+  if (window.remaining === 5) return true;
+
+  // Explicit question
+  if (messageText.includes("?")) return true;
+
+  // Mid-window: probabilistic to feel organic (~30%)
+  if (window.remaining >= 2) {
+    return Math.random() < 0.3;
+  }
+
+  return false;
 }
