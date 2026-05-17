@@ -790,7 +790,40 @@ export async function createBot(prisma: PrismaClient): Promise<Bot<BotContext> |
     const chatType = ctx.chat?.type;
     if (chatType !== "private") return next();
 
-    if (process.env.HERMES_BRIDGE_ENABLED === "true") {
+    // ── Activar notificaciones DM ────────────────────────────────────────
+    const rawText = (ctx.message && "text" in ctx.message) ? ctx.message.text : null;
+    if (rawText && rawText.trim().toLowerCase() === "activo") {
+      const tgUser = ctx.from;
+      if (!tgUser) return;
+
+      const user = await (prisma as any).user.findUnique({
+        where: { telegramUserId: BigInt(tgUser.id) },
+        select: { id: true },
+      });
+
+      if (!user) {
+        await ctx.reply("⚠️ No tienes una cuenta vinculada. Usa /start en un grupo para vincularte a Trust Maker.");
+        return;
+      }
+
+      const memberships = await (prisma as any).treeMember.findMany({
+        where: { userId: user.id, status: "ACTIVE" },
+      });
+
+      if (memberships.length === 0) {
+        await ctx.reply("🌳 No eres miembro activo de ningún árbol. Únete a un grupo de Trust Maker para empezar.");
+        return;
+      }
+
+      // Activar DM para todos los árboles activos
+      await (prisma as any).treeMember.updateMany({
+        where: { userId: user.id, status: "ACTIVE" },
+        data: { dmActivated: true },
+      });
+
+      await ctx.reply("✅ ¡Listo! Ahora recibirás propuestas de votación por DM.");
+      return;
+    }
       // ── Hermes Bridge: enrutar DM al agente ───────────────────────────
       const msg = ctx.message;
       if (!msg || !("text" in msg) || !msg.text) return;
@@ -1869,6 +1902,151 @@ export async function createBot(prisma: PrismaClient): Promise<Bot<BotContext> |
         );
       }
       await ctx.answerCallbackQuery();
+      return;
+    }
+
+    // ── Kanban Vote: callback_data = "kanban_vote:<proposalId>:<yes|no>" ──
+    if (data.startsWith("kanban_vote:")) {
+      await ctx.answerCallbackQuery();
+      const parts = data.split(":");
+      // parts = ["kanban_vote", proposalId, "yes"|"no"]
+      if (parts.length < 3) return;
+      const proposalId = parts[1];
+      const vote = parts[2]; // "yes" | "no"
+
+      if (vote !== "yes" && vote !== "no") return;
+
+      const tgUser = ctx.from;
+      if (!tgUser) {
+        await ctx.reply("⚠️ No se pudo identificar tu cuenta.");
+        return;
+      }
+
+      try {
+        // 1. Look up TrustMaker user
+        const user = await (prisma as any).user.findUnique({
+          where: { telegramUserId: BigInt(tgUser.id) },
+        });
+        if (!user) {
+          await ctx.reply("⚠️ No tienes cuenta vinculada. Usa /start para vincularte.");
+          return;
+        }
+
+        // 2. Look up proposal
+        const proposal = await (prisma as any).kanbanProposal.findUnique({
+          where: { id: proposalId },
+        });
+        if (!proposal) {
+          await ctx.reply("⚠️ Esta propuesta ya no existe.");
+          return;
+        }
+
+        if (proposal.status !== "OPEN") {
+          await ctx.reply("⚠️ Esta propuesta ya fue resuelta.");
+          return;
+        }
+
+        // 3. Verify user is active member of the tree
+        const membership = await prisma.treeMember.findUnique({
+          where: {
+            userId_treeId: { userId: user.id, treeId: proposal.treeId },
+          },
+        });
+        if (!membership || membership.status !== "ACTIVE") {
+          await ctx.reply("⚠️ No eres miembro activo de este árbol.");
+          return;
+        }
+
+        // 4. Prevent double vote
+        const existingVote = await (prisma as any).kanbanVote.findUnique({
+          where: {
+            proposalId_userId: { proposalId, userId: user.id },
+          },
+        });
+        if (existingVote) {
+          await ctx.reply(
+            `⚠️ Ya votaste "${existingVote.vote === "yes" ? "✅ Sí" : "❌ No"}" en esta propuesta.`,
+          );
+          return;
+        }
+
+        // 5. Record the vote
+        await (prisma as any).kanbanVote.create({
+          data: { proposalId, userId: user.id, vote },
+        });
+
+        // 6. Update vote counters
+        if (vote === "yes") {
+          await (prisma as any).kanbanProposal.update({
+            where: { id: proposalId },
+            data: { votesYes: { increment: 1 } },
+          });
+        } else {
+          await (prisma as any).kanbanProposal.update({
+            where: { id: proposalId },
+            data: { votesNo: { increment: 1 } },
+          });
+        }
+
+        // Fetch updated counts
+        const updated = await (prisma as any).kanbanProposal.findUnique({
+          where: { id: proposalId },
+          select: { votesYes: true, votesNo: true, treeId: true },
+        });
+
+        if (!updated) return;
+
+        // Count active members for quorum display
+        const activeMembers = await prisma.treeMember.count({
+          where: { treeId: proposal.treeId, status: "ACTIVE" },
+        });
+
+        const totalVotes = (updated.votesYes ?? 0) + (updated.votesNo ?? 0);
+        const quorumInfo =
+          activeMembers > 0
+            ? `${totalVotes}/${activeMembers} (${Math.round((totalVotes / activeMembers) * 100)}%)`
+            : `${totalVotes} votos`;
+
+        // 7. Edit the DM message with updated counts
+        const tasksCount = Array.isArray(proposal.tasks) ? proposal.tasks.length : 0;
+        const diffCounts: Record<number, number> = {};
+        if (Array.isArray(proposal.tasks)) {
+          for (const t of proposal.tasks) {
+            const d = t.difficulty || 0;
+            diffCounts[d] = (diffCounts[d] || 0) + 1;
+          }
+        }
+        const diffBreakdown = Object.entries(diffCounts)
+          .map(([d, c]) => `${c}x dif.${d}`)
+          .join(", ");
+
+        const updatedText = [
+          `📋 *Propuesta Kanban*`,
+          `Tareas: ${tasksCount}${diffBreakdown ? ` (${diffBreakdown})` : ""}`,
+          `Costo estimado: ~${proposal.estimatedCostCLP ? Math.round(proposal.estimatedCostCLP) : "?"} CLP`,
+          `✅ Sí: ${updated.votesYes} | ❌ No: ${updated.votesNo} | 👥 Quórum: ${quorumInfo}`,
+        ].join("\n");
+
+        try {
+          await ctx.editMessageText(updatedText, { parse_mode: "Markdown" });
+        } catch (editErr: any) {
+          // If we can't edit (e.g., message too old), send a new message
+          if (editErr.message?.includes("message is not modified")) {
+            // Same content — silently ignore
+          } else {
+            // Send confirmation as new message
+            await ctx.reply(updatedText, { parse_mode: "Markdown" });
+          }
+        }
+
+        // Show toast confirmation
+        await ctx.answerCallbackQuery({
+          text: vote === "yes" ? "✅ Votaste SÍ" : "❌ Votaste NO",
+        });
+      } catch (err: any) {
+        console.error("[kanban_vote] Error:", err.message);
+        try { await ctx.reply("⚠️ Error al procesar tu voto."); } catch { /* ok */ }
+      }
       return;
     }
 

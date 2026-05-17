@@ -159,6 +159,8 @@ model User {
   interventionRatings AgentInterventionRating[]
   penaltyVotes        AgentPenaltyVote[]
   socialProfiles      MemberSocialProfile[]
+  kanbanVotes         KanbanVote[]
+  kanbanProposalsCreated KanbanProposal[] @relation("ProposalCreator")
 }
 
 model Tree {
@@ -264,6 +266,7 @@ model TreeMember {
   paymentSplits  PaymentSplit[]
   balance        MemberBalance?
   ledgerEntries  TransactionLedger[]
+  dmActivated   Boolean        @default(false)
   joinedAt       DateTime       @default(now())
   user      User  @relation(fields: [userId], references: [id], onDelete: Cascade)
   tree      Tree  @relation(fields: [treeId], references: [id], onDelete: Cascade)
@@ -1080,6 +1083,8 @@ model KanbanProposal {
   id               String   @id @default(uuid())
   treeId           String
   tree             Tree     @relation(fields: [treeId], references: [id])
+  creatorId        String?
+  creator          User?    @relation("ProposalCreator", fields: [creatorId], references: [id], onDelete: SetNull)
   messageId        BigInt
   chatId           BigInt
   status           String   @default("OPEN")
@@ -1088,9 +1093,11 @@ model KanbanProposal {
   estimatedCostCLP Float
   votesYes         Int      @default(0)
   votesNo          Int      @default(0)
+  dmMessageIds     Json?
   createdAt        DateTime @default(now())
   expiresAt        DateTime
   resolvedAt       DateTime?
+  votes            KanbanVote[]
 
   @@index([treeId, status])
 }
@@ -1110,6 +1117,20 @@ model KanbanCostLog {
   createdAt        DateTime @default(now())
 
   @@index([treeId, difficulty, createdAt])
+}
+
+model KanbanVote {
+  id          String   @id @default(uuid())
+  proposalId  String
+  userId      String
+  vote        String   // "yes" | "no"
+  createdAt   DateTime @default(now())
+
+  user     User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  proposal KanbanProposal @relation(fields: [proposalId], references: [id], onDelete: Cascade)
+
+  @@unique([proposalId, userId])
+  @@index([proposalId])
 }
 
 model ExchangeRate {

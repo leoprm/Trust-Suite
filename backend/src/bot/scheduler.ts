@@ -23,6 +23,7 @@ import { updateSkillPricing } from "../cron/skillPricingCron";
 import { runTalentMigration } from "../cron/talentMigrationCron";
 import { runHealthCheck } from "../cron/healthCheckCron";
 import { runExchangeRateUpdate } from "../cron/exchangeRateCron";
+import { runProposalResolver } from "../cron/proposalResolverCron";
 import { prisma } from "../index";
 
 // ── Constantes ─────────────────────────────────────────────────────────────────
@@ -73,6 +74,7 @@ let skillPricingTask: ScheduledTask | null = null;
 let talentMigrationTask: ScheduledTask | null = null;
 let healthCheckTask: ScheduledTask | null = null;
 let exchangeRateTask: ScheduledTask | null = null;
+let proposalResolverTask: ScheduledTask | null = null;
 let kanbanWatchdogInterval: NodeJS.Timeout | null = null;
 
 /**
@@ -207,6 +209,21 @@ export function startScheduler(
   });
   console.log("[Scheduler] 💱 Exchange Rate USD/CLP programado cada 6 horas");
 
+  // ── Cron: */2 * * * * (cada 2 minutos) — Proposal Resolver ────
+  proposalResolverTask = cron.schedule("*/2 * * * *", async () => {
+    try {
+      const resolutions = await runProposalResolver(prismaClient, bot);
+      if (resolutions.length > 0) {
+        console.log(
+          `[Scheduler] 📋 Proposal Resolver: ${resolutions.length} propuestas resueltas.`,
+        );
+      }
+    } catch (err) {
+      console.error("[Scheduler] Error en proposal resolver:", err);
+    }
+  });
+  console.log("[Scheduler] 📋 Proposal Resolver programado cada 2 minutos");
+
   // ── Kanban Watchdog: 150s interval ──
   kanbanWatchdogInterval = startKanbanWatchdog(prismaClient, bot);
 
@@ -234,7 +251,7 @@ export async function triggerDailyClose(
  */
 export function stopScheduler(): void {
   let stopped = false;
-  for (const task of [midnightTask, decayTask, rotationTask, autoScaleTask, monthlyFeeTask, disputeResolutionTask, skillPricingTask, talentMigrationTask, healthCheckTask, exchangeRateTask]) {
+  for (const task of [midnightTask, decayTask, rotationTask, autoScaleTask, monthlyFeeTask, disputeResolutionTask, skillPricingTask, talentMigrationTask, healthCheckTask, exchangeRateTask, proposalResolverTask]) {
     if (task) {
       task.stop();
       stopped = true;
@@ -251,6 +268,7 @@ export function stopScheduler(): void {
   talentMigrationTask = null;
   healthCheckTask = null;
   exchangeRateTask = null;
+  proposalResolverTask = null;
   kanbanWatchdogInterval = null;
   if (stopped) {
     console.log("[Scheduler] ⏹️ Todos los schedulers detenidos.");
