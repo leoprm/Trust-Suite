@@ -52,6 +52,32 @@ export async function runProposalResolver(
         },
       });
 
+      // a2. Threshold check: trees with ≤voteThreshold members → auto-APPROVE (direct execution)
+      const tree = await (prisma as any).tree.findUnique({
+        where: { id: p.treeId },
+        select: { voteThreshold: true },
+      });
+      if (activeMembers <= (tree?.voteThreshold ?? 20)) {
+        await (prisma as any).kanbanProposal.update({
+          where: { id: p.id },
+          data: { status: "APPROVED", resolvedAt: now },
+        });
+        console.log(
+          `[ProposalResolver] ⚡ ${p.id}: AUTO-APPROVED — tree has ${activeMembers} ≤ ${tree?.voteThreshold ?? 20} members (direct execution)`,
+        );
+        resolutions.push({
+          proposalId: p.id,
+          status: "APPROVED",
+          reason: "ejecución directa (árbol pequeño)",
+          votesYes: p.votesYes ?? 0,
+          votesNo: p.votesNo ?? 0,
+          totalVotes: (p.votesYes ?? 0) + (p.votesNo ?? 0),
+          activeMembers,
+          participation: 0,
+        });
+        continue;
+      }
+
       // b. Total de votos
       const totalVotes = (p.votesYes ?? 0) + (p.votesNo ?? 0);
 
