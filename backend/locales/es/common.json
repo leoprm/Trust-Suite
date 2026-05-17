@@ -54,7 +54,7 @@
   "todo_completed": "✅ ¡{{name}} completó *{{summary}}*!",
   "todo_remaining": "📋 Quedan {{count}} pendiente{{plural}}",
   "todo_ambiguity": "🤔 ¿Te refieres a...\n\n{{options}}\n\n_Responde con el número._",
-  "welcome_new_member": "👋 Hola! {{name}} soy Ari, la asistente multi agente del grupo 👋\n\nPARA PODER VOTAR MÁNDAME UN DM QUE DIGA 'activo'",
+  "welcome_new_member": "👋 Hola! {{name}} soy Ari, la asistente multi agente del grupo 👋",
   "todo_claimed": "👍 {{name}} se apuntó a '*{{summary}}*'",
   "todo_already_claimed": "👀 Esa tarea ya la tiene asignada {{name}}",
   "todo_already_claimed_self": "👀 Ya te habías apuntado a esa tarea",

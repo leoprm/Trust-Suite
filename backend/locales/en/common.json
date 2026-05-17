@@ -54,7 +54,7 @@
   "todo_completed": "✅ {{name}} completed *{{summary}}*!",
   "todo_remaining": "📋 {{count}} remaining",
   "todo_ambiguity": "🤔 Do you mean...\n\n{{options}}\n\n_Reply with the number._",
-  "welcome_new_member": "👋 Hi! {{name}} I am Ari, the multi-agent assistant for this group 👋\n\nPARA PODER VOTAR MÁNDAME UN DM QUE DIGA 'activo'",
+  "welcome_new_member": "👋 Hi! {{name}} I am Ari, the multi-agent assistant for this group 👋",
   "todo_claimed": "👍 {{name}} volunteered for '*{{summary}}*'",
   "todo_already_claimed": "👀 That task is already assigned to {{name}}",
   "todo_already_claimed_self": "👀 You already claimed that task",
