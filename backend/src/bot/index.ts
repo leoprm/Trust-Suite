@@ -915,7 +915,7 @@ export async function createBot(prisma: PrismaClient): Promise<Bot<BotContext> |
         } else {
           // Add todo item — parse deadline from text
           const deadline = parseDeadline(todoText);
-          const summary = todoText.length > 80 ? todoText.slice(0, 77) + "..." : todoText;
+          const summary = summarizeTodo(todoText);
           const todo = await (prisma as any).todo.create({
             data: {
               treeId: tree.id,

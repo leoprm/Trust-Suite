@@ -286,12 +286,40 @@ export const TODO_SUMMARY_MAX_LENGTH = 80;
 
 /**
  * Resume un texto para mostrarlo como resumen de un todo.
- * Si el texto es <= TODO_SUMMARY_MAX_LENGTH, se usa tal cual.
- * Si es mayor, se trunca en el último espacio antes del límite y se agrega "...".
+ * Extrae: qué (acción), quién (persona), cuándo (tiempo).
+ * Descarta: dónde (ubicaciones), relleno, adjetivos extra.
+ *
+ * Ej: "Ir por el tata pato el jueves en la noche al aeropuerto Arturo Merino"
+ *   → "Ir por el tata el jueves"
  */
 export function summarizeTodo(text: string): string {
   if (text.length <= TODO_SUMMARY_MAX_LENGTH) return text;
-  const truncated = text.slice(0, TODO_SUMMARY_MAX_LENGTH);
+
+  // 1. Remove location phrases: "al X", "a la X", "en el X", "en la X"
+  //    But preserve time: "en la noche" / "en la mañana" are time, not location
+  const TIME_PREP_PHRASES = /\b(?:en la noche|en la mañana|en la tarde|de noche|de día|de mañana|de tarde)\b/gi;
+  let cleaned = text;
+
+  // Save time phrases before stripping locations
+  const savedTime: string[] = [];
+  cleaned = cleaned.replace(TIME_PREP_PHRASES, (match) => {
+    savedTime.push(match);
+    return `__TIME${savedTime.length - 1}__`;
+  });
+
+  // Strip location prepositional phrases
+  cleaned = cleaned.replace(/\b(?:al|a la|a el|en el|en la|en)\s+[A-ZÁÉÍÓÚÑ][a-záéíóúñ]+(?:\s+[A-ZÁÉÍÓÚÑ][a-záéíóúñ]+)*/g, "");
+
+  // Restore time phrases
+  cleaned = cleaned.replace(/__TIME(\d+)__/g, (_, i) => savedTime[parseInt(i)] || "");
+
+  // 2. Clean up double spaces
+  cleaned = cleaned.replace(/\s{2,}/g, " ").trim();
+
+  // 3. If still too long, truncate at word boundary
+  if (cleaned.length <= TODO_SUMMARY_MAX_LENGTH) return cleaned;
+
+  const truncated = cleaned.slice(0, TODO_SUMMARY_MAX_LENGTH);
   const lastSpace = truncated.lastIndexOf(" ");
   return (lastSpace > 10 ? truncated.slice(0, lastSpace) : truncated) + "...";
 }
