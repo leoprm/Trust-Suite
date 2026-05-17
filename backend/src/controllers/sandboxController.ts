@@ -1,7 +1,28 @@
 import { Request, Response } from 'express';
+import { exec } from 'child_process';
+import path from 'path';
 import { TreeSandbox, PortPoolExhaustedError } from '../services/treeSandbox';
 import { logEvent, getRequestContext } from '../services/eventLogService';
 import { prisma } from '../index';
+
+const API_SERVER_KEY = process.env.HERMES_API_SERVER_KEY ?? '';
+const MEDIA_SEARCH_TIMEOUT_MS = 90_000;
+
+function checkApiKey(req: Request, res: Response): boolean {
+  const authHeader = req.headers.authorization;
+  if (!authHeader) {
+    res.status(401).json({ error: 'Authorization header missing' });
+    return false;
+  }
+  const token = authHeader.startsWith('Bearer ')
+    ? authHeader.slice(7)
+    : authHeader;
+  if (!API_SERVER_KEY || token !== API_SERVER_KEY) {
+    res.status(403).json({ error: 'Invalid API key' });
+    return false;
+  }
+  return true;
+}
 
 /**
  * POST /api/trees/:id/sandbox
@@ -109,5 +130,131 @@ export const removeTreeSandbox = async (req: any, res: Response) => {
   } catch (error: any) {
     console.error('[removeTreeSandbox] ERROR:', error?.message || error);
     res.status(500).json({ error: 'Failed to delete sandbox' });
+  }
+};
+
+// ── POST /api/trees/:id/sandbox/media-search ────────────────────────────
+// Body: { query: string, limit?: number, senderFilter?: string }
+// Calls clip_index.py to search media files in the sandbox workspace.
+// Returns: [{ path, senderName, date, score }]
+
+interface MediaSearchResult {
+  path: string;
+  senderName: string;
+  date: string;
+  score: number;
+}
+
+export const searchMediaInSandbox = async (req: Request, res: Response) => {
+  if (!checkApiKey(req, res)) return;
+
+  try {
+    const id = req.params.id as string;
+    const { query, limit, senderFilter } = req.body;
+
+    if (!query || typeof query !== 'string' || query.trim().length === 0) {
+      return res.status(400).json({ error: 'query is required (non-empty string)' });
+    }
+
+    const resultLimit = typeof limit === 'number' && limit > 0 && limit <= 100
+      ? Math.floor(limit)
+      : 5;
+
+    // Validate tree + sandbox exist
+    const sb = await TreeSandbox.get(id);
+    if (!sb) {
+      return res.status(404).json({ error: 'Sandbox not found for this tree' });
+    }
+
+    const fs = await import('fs');
+    if (!fs.existsSync(sb.workspacePath)) {
+      return res.status(500).json({ error: 'Sandbox workspace directory not found' });
+    }
+
+    // Resolve clip_index.py relative to this source file (backend/src/controllers → ../../lib)
+    const libDir = path.resolve(__dirname, '../../lib');
+    const clipIndexPy = path.join(libDir, 'clip_index.py');
+    const pythonBin = process.env.HERMES_PYTHON_BIN || 'python3';
+
+    const cmd = `${pythonBin} "${clipIndexPy}" search "${id}" "${query.trim()}" --limit ${resultLimit}`;
+
+    const result = await new Promise<{ stdout: string; stderr: string; exitCode: number }>(
+      (resolve, reject) => {
+        const child = exec(cmd, {
+          cwd: sb.workspacePath,
+          timeout: MEDIA_SEARCH_TIMEOUT_MS,
+          maxBuffer: 1024 * 1024,
+        });
+
+        let stdout = '';
+        let stderr = '';
+
+        child.stdout?.on('data', (data) => { stdout += data; });
+        child.stderr?.on('data', (data) => { stderr += data; });
+
+        child.on('close', (exitCode) => {
+          resolve({ stdout, stderr, exitCode: exitCode ?? 1 });
+        });
+
+        child.on('error', (err: NodeJS.ErrnoException) => {
+          if ((err as any).killed) {
+            resolve({
+              stdout,
+              stderr: stderr + `\n[Timeout after ${MEDIA_SEARCH_TIMEOUT_MS / 1000}s]`,
+              exitCode: 124,
+            });
+          } else {
+            reject(err);
+          }
+        });
+      },
+    );
+
+    if (result.exitCode !== 0) {
+      console.error('[searchMediaInSandbox] clip_index.py error:', result.stderr);
+      return res.status(500).json({
+        error: 'Media search failed',
+        detail: result.stderr.slice(0, 500),
+      });
+    }
+
+    let results: MediaSearchResult[] = [];
+    try {
+      results = JSON.parse(result.stdout);
+    } catch {
+      console.error('[searchMediaInSandbox] Failed to parse clip_index.py output:', result.stdout.slice(0, 300));
+      return res.status(500).json({ error: 'Invalid search results from indexer' });
+    }
+
+    // Apply sender filter if requested
+    if (senderFilter && typeof senderFilter === 'string') {
+      const filter = senderFilter.trim().toLowerCase();
+      results = results.filter(
+        (r) => r.senderName.toLowerCase().includes(filter),
+      );
+    }
+
+    // Return results (clip_index.py already returns sandbox-relative paths)
+    const clean = results.map(({ path: p, senderName, date, score }) => ({
+      path: p,
+      senderName,
+      date,
+      score,
+    }));
+
+    void logEvent({
+      ...getRequestContext(req),
+      treeId: id,
+      action: 'SANDBOX_MEDIA_SEARCH',
+      entityType: 'TreeSandbox',
+      entityId: id,
+      source: 'SYSTEM',
+      metadataJson: { query, resultCount: clean.length, senderFilter: senderFilter || null },
+    });
+
+    res.json(clean);
+  } catch (error: any) {
+    console.error('[searchMediaInSandbox] ERROR:', error?.message || error);
+    res.status(500).json({ error: 'Media search failed', detail: error?.message });
   }
 };
