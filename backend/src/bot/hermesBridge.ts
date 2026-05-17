@@ -209,7 +209,7 @@ const ENGAGEMENT_KEYWORDS: RegExp[] = [
   // Input-seeking phrases
   /\b(saben\s+(cómo|si|qué|dónde|cuándo|algo)|sabes\s+(cómo|si|qué|dónde|cuándo|algo)|se\s+puede|hay\s+que)\b/i,
   // Proposals / suggestions
-  /\b(podemos|podr[ií]amos|deber[ií]amos|qué\s+tal\s+si|y\s+si\s+)\b/i,
+  /\b(podemos|podr[ií]amos|podr[ií]an|podr[ií]a|pueden|deber[ií]amos|qué\s+tal\s+si|y\s+si\s+)\b/i,
   // Explicit requests for input
   /\b(ayudar|ay[úu]dame|expl[ií]came|expl[ií]car|alguna\s+idea|ideas?|opini[óo]n|qu[ée]\s+opinan|qu[ée]\s+piensan)\b/i,
 ];
