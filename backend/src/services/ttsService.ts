@@ -35,7 +35,7 @@ function resolveEdgeTtsPath(): string {
 
 const EDGE_TTS_BIN = resolveEdgeTtsPath();
 const DEFAULT_VOICE = "es-MX-DaliaNeural";
-const TIMEOUT_MS = 15_000; // 15s max for TTS generation
+const TIMEOUT_MS = 60_000; // 60s max for TTS generation (longer texts = more time)
 
 // ── Voice map ───────────────────────────────────────────────────────────────
 
@@ -110,7 +110,7 @@ function sanitizeText(text: string): string {
     .replace(/\n+/g, ". ")                    // newlines → pauses
     .replace(/\s+/g, " ")
     .trim()
-    .slice(0, 500);
+    .slice(0, 4000);  // ~5 min de audio — Telegram soporta hasta 50 MB
 }
 
 function runEdgeTts(text: string, outputPath: string, voice: string): Promise<void> {
