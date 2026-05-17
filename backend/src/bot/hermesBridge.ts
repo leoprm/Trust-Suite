@@ -371,7 +371,7 @@ export async function routeToHermes(
 
   // ── Call Hermes Agent API ─────────────────────────────────────────────
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 900_000); // 15 minutos
+  const timeoutId = setTimeout(() => controller.abort(), 120_000); // 2 minutos
 
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
@@ -459,7 +459,9 @@ export async function routeToHermes(
         }
         try {
           const parsed = JSON.parse(payload);
-          const delta = parsed?.choices?.[0]?.delta?.content;
+          // Handle both streaming (delta) and non-streaming (message) formats
+          const delta = parsed?.choices?.[0]?.delta?.content
+            ?? parsed?.choices?.[0]?.message?.content;
           if (delta) accumulatedContent += delta;
         } catch {
           // Skip unparseable SSE payloads
@@ -474,9 +476,15 @@ export async function routeToHermes(
       return null;
     }
 
+    console.log(`[hermesBridge] Response: ${accumulatedContent.length} chars`);
     return { text: accumulatedContent };
   } catch (err) {
     clearTimeout(timeoutId);
+    // If we accumulated partial content before the error, return it
+    if (accumulatedContent) {
+      console.warn(`[hermesBridge] Stream interrupted, returning ${accumulatedContent.length} partial chars`);
+      return { text: accumulatedContent };
+    }
     if (err instanceof Error && err.name === "AbortError") {
       console.error("[hermesBridge] Hermes API stream timed out after 15 minutes");
     } else {

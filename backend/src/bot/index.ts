@@ -2160,8 +2160,7 @@ export async function createBot(prisma: PrismaClient): Promise<Bot<BotContext> |
           await ctx.reply(
             t("onboarding.org_question", lang) + "\n\n" +
             t("onboarding.org_examples", lang) + "\n\n" +
-            "_" + t("onboarding.org_prompt", lang) + "_" +
-            ""_,
+            "_" + t("onboarding.org_prompt", lang) + "_",
             {
               parse_mode: "Markdown",
               reply_markup: {
