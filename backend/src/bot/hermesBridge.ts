@@ -310,14 +310,34 @@ export async function routeToHermes(
 ): Promise<HermesBridgeResponse | null> {
   let didEnqueue = false; // track whether we acquired the semaphore
 
+  // ── Lazy import prisma (avoid circular deps) ───────────────────────────
+  const { prisma } = await import("../index");
+
   // ── Queue gate: enqueue before calling Ari ──────────────────────────────
   if (chatId !== undefined && messageId !== undefined) {
     const numericUserId = parseInt(userId, 10) || 0;
+
+    // Look up user role for priority queue
+    let role: string | undefined;
+    try {
+      const member = await (prisma as any).treeMember.findFirst({
+        where: {
+          treeId,
+          user: { telegramUserId: BigInt(userId) },
+        },
+        select: { role: true },
+      });
+      role = member?.role ?? undefined;
+    } catch {
+      // role stays undefined if lookup fails — non-admin treatment
+    }
+
     const queued = messageQueue.enqueue({
       chatId,
       text: message,
       userId: numericUserId,
       messageId,
+      role,
     });
 
     if (!queued.accepted) {
@@ -335,8 +355,6 @@ export async function routeToHermes(
   const API_SERVER_KEY = process.env.HERMES_API_SERVER_KEY ?? "";
 
   // ── Build system prompt with tree context from DB ─────────────────────
-  // We need a Prisma instance — use dynamic import to avoid circular deps
-  const { prisma } = await import("../index");
   const systemPrompt = await buildSystemPrompt(prisma, treeId, userId, displayName);
 
   // ── Build messages array ──────────────────────────────────────────────

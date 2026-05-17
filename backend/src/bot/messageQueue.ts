@@ -13,6 +13,7 @@ export interface QueuedMessage {
   text: string;
   userId: number;
   messageId: number;
+  role?: string;
 }
 
 export interface EnqueueResult {
@@ -29,6 +30,11 @@ export class MessageQueue {
   enqueue(msg: QueuedMessage): EnqueueResult {
     if (this.state === "idle") {
       this.state = "typing";
+      return { accepted: true, position: 0 };
+    }
+    // Admin priority: always accepted, jumps to front of queue
+    if (msg.role === "ADMIN") {
+      this.queue.unshift(msg);
       return { accepted: true, position: 0 };
     }
     if (this.queue.length >= this.maxSize) {
