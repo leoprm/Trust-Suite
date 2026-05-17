@@ -275,7 +275,7 @@ export async function createBot(prisma: PrismaClient): Promise<Bot<BotContext> |
   // ── Welcome / rejoin messages ─────────────────────────────────────────
 
   function rejoinMessage(treeName: string): string {
-    return `🌳 ¡He vuelto! El árbol "${treeName}" sigue activo.\n\nPARA PODER VOTAR MÁNDAME UN DM QUE DIGA 'activo'`;
+    return `🌳 ¡He vuelto! El árbol "${treeName}" sigue activo.`;
   }
 
   /**
@@ -2154,8 +2154,6 @@ export async function createBot(prisma: PrismaClient): Promise<Bot<BotContext> |
             `I help organize tasks, vote on needs, and keep projects moving. You can ask me things like "Ari add buy charcoal" or use /todo to manage the shared task list.`,
             "",
             `If you'd like, tell me what your main skills are — it helps me organize the group and match people to the right projects. No pressure, only if you feel like it!`,
-            "",
-            "PARA PODER VOTAR MÁNDAME UN DM QUE DIGA 'activo'",
           ].join("\n")
         : [
             `¡Hola ${mention}! 👋 Soy Ari, la asistente multi-agente del grupo.`,
@@ -2163,8 +2161,6 @@ export async function createBot(prisma: PrismaClient): Promise<Bot<BotContext> |
             `Ayudo a organizar tareas, votar necesidades y mantener los proyectos en marcha. Podés pedirme cosas como \"Ari anota comprar carbón\" o usar /todo para gestionar la lista de tareas compartida.`,
             "",
             `Si querés, contame cuáles son tus principales habilidades — así puedo organizar mejor al grupo y sus proyectos. ¡Sin presión, solo si tenés ganas!`,
-            "",
-            "PARA PODER VOTAR MÁNDAME UN DM QUE DIGA 'activo'",
           ].join("\n");
 
       try {

@@ -92,7 +92,6 @@ import teamRoutes from './routes/teamRoutes';
 import adminRoutes from './routes/adminRoutes';
 import structureRoutes from './routes/structureRoutes';
 import investmentRoutes from './routes/investmentRoutes';
-import kanbanRoutes from './routes/kanbanRoutes';
 // Note: roleRoutes is registered inline below to avoid circular dependency with eventLogService
 import { createBot } from './bot/index';
 import { startScheduler } from './bot/scheduler';
@@ -251,7 +250,6 @@ app.use(globalLimiter);
 app.use('/api/auth', authRoutes);
 app.use('/api/trees', treeRoutes);
 app.use('/api/trees', sandboxRoutes); // sandbox sub-routes: GET/DELETE /:id/sandbox
-app.use('/api/trees', kanbanRoutes);  // kanban sub-routes: /:treeId/kanban/*
 app.use('/api/needs', needRoutes);
 app.use('/api/ideas', ideaRoutes);
 app.use('/api/results', resultRoutes);
