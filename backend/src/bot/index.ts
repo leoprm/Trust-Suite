@@ -328,6 +328,22 @@ export async function createBot(prisma: PrismaClient): Promise<Bot<BotContext> |
     // Resolve language: prefer tree.language for groups, user.language for DMs
     let lang: string | null = null;
     const chatType = ctx.chat?.type;
+
+    // ── Guard: solo el creador del grupo puede responder al onboarding ──
+    if (chatType === "group" || chatType === "supergroup") {
+      const chatId = ctx.chat.id.toString();
+      const tree = await (prisma as any).tree.findFirst({
+        where: { telegramChatId: chatId },
+        select: { id: true, onboardingInviterId: true },
+      });
+      if (tree?.onboardingInviterId) {
+        const inviterId = Number(tree.onboardingInviterId);
+        if (ctx.from?.id !== inviterId) {
+          return; // ignorar silenciosamente — no es el creador
+        }
+      }
+    }
+
     if ((chatType === "group" || chatType === "supergroup") && session.onboardingTreeId) {
       lang = await resolveTreeLanguage(prisma, session.onboardingTreeId);
     }
@@ -1928,6 +1944,23 @@ export async function createBot(prisma: PrismaClient): Promise<Bot<BotContext> |
           const session = (ctx as BotContext).session;
           session.onboardingTreeId = treeId;
           session.onboardingStep = 1;
+
+          // Guardar el creador del grupo como único autorizado para onboarding
+          try {
+            const admins = await ctx.getChatAdministrators();
+            const creator = admins.find((a: any) => a.status === "creator");
+            const inviterId = creator ? BigInt(creator.user.id) : BigInt(ctx.from.id);
+            await (prisma as any).tree.update({
+              where: { id: treeId },
+              data: { onboardingInviterId: inviterId },
+            });
+          } catch {
+            // Fallback: usar quien seleccionó el idioma
+            await (prisma as any).tree.update({
+              where: { id: treeId },
+              data: { onboardingInviterId: BigInt(ctx.from.id) },
+            });
+          }
         }
       }
       return;
