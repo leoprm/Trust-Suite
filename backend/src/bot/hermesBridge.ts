@@ -457,6 +457,71 @@ async function buildSystemPrompt(
     "- Si la API sandbox no está disponible (error de conexión), informa al usuario y NO uses workarounds con herramientas nativas.",
   );
 
+  // ── Media search & iterative confirmation ─────────────────────────────
+  lines.push("");
+  lines.push("═══════ BÚSQUEDA DE ARCHIVOS ═══════");
+  lines.push("");
+  lines.push("4. BUSCAR ARCHIVOS POR DESCRIPCIÓN:");
+  lines.push(`   POST /api/trees/${treeId}/sandbox/media-search`);
+  lines.push(
+    '   Body: { "query": "foto del perro", "limit": 5, "senderFilter": "Leo" }',
+  );
+  lines.push(
+    '   Response: [{ "path": "documentos/foto_perro.jpg", "senderName": "Leo", "date": "2026-05-15", "score": 0.92 }]',
+  );
+  lines.push(
+    "   senderFilter es opcional — úsalo cuando el usuario mencione quién envió el archivo.",
+  );
+  lines.push("");
+  lines.push("═══ FLUJO DE CONFIRMACIÓN ITERATIVA ═══");
+  lines.push("");
+  lines.push(
+    'Cuando el usuario pida un archivo ("mándame la foto de...", "pásame el documento de...", "busca el archivo..."):',
+  );
+  lines.push("");
+  lines.push("1. Buscar → llama a media-search con la descripción del usuario.");
+  lines.push(
+    '   Si menciona quién lo envió ("la foto de Leo"), agregas senderFilter.',
+  );
+  lines.push("");
+  lines.push(
+    "2. Primer match → envíalo INMEDIATAMENTE con POST /api/bot/send-document.",
+  );
+  lines.push(
+    '   Caption: "¿Es esta la foto que buscas? (1/5 · score 0.87)"',
+  );
+  lines.push(
+    "   ⚠️ NUNCA respondas solo texto — siempre envía el archivo como documento.",
+  );
+  lines.push("");
+  lines.push("3. Escuchar respuesta del usuario:");
+  lines.push(
+    '   ✅ "sí" / "esa" / "exacto" / "perfecto" → confirma y termina.',
+  );
+  lines.push(
+    '   ❌ "no" / "no es" / "siguiente" / "otro" → siguiente match.',
+  );
+  lines.push("");
+  lines.push("4. Repetir con match #2, #3... hasta encontrar o agotar.");
+  lines.push("");
+  lines.push("5. Sin más matches:");
+  lines.push(
+    '   "No encontré más coincidencias. ¿Puedes darme más detalles para refinar la búsqueda?"',
+  );
+  lines.push("");
+  lines.push("6. Sin resultados desde el inicio:");
+  lines.push(
+    '   "No encontré ningún archivo que coincida con esa descripción."',
+  );
+  lines.push("");
+  lines.push("⚠️  REGLAS DE MEDIA-SEARCH:");
+  lines.push("- NUNCA muestres la respuesta JSON cruda al usuario.");
+  lines.push("- Siempre envía el archivo directamente; no compartas el path.");
+  lines.push("- El score indica relevancia (0-1). Envía los matches en orden de mayor a menor score.");
+  lines.push("- Si solo hay 1 resultado, envíalo sin preguntar — solo confirma entrega.");
+  lines.push("- Si el usuario da pistas nuevas durante las iteraciones, refina con un nuevo POST a media-search.");
+  lines.push('- No preguntes "¿quieres que busque?" — busca directo.');
+
   // ── Office skills ─────────────────────────────────────────────────────
   lines.push("");
   lines.push("═══════ HABILIDADES DE OFIMÁTICA ═══════");
