@@ -1002,13 +1002,27 @@ export async function createBot(prisma: PrismaClient): Promise<Bot<BotContext> |
       // Typing indicator
       ctx.replyWithChatAction("typing").catch(() => {});
 
-      const response = await routeToHermes(fullMessage, treeId, userId, undefined, displayName);
+      const response = await routeToHermes(
+        fullMessage, treeId, userId, undefined, displayName,
+        ctx.chat?.id, msg.message_id,
+      );
       if (response) {
-        await ctx.reply(response.text, { parse_mode: "Markdown" });
+        // Queue: saturation or position
+        if (response.saturationMessage) {
+          await ctx.reply(response.saturationMessage);
+          return;
+        }
+        if (response.queued) {
+          await ctx.reply(
+            `🔄 Ari está procesando otro mensaje. Estás en la posición ${response.queuePosition} de la cola.`,
+          );
+          return;
+        }
+        await ctx.reply(response.text!, { parse_mode: "Markdown" });
 
         // Voice generation: fire-and-forget (TTS se mantiene)
         const userLang = user.language ?? undefined;
-        generateVoice(response.text, userLang).then((vb) => {
+        generateVoice(response.text!, userLang).then((vb) => {
           if (vb) {
             const vmsgs = formatForChannel({ text: "", voiceBuffer: vb }, "telegram");
             sendViaTelegram(ctx, vmsgs).catch(() => {});
@@ -1559,20 +1573,35 @@ export async function createBot(prisma: PrismaClient): Promise<Bot<BotContext> |
 
       let response;
       try {
-        response = await routeToHermes(fullMessage, tree.id, userId, chatHistory, displayName);
+        response = await routeToHermes(
+          fullMessage, tree.id, userId, chatHistory, displayName,
+          ctx.chat?.id, msg.message_id,
+        );
       } finally {
         clearInterval(typingInterval);
         clearInterval(progressInterval);
       }
 
       if (response) {
+        // Queue: saturation or position
+        if (response.saturationMessage) {
+          await ctx.reply(response.saturationMessage);
+          return;
+        }
+        if (response.queued) {
+          await ctx.reply(
+            `🔄 Ari está procesando otro mensaje. Estás en la posición ${response.queuePosition} de la cola.`,
+          );
+          return;
+        }
+
         // Send text immediately (with Markdown fallback + intro tracking)
         let sentMsg: any;
         try {
-          sentMsg = await ctx.reply(response.text, { parse_mode: "Markdown" });
+          sentMsg = await ctx.reply(response.text!, { parse_mode: "Markdown" });
         } catch (markdownErr: any) {
           if (markdownErr.message?.includes("can't parse entities")) {
-            sentMsg = await ctx.reply(response.text);
+            sentMsg = await ctx.reply(response.text!);
           } else {
             throw markdownErr;
           }
@@ -1585,7 +1614,7 @@ export async function createBot(prisma: PrismaClient): Promise<Bot<BotContext> |
 
         // Voice generation: fire-and-forget (TTS se mantiene)
         const userLang = ctx.from ? await getUserLanguage(prisma, ctx.from.id) : undefined;
-        generateVoice(response.text, userLang).then((vb) => {
+        generateVoice(response.text!, userLang).then((vb) => {
           if (vb) {
             const vmsgs = formatForChannel({ text: "", voiceBuffer: vb }, "telegram");
             sendViaTelegram(ctx, vmsgs).catch(() => {});
