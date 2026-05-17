@@ -785,7 +785,7 @@ export async function createBot(prisma: PrismaClient): Promise<Bot<BotContext> |
     }
   });
 
-  // ── Onboarding reply handler (T24): detecta respuestas a la pregunta inicial ──
+  // ── Onboarding reply handler: detecta respuestas al force_reply ──
   // Se ejecuta antes del handler normal de mensajes. Si es respuesta al
   // force_reply de "¿Qué tipo de organización son...", captura y guarda.
   bot.on("message:text", async (ctx, next) => {
@@ -793,7 +793,7 @@ export async function createBot(prisma: PrismaClient): Promise<Bot<BotContext> |
     if (!msg || !("text" in msg)) return next();
 
     // Check if this is a reply to the onboarding question
-    if (msg.reply_to_message?.text?.includes('[T24_ONBOARDING]')) {
+    const session = (ctx).session; if (msg.reply_to_message?.from?.id === ctx.me.id && session.onboardingStep > 0) {
       await handleOnboardingResponse(ctx, prisma);
       return;
     }
@@ -1930,7 +1930,7 @@ export async function createBot(prisma: PrismaClient): Promise<Bot<BotContext> |
             t("onboarding.org_question", lang) + "\n\n" +
             t("onboarding.org_examples", lang) + "\n\n" +
             "_" + t("onboarding.org_prompt", lang) + "_" +
-            "\u200B[T24_ONBOARDING]",
+            ""_,
             {
               parse_mode: "Markdown",
               reply_markup: {
