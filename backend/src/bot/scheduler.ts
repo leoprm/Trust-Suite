@@ -145,15 +145,8 @@ export function startScheduler(
   console.log("[Scheduler] 🔄 Rotación semanal programada a domingo 00:00");
 
   // ── Cron: 0 */6 * * * (cada 6 horas) — AutoScaler ──
-  autoScaleTask = cron.schedule("0 */6 * * *", async () => {
-    console.log("[Scheduler] 🔄 AutoScaler ejecutándose…");
-    try {
-      await autoScale();
-    } catch (err) {
-      console.error("[Scheduler] Error en AutoScaler:", err);
-    }
-  });
-  console.log("[Scheduler] 🔄 AutoScaler programado cada 6 horas");
+  // DISABLED: modelo eliminado en simplificación v4.
+  // autoScaleTask = cron.schedule("0 */6 * * *", async () => { ... });
 
   // ── Cron: 0 0 1 * * (día 1 de cada mes a medianoche) — Cuota mensual ──
   monthlyFeeTask = cron.schedule("0 0 1 * *", async () => {
@@ -176,29 +169,12 @@ export function startScheduler(
   // disputeResolutionTask = cron.schedule("*/15 * * * *", async () => { ... });
 
   // ── Cron: 0 * * * * (cada hora) — Skill Pricing ────────────────────
-  skillPricingTask = cron.schedule("0 * * * *", async () => {
-    try {
-      await updateSkillPricing(prismaClient);
-    } catch (err) {
-      console.error("[Scheduler] Error en skill pricing:", err);
-    }
-  });
-  console.log("[Scheduler] 💲 Skill Pricing programado cada hora");
+  // DISABLED: modelo de skill pricing eliminado en simplificación v4.
+  // skillPricingTask = cron.schedule("0 * * * *", async () => { ... });
 
   // ── Cron: 0 4 * * * (4 AM diario) — Talent Migration ──────────────────
-  talentMigrationTask = cron.schedule("0 4 * * *", async () => {
-    console.log("[Scheduler] 🔀 Análisis de migración de talento…");
-    try {
-      const result = await runTalentMigration(prismaClient, bot);
-      console.log(
-        `[Scheduler] 🔀 Talent Migration: ${result.suggestions} sugerencias ` +
-          `en ${result.treesAnalyzed} árboles analizados.`
-      );
-    } catch (err) {
-      console.error("[Scheduler] Error en talent migration:", err);
-    }
-  });
-  console.log("[Scheduler] 🔀 Talent Migration programado a las 04:00 (diario)");
+  // DISABLED: modelo eliminado en simplificación v4.
+  // talentMigrationTask = cron.schedule("0 4 * * *", async () => { ... });
 
   // ── Cron: */15 * * * * (cada 15 min) — SSH Health Check ─────────────
   healthCheckTask = cron.schedule("*/15 * * * *", async () => {
