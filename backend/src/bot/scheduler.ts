@@ -171,22 +171,9 @@ export function startScheduler(
   console.log("[Scheduler] 💰 Cuota mensual programada al día 1 de cada mes a las 00:00");
 
   // ── Cron: */15 * * * * (cada 15 min) — Resolución de disputas ─────────
-  disputeResolutionTask = cron.schedule("*/15 * * * *", async () => {
-    try {
-      const results = await runDisputeResolution(prismaClient, bot);
-      if (results.length > 0) {
-        console.log(
-          `[Scheduler] ⚖️ Dispute resolution: ${results.length} procesadas. ` +
-            `${results.filter(r => r.outcome === "RESOLVED_ACCEPTED").length} aceptadas, ` +
-            `${results.filter(r => r.outcome === "RESOLVED_REJECTED").length} rechazadas, ` +
-            `${results.filter(r => r.outcome === "EXPIRED").length} expiradas.`,
-        );
-      }
-    } catch (err) {
-      console.error("[Scheduler] Error en resolución de disputas:", err);
-    }
-  });
-  console.log("[Scheduler] ⚖️ Resolución de disputas programada cada 15 minutos");
+  // DISABLED: modelo disputeMessage eliminado en simplificación v4.
+  // Reactivar cuando se re-implemente el sistema de disputas.
+  // disputeResolutionTask = cron.schedule("*/15 * * * *", async () => { ... });
 
   // ── Cron: 0 * * * * (cada hora) — Skill Pricing ────────────────────
   skillPricingTask = cron.schedule("0 * * * *", async () => {
