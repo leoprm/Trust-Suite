@@ -17,6 +17,8 @@ export interface BotSessionData {
   onboardingStep: number | null;
   /** ID del árbol que se está configurando en el onboarding */
   onboardingTreeId: string | null;
+  /** ID del árbol seleccionado para conversación en DM */
+  dmTreeId: string | null;
 }
 
 /**

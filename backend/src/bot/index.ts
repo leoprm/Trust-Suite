@@ -401,6 +401,55 @@ export async function createBot(prisma: PrismaClient): Promise<Bot<BotContext> |
     await ctx.reply("🔄 Cola limpiada. Ari está lista.");
   });
 
+  bot.command("tree", async (ctx) => {
+    const tgUser = ctx.from;
+    if (!tgUser) return;
+
+    const user = await (prisma as any).user.findUnique({
+      where: { telegramUserId: BigInt(tgUser.id) },
+      select: { id: true },
+    });
+    if (!user) {
+      await ctx.reply("⚠️ No tienes una cuenta vinculada. Usa /start.");
+      return;
+    }
+
+    const allMemberships = await (prisma as any).treeMember.findMany({
+      where: { userId: user.id, status: "ACTIVE" },
+      include: { tree: { select: { id: true, name: true } } },
+      orderBy: { joinedAt: "desc" },
+    });
+
+    if (allMemberships.length === 0) {
+      await ctx.reply("🌳 No eres miembro activo de ningún árbol.");
+      return;
+    }
+
+    // If argument provided, switch to that tree
+    const arg = ctx.message?.text?.split(/\s+/, 2)[1]?.trim().toLowerCase();
+    if (arg) {
+      const match = allMemberships.find((m: any) =>
+        m.tree.name.toLowerCase().includes(arg)
+      );
+      if (match) {
+        (ctx as BotContext).session.dmTreeId = match.tree.id;
+        await ctx.reply(`🌳 Cambiado a *${match.tree.name}*.`);
+        return;
+      }
+      await ctx.reply(`⚠️ No se encontró un árbol que coincida con "${arg}".`);
+      return;
+    }
+
+    // No argument — show selector
+    const buttons = allMemberships.map((m: any) => [{
+      text: `🌳 ${m.tree.name}`,
+      callback_data: `dm_tree:${m.tree.id}`,
+    }]);
+    await ctx.reply("🌳 Selecciona tu árbol para DMs:", {
+      reply_markup: { inline_keyboard: buttons },
+    });
+  });
+
   // ── Welcome / rejoin messages ─────────────────────────────────────────
 
   function rejoinMessage(treeName: string): string {
@@ -655,6 +704,21 @@ export async function createBot(prisma: PrismaClient): Promise<Bot<BotContext> |
     const newStatus = ctx.update.my_chat_member.new_chat_member.status;
 
     if (chat.type === "group" || chat.type === "supergroup") {
+      // ── Ari removed from group → schedule tree deletion in 30 min ──────
+      if (newStatus === "kicked" || newStatus === "left") {
+        const chatId = chat.id.toString();
+        try {
+          await (prisma as any).tree.updateMany({
+            where: { telegramChatId: chatId },
+            data: { pendingDeletionAt: new Date(Date.now() + 30 * 60 * 1000) },
+          });
+          console.log(`[Telegram Bot] Ari removed from ${chatId}, tree scheduled for deletion in 30 min`);
+        } catch (err: any) {
+          console.error(`[Telegram Bot] Error scheduling deletion for ${chatId}:`, err.message);
+        }
+        return;
+      }
+
       if (newStatus === "member" || newStatus === "administrator") {
         const chatId = chat.id.toString();
         const adderId = ctx.update.my_chat_member.from.id.toString();
@@ -679,7 +743,11 @@ export async function createBot(prisma: PrismaClient): Promise<Bot<BotContext> |
               where: { telegramChatId: chatId },
             });
             if (existingTree) {
-              // Rejoin: existing tree, skip capacity gate
+              // Rejoin: existing tree, skip capacity gate, cancel any pending deletion
+              await (prisma as any).tree.update({
+                where: { id: existingTree.id },
+                data: { pendingDeletionAt: null, standby: false, leaveAttempts: 0 },
+              });
               await ctx.api.sendMessage(chatId, rejoinMessage(existingTree.name), {
                 parse_mode: "Markdown",
               });
@@ -854,7 +922,11 @@ export async function createBot(prisma: PrismaClient): Promise<Bot<BotContext> |
                 // Non-blocking — voice is a nice-to-have
               }
             } else {
-              // Rejoin: existing tree
+              // Rejoin: existing tree, cancel any pending deletion
+              await (prisma as any).tree.update({
+                where: { id: tree!.id },
+                data: { pendingDeletionAt: null, standby: false },
+              });
               await ctx.api.sendMessage(chatId, rejoinMessage(tree!.name), {
                 parse_mode: "Markdown",
               });
@@ -876,6 +948,37 @@ export async function createBot(prisma: PrismaClient): Promise<Bot<BotContext> |
 
     const oldStatus = ctx.chatMember.old_chat_member.status;
     const newMember = ctx.chatMember.new_chat_member;
+
+    // ── Human left → check if last human, schedule tree deletion ─────────
+    if (
+      (newMember.status === "left" || newMember.status === "kicked") &&
+      !newMember.user.is_bot
+    ) {
+      const chatId = chat.id.toString();
+      try {
+        const tree = await (prisma as any).tree.findUnique({
+          where: { telegramChatId: chatId },
+          select: { id: true },
+        });
+        if (!tree) return;
+
+        // Count remaining human members (Ari included)
+        const humanCount = await prisma.treeMember.count({
+          where: { treeId: tree.id, status: "ACTIVE", isAI: false },
+        });
+        if (humanCount <= 1) {
+          // Last human leaving → schedule deletion in 30 min
+          await (prisma as any).tree.update({
+            where: { id: tree.id },
+            data: { pendingDeletionAt: new Date(Date.now() + 30 * 60 * 1000) },
+          });
+          console.log(`[Telegram Bot] Last human left ${chatId}, tree ${tree.id} scheduled for deletion in 30 min`);
+        }
+      } catch (err: any) {
+        console.error(`[Telegram Bot] Error checking last-human for ${chat.id}:`, err.message);
+      }
+      return;
+    }
 
     // Only greet on join (left/kicked → member)
     if (
@@ -983,21 +1086,63 @@ export async function createBot(prisma: PrismaClient): Promise<Bot<BotContext> |
         return;
       }
 
-      const membership = await (prisma as any).treeMember.findFirst({
+      // Find all active tree memberships for this user
+      const allMemberships = await (prisma as any).treeMember.findMany({
         where: { userId: user.id, status: "ACTIVE" },
         include: { tree: { select: { id: true, name: true } } },
-        orderBy: { joinedAt: "desc" },
+        orderBy: { lastDmAt: "desc" },
       });
 
-      if (!membership) {
+      if (allMemberships.length === 0) {
         await ctx.reply("🌳 No eres miembro activo de ningún árbol. Únete a un grupo de Trust Maker para empezar.");
         return;
       }
 
-      const treeId = membership.tree.id;
+      // Resolve treeId: use session preference, or auto-pick if only 1 tree
+      const session = (ctx as BotContext).session;
+      let treeId: string;
+      let treeName: string;
+
+      if (session.dmTreeId) {
+        // Verify the stored tree is still active
+        const valid = allMemberships.find((m: any) => m.tree.id === session.dmTreeId);
+        if (valid) {
+          treeId = valid.tree.id;
+          treeName = valid.tree.name;
+        } else {
+          // Stored tree no longer valid, fall through to auto-pick
+          session.dmTreeId = null;
+        }
+      }
+
+      if (!session.dmTreeId) {
+        if (allMemberships.length === 1) {
+          treeId = allMemberships[0].tree.id;
+          treeName = allMemberships[0].tree.name;
+          session.dmTreeId = treeId;
+        } else {
+          // Multiple trees — show selector
+          const buttons = allMemberships.map((m: any) => [{
+            text: `🌳 ${m.tree.name}`,
+            callback_data: `dm_tree:${m.tree.id}`,
+          }]);
+          await ctx.reply(
+            "🌳 Estás en varios árboles. ¿En cuál quieres hablar con Ari?",
+            { reply_markup: { inline_keyboard: buttons } },
+          );
+          return;
+        }
+      }
+
       const userId = tgUser.id.toString();
       const displayName = tgUser.first_name || userId;
       const fullMessage = `${displayName}: ${text}`;
+
+      // Track last DM interaction for auto-select
+      (prisma as any).treeMember.updateMany({
+        where: { userId: user.id, treeId, status: "ACTIVE" },
+        data: { lastDmAt: new Date() },
+      }).catch(() => {}); // fire-and-forget
 
       // Typing indicator
       ctx.replyWithChatAction("typing").catch(() => {});
@@ -2112,6 +2257,34 @@ export async function createBot(prisma: PrismaClient): Promise<Bot<BotContext> |
       return;
     }
 
+    // DM tree selector callback
+    if (data.startsWith("dm_tree:")) {
+      const treeId = data.slice(8); // remove "dm_tree:"
+      const session = (ctx as BotContext).session;
+      session.dmTreeId = treeId;
+
+      // Verify membership
+      const tgUser = ctx.from;
+      if (!tgUser) { await ctx.answerCallbackQuery(); return; }
+      const user = await (prisma as any).user.findUnique({
+        where: { telegramUserId: BigInt(tgUser.id) },
+        select: { id: true },
+      });
+      if (!user) { await ctx.answerCallbackQuery({ text: "⚠️ Sin cuenta" }); return; }
+      const member = await (prisma as any).treeMember.findFirst({
+        where: { userId: user.id, treeId, status: "ACTIVE" },
+        include: { tree: { select: { name: true } } },
+      });
+      if (!member) {
+        await ctx.answerCallbackQuery({ text: "⚠️ No eres miembro de ese árbol" });
+        session.dmTreeId = null;
+        return;
+      }
+
+      await ctx.editMessageText(`🌳 Hablando con Ari en *${member.tree.name}*.`);
+      return;
+    }
+
     // Language selector callbacks (DM)
     if (data === "lang:en" || data === "lang:es") {
       const lang = data === "lang:en" ? "en" : "es";
@@ -2434,6 +2607,22 @@ export async function createBot(prisma: PrismaClient): Promise<Bot<BotContext> |
         console.error("[TodoReminders] Cron error:", err.message)
       );
     }, REMINDER_INTERVAL_MS);
+
+    // ── Cleanup: delete trees past pendingDeletionAt every 5 min ────────
+    setInterval(async () => {
+      try {
+        const expired = await (prisma as any).tree.findMany({
+          where: { pendingDeletionAt: { lte: new Date() } },
+          select: { id: true, name: true, telegramChatId: true },
+        });
+        for (const tree of expired) {
+          await (prisma as any).tree.delete({ where: { id: tree.id } });
+          console.log(`[Cleanup] Deleted tree "${tree.name}" (${tree.id}) — auto-cleanup after removal`);
+        }
+      } catch (err: any) {
+        console.error("[Cleanup] Error deleting expired trees:", err.message);
+      }
+    }, 5 * 60 * 1000);
   }
 
   return bot;

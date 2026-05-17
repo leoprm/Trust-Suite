@@ -182,6 +182,7 @@ model Tree {
   maxMembers      Int             @default(200)
   leaveAttempts   Int             @default(0)
   blockedUntil    DateTime?
+  pendingDeletionAt DateTime?
   standby         Boolean         @default(false)
   createdAt       DateTime        @default(now())
   members         TreeMember[]
@@ -270,6 +271,7 @@ model TreeMember {
   balance        MemberBalance?
   ledgerEntries  TransactionLedger[]
   joinedAt       DateTime       @default(now())
+  lastDmAt       DateTime?
   user      User  @relation(fields: [userId], references: [id], onDelete: Cascade)
   tree      Tree  @relation(fields: [treeId], references: [id], onDelete: Cascade)
   invitedBy User? @relation("Inviter", fields: [invitedById], references: [id], onDelete: SetNull)
