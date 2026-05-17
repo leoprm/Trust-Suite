@@ -204,6 +204,14 @@ const ENGAGEMENT_KEYWORDS: RegExp[] = [
   /\b(urgente|emergencia|rápido|rapido|ahora\s+mismo|para\s+ya|cu[áa]nto\s+antes)\b/i,
   // Technical / project questions
   /\b(c[óo]mo\s+se\s+hace|c[óo]mo\s+funciona|qu[ée]\s+es\s+(un|una|el|la)|para\s+qu[ée]\s+sirve)\b/i,
+  // Indefinite pronouns — someone is being sought
+  /\b(alguien|alguno|alguna|ninguno|ninguna|nadie|cualquiera)\b/i,
+  // Input-seeking phrases
+  /\b(saben\s+(cómo|si|qué|dónde|cuándo|algo)|sabes\s+(cómo|si|qué|dónde|cuándo|algo)|se\s+puede|hay\s+que)\b/i,
+  // Proposals / suggestions
+  /\b(podemos|podr[ií]amos|deber[ií]amos|qué\s+tal\s+si|y\s+si\s+)\b/i,
+  // Explicit requests for input
+  /\b(ayudar|ay[úu]dame|expl[ií]came|expl[ií]car|alguna\s+idea|ideas?|opini[óo]n|qu[ée]\s+opinan|qu[ée]\s+piensan)\b/i,
 ];
 
 /** Legacy boolean scanner — preserved for backward compatibility. */
