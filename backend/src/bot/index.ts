@@ -27,6 +27,7 @@ import { checkTodoReminders } from "./todoReminders";
 import { detectNaturalAddIntent } from "./todoNaturalAdd";
 import { summarizeTodo } from "./formatters";
 import { checkMemberLimit, shouldRejectInvite, isTreeBlocked } from "./antiDdos";
+import { syncAllMembers } from "./telegramClient";
 
 // ── IPv4 fetch wrapper: undici (Node fetch) no respeta dns.setDefaultResultOrder ──
 // para api.telegram.org. Usamos https.get con family:4 como fallback.
@@ -743,11 +744,38 @@ export async function createBot(prisma: PrismaClient): Promise<Bot<BotContext> |
               where: { telegramChatId: chatId },
             });
             if (existingTree) {
-              // Rejoin: existing tree, skip capacity gate, cancel any pending deletion
+              // Rejoin: existing tree, cancel pending deletion, sync adder as member
               await (prisma as any).tree.update({
                 where: { id: existingTree.id },
                 data: { pendingDeletionAt: null, standby: false, leaveAttempts: 0 },
               });
+
+              // Sync the adder as TreeMember (in case it was lost)
+              try {
+                const tgId = BigInt(adderId);
+                let adderUser = await prisma.user.findUnique({ where: { telegramUserId: tgId } });
+                if (!adderUser) {
+                  adderUser = await prisma.user.create({
+                    data: { username: `tg_${adderId}`, telegramUserId: tgId, language: null },
+                  });
+                }
+                await prisma.treeMember.upsert({
+                  where: { userId_treeId: { userId: adderUser.id, treeId: existingTree.id } },
+                  create: { userId: adderUser.id, treeId: existingTree.id, role: "ADMIN" },
+                  update: { status: "ACTIVE", role: "ADMIN" },
+                });
+              } catch (memberErr: any) {
+                console.error(`[Telegram Bot] Error syncing adder member on rejoin:`, memberErr.message);
+              }
+
+              // Sync ALL group members via MTProto
+              try {
+                const synced = await syncAllMembers(chat.id, existingTree.id, ctx.update.my_chat_member.from.id);
+                console.log(`[Telegram Bot] Synced ${synced} members for tree ${existingTree.id}`);
+              } catch (syncErr: any) {
+                console.error("[Telegram Bot] Member sync failed:", syncErr?.message || syncErr);
+              }
+
               await ctx.api.sendMessage(chatId, rejoinMessage(existingTree.name), {
                 parse_mode: "Markdown",
               });
@@ -885,6 +913,14 @@ export async function createBot(prisma: PrismaClient): Promise<Bot<BotContext> |
             );
           } catch (memberErr: any) {
             console.error(`[Telegram Bot] Error al agregar miembro ${adderId}:`, memberErr.message);
+          }
+
+          // Sync ALL group members via MTProto
+          try {
+            const synced = await syncAllMembers(chat.id, tree.id, ctx.update.my_chat_member.from.id);
+            console.log(`[Telegram Bot] Synced ${synced} members for tree ${tree.id}`);
+          } catch (syncErr: any) {
+            console.error("[Telegram Bot] Member sync failed:", syncErr?.message || syncErr);
           }
 
           // Send welcome / rejoin message
