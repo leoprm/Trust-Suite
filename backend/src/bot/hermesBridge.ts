@@ -337,16 +337,23 @@ export async function routeToHermes(
       headers,
       body: JSON.stringify({
         messages,
-        stream: false,
+        stream: true,
       }),
       signal: controller.signal,
     });
-  } finally {
+  } catch (err) {
     clearTimeout(timeoutId);
+    if (err instanceof Error && err.name === "AbortError") {
+      console.error("[hermesBridge] Hermes API timed out after 15 minutes");
+    } else {
+      console.error("[hermesBridge] Hermes API fetch failed:", err);
+    }
+    return null;
   }
 
   // ── Handle upstream errors ─────────────────────────────────────────────
   if (!response.ok) {
+    clearTimeout(timeoutId);
     const errorText = await response.text().catch(() => "");
     console.error(
       `[hermesBridge] Hermes API returned ${response.status}: ${errorText.slice(0, 300)}`,
@@ -354,20 +361,76 @@ export async function routeToHermes(
     return null;
   }
 
-  // ── Parse and return ──────────────────────────────────────────────────
-  const data = (await response.json()) as any;
+  // ── Parse SSE stream ──────────────────────────────────────────────────
+  try {
+    const reader = response.body?.getReader();
+    if (!reader) {
+      clearTimeout(timeoutId);
+      console.error("[hermesBridge] No response body reader available");
+      return null;
+    }
 
-  const reply =
-    data?.choices?.[0]?.message?.content ??
-    data?.choices?.[0]?.text ??
-    data?.content ??
-    data?.reply ??
-    "";
+    const decoder = new TextDecoder();
+    let buffer = "";
+    let accumulatedContent = "";
 
-  if (!reply) {
-    console.error("[hermesBridge] Empty response from Hermes API");
+    // Helper: create a promise that rejects when the AbortController fires
+    const abortPromise = new Promise<never>((_, reject) => {
+      if (controller.signal.aborted) {
+        reject(new DOMException("Aborted", "AbortError"));
+        return;
+      }
+      controller.signal.addEventListener(
+        "abort",
+        () => reject(new DOMException("Aborted", "AbortError")),
+        { once: true },
+      );
+    });
+
+    let streamDone = false;
+    while (!streamDone) {
+      const { done, value } = await Promise.race([
+        reader.read(),
+        abortPromise,
+      ]);
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split("\n");
+      buffer = lines.pop() ?? "";
+
+      for (const line of lines) {
+        if (!line.startsWith("data: ")) continue;
+        const payload = line.slice(6);
+        if (payload === "[DONE]") {
+          streamDone = true;
+          break;
+        }
+        try {
+          const parsed = JSON.parse(payload);
+          const delta = parsed?.choices?.[0]?.delta?.content;
+          if (delta) accumulatedContent += delta;
+        } catch {
+          // Skip unparseable SSE payloads
+        }
+      }
+    }
+
+    clearTimeout(timeoutId);
+
+    if (!accumulatedContent) {
+      console.error("[hermesBridge] Empty response from Hermes SSE stream");
+      return null;
+    }
+
+    return { text: accumulatedContent };
+  } catch (err) {
+    clearTimeout(timeoutId);
+    if (err instanceof Error && err.name === "AbortError") {
+      console.error("[hermesBridge] Hermes API stream timed out after 15 minutes");
+    } else {
+      console.error("[hermesBridge] Error reading SSE stream:", err);
+    }
     return null;
   }
-
-  return { text: reply };
 }
