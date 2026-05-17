@@ -179,6 +179,10 @@ model Tree {
   totalBudget     Float?          // Presupuesto total del árbol (CLP)
   paymentMode     PaymentMode     @default(INDIVIDUAL)
   sponsorId       String?         // User ID del sponsor si paymentMode = CENTRALIZED
+  maxMembers      Int             @default(200)
+  leaveAttempts   Int             @default(0)
+  blockedUntil    DateTime?
+  standby         Boolean         @default(false)
   createdAt       DateTime        @default(now())
   members         TreeMember[]
   agentMemberships AgentMembership[]

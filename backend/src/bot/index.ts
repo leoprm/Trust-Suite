@@ -15,6 +15,7 @@ import {
 } from "./satisfaction";
 import { recoverPendingApprovals } from "./approval";
 import { checkPaymentAccess } from "./payment";
+import { checkRateLimit } from "./rateLimiter";
 import { initPaymentService, computePaymentObligations, formatPagarResult } from "../services/telegramBotService";
 import { formatForChannel, sendViaTelegram } from "./channelAdapter";
 import { textToSpeech } from "../services/ttsService";
@@ -783,6 +784,24 @@ export async function createBot(prisma: PrismaClient): Promise<Bot<BotContext> |
         err.message,
       );
     }
+  });
+
+  // ── Rate limiter: enforce per-user message quota ──────────────────────
+  // Runs before all other message/text handlers.
+  bot.on("message:text", async (ctx, next) => {
+    const tgUser = ctx.from;
+    if (!tgUser) return next();
+
+    const { allowed, message } = checkRateLimit(tgUser.id);
+    if (!allowed) {
+      await ctx.reply(message ?? "⏳ Estás enviando muchos mensajes. Espera 5 minutos.");
+      return; // drop — don't process further
+    }
+
+    // ── Hook point: typing semaphore (not yet implemented) ──────────────
+    // Future: await typingSemaphore.acquire(ctx);
+
+    return next();
   });
 
   // ── Onboarding reply handler: detecta respuestas al force_reply ──
