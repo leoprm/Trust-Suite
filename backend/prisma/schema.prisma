@@ -210,6 +210,8 @@ model Tree {
   investorMatches           InvestmentMatch[]          @relation("InvestorMatches")
   seekerMatches             InvestmentMatch[]          @relation("SeekerMatches")
   todos                     Todo[]
+  paused                   Boolean      @default(false)
+  voteThreshold             Int          @default(20)
 }
 
 model TreeTechStack {

@@ -13,11 +13,18 @@
  */
 
 import { PrismaClient } from "@prisma/client";
+import { messageQueue } from "./messageQueue";
 
 const HERMES_API = "http://127.0.0.1:8644/v1/chat/completions";
 
 export interface HermesBridgeResponse {
-  text: string;
+  text: string | null;
+  /** When true, the message is queued (Ari is busy). Caller should tell user their position. */
+  queued?: boolean;
+  /** Position in queue (1-based) when queued is true. */
+  queuePosition?: number;
+  /** Saturation message when the queue is full. Caller must reply with this. */
+  saturationMessage?: string;
 }
 
 interface ChatMessage {
@@ -298,7 +305,33 @@ export async function routeToHermes(
   userId: string,
   chatHistory?: ChatMessage[],
   displayName?: string,
+  chatId?: number,
+  messageId?: number,
 ): Promise<HermesBridgeResponse | null> {
+  let didEnqueue = false; // track whether we acquired the semaphore
+
+  // ── Queue gate: enqueue before calling Ari ──────────────────────────────
+  if (chatId !== undefined && messageId !== undefined) {
+    const numericUserId = parseInt(userId, 10) || 0;
+    const queued = messageQueue.enqueue({
+      chatId,
+      text: message,
+      userId: numericUserId,
+      messageId,
+    });
+
+    if (!queued.accepted) {
+      return { text: null, saturationMessage: queued.message };
+    }
+
+    if (queued.position !== undefined && queued.position > 0) {
+      return { text: null, queued: true, queuePosition: queued.position };
+    }
+    // position === 0 → proceed to call Ari
+    didEnqueue = true;
+  }
+
+  try {
   const API_SERVER_KEY = process.env.HERMES_API_SERVER_KEY ?? "";
 
   // ── Build system prompt with tree context from DB ─────────────────────
@@ -432,5 +465,10 @@ export async function routeToHermes(
       console.error("[hermesBridge] Error reading SSE stream:", err);
     }
     return null;
+  }
+  } finally {
+    if (didEnqueue) {
+      messageQueue.dequeue();
+    }
   }
 }

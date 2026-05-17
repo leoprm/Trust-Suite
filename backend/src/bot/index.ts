@@ -26,6 +26,7 @@ import { parseDeadline } from "./deadlineParser";
 import { checkTodoReminders } from "./todoReminders";
 import { detectNaturalAddIntent } from "./todoNaturalAdd";
 import { summarizeTodo } from "./formatters";
+import { checkMemberLimit, shouldRejectInvite, isTreeBlocked } from "./antiDdos";
 
 // ── IPv4 fetch wrapper: undici (Node fetch) no respeta dns.setDefaultResultOrder ──
 // para api.telegram.org. Usamos https.get con family:4 como fallback.
@@ -271,6 +272,133 @@ export async function createBot(prisma: PrismaClient): Promise<Bot<BotContext> |
 
     const message = formatPagarResult(result, lng);
     await ctx.reply(message, { parse_mode: "Markdown" });
+  });
+
+  // ── /pause: admin only — pause tree agent ─────────────────────────────
+  bot.command("pause", async (ctx) => {
+    const chatType = ctx.chat?.type;
+    if (chatType !== "group" && chatType !== "supergroup") {
+      await ctx.reply("🔕 /pause solo funciona en grupos.");
+      return;
+    }
+    const chatId = ctx.chat?.id.toString();
+    if (!chatId) return;
+
+    const tree = await findTreeByChat(prisma, chatId);
+    if (!tree) {
+      await ctx.reply("⚠️ Este grupo no está vinculado a ningún árbol.");
+      return;
+    }
+
+    // Admin check
+    const tgUser = ctx.from;
+    if (!tgUser) return;
+    const user = await (prisma as any).user.findUnique({
+      where: { telegramUserId: BigInt(tgUser.id) },
+      select: { id: true },
+    });
+    if (!user) {
+      await ctx.reply("⚠️ No tienes una cuenta vinculada.");
+      return;
+    }
+    const adminMember = await (prisma as any).treeMember.findFirst({
+      where: { userId: user.id, treeId: tree.id, role: "ADMIN", status: "ACTIVE" },
+    });
+    if (!adminMember) {
+      await ctx.reply("⚠️ Solo el admin del árbol puede usar /pause.");
+      return;
+    }
+
+    await (prisma as any).tree.update({
+      where: { id: tree.id },
+      data: { paused: true },
+    });
+    await ctx.reply("🔕 Ari está en pausa. Solo admin puede reactivarla con /unpause");
+  });
+
+  // ── /unpause: admin only — unpause tree agent ─────────────────────────
+  bot.command("unpause", async (ctx) => {
+    const chatType = ctx.chat?.type;
+    if (chatType !== "group" && chatType !== "supergroup") {
+      await ctx.reply("🔔 /unpause solo funciona en grupos.");
+      return;
+    }
+    const chatId = ctx.chat?.id.toString();
+    if (!chatId) return;
+
+    const tree = await findTreeByChat(prisma, chatId);
+    if (!tree) {
+      await ctx.reply("⚠️ Este grupo no está vinculado a ningún árbol.");
+      return;
+    }
+
+    // Admin check
+    const tgUser = ctx.from;
+    if (!tgUser) return;
+    const user = await (prisma as any).user.findUnique({
+      where: { telegramUserId: BigInt(tgUser.id) },
+      select: { id: true },
+    });
+    if (!user) {
+      await ctx.reply("⚠️ No tienes una cuenta vinculada.");
+      return;
+    }
+    const adminMember = await (prisma as any).treeMember.findFirst({
+      where: { userId: user.id, treeId: tree.id, role: "ADMIN", status: "ACTIVE" },
+    });
+    if (!adminMember) {
+      await ctx.reply("⚠️ Solo el admin del árbol puede usar /unpause.");
+      return;
+    }
+
+    await (prisma as any).tree.update({
+      where: { id: tree.id },
+      data: { paused: false },
+    });
+    await ctx.reply("🔔 Ari está de vuelta.");
+  });
+
+  // ── /reset: admin only — reset agent message queue and state ─────────
+  bot.command("reset", async (ctx) => {
+    const chatType = ctx.chat?.type;
+    if (chatType !== "group" && chatType !== "supergroup") {
+      await ctx.reply("🔄 /reset solo funciona en grupos.");
+      return;
+    }
+    const chatId = ctx.chat?.id.toString();
+    if (!chatId) return;
+
+    const tree = await findTreeByChat(prisma, chatId);
+    if (!tree) {
+      await ctx.reply("⚠️ Este grupo no está vinculado a ningún árbol.");
+      return;
+    }
+
+    // Admin check
+    const tgUser = ctx.from;
+    if (!tgUser) return;
+    const user = await (prisma as any).user.findUnique({
+      where: { telegramUserId: BigInt(tgUser.id) },
+      select: { id: true },
+    });
+    if (!user) {
+      await ctx.reply("⚠️ No tienes una cuenta vinculada.");
+      return;
+    }
+    const adminMember = await (prisma as any).treeMember.findFirst({
+      where: { userId: user.id, treeId: tree.id, role: "ADMIN", status: "ACTIVE" },
+    });
+    if (!adminMember) {
+      await ctx.reply("⚠️ Solo el admin del árbol puede usar /reset.");
+      return;
+    }
+
+    // Reset AI member states to IDLE (clear message queue)
+    await (prisma as any).treeMember.updateMany({
+      where: { treeId: tree.id, isAI: true },
+      data: { aiStatus: "IDLE" },
+    });
+    await ctx.reply("🔄 Cola limpiada. Ari está lista.");
   });
 
   // ── Welcome / rejoin messages ─────────────────────────────────────────
@@ -657,6 +785,18 @@ export async function createBot(prisma: PrismaClient): Promise<Bot<BotContext> |
             isNewTree = true;
           }
 
+          // ── Anti-DDoS: reject blocked/standby trees ──────────────────
+          if (!isNewTree) {
+            const inviteCheck = await shouldRejectInvite(prisma, chatId);
+            if (inviteCheck.reject) {
+              console.log(
+                `[antiDdos] Rejecting invite to ${chatId}: ${inviteCheck.reason}`,
+              );
+              await ctx.api.leaveChat(chatId);
+              return;
+            }
+          }
+
           // Auto-add the user who invited the bot
           try {
             // Resolve or create user by telegram ID
@@ -894,6 +1034,31 @@ export async function createBot(prisma: PrismaClient): Promise<Bot<BotContext> |
     if (chatType === "private") return;
 
     const chatId = ctx.chat?.id.toString();
+
+    // ── Anti-DDoS: skip blocked trees ────────────────────────────────
+    if (chatId) {
+      const ddosTree = await findTreeByChat(prisma, chatId);
+      if (ddosTree) {
+        if (await isTreeBlocked(prisma, ddosTree.id)) {
+          return; // silently drop — tree is blocked for 3 months
+        }
+        // Fire-and-forget: check member limit on every message
+        checkMemberLimit(prisma, bot as any, ddosTree.id).catch((err: Error) => {
+          console.error("[antiDdos] checkMemberLimit error:", err.message);
+        });
+
+        // ── Pause gate: if tree is paused, block all messages except /unpause and /reset ──
+        if ((ddosTree as any).paused) {
+          const cmdText = extractCommandText(msg.text);
+          const isUnpauseReset = /^\/(unpause|reset)\b/.test(msg.text)
+            || (cmdText !== null && /^\/(unpause|reset)\b/.test(cmdText));
+          if (!isUnpauseReset) {
+            await ctx.reply("🔕 Ari está en pausa.");
+            return;
+          }
+        }
+      }
+    }
 
     // 1. Análisis pasivo: fire-and-forget para todo mensaje de grupo
     if (chatId) {
@@ -1838,6 +2003,24 @@ export async function createBot(prisma: PrismaClient): Promise<Bot<BotContext> |
       });
       if (!member || member.status !== "ACTIVE") {
         await ctx.answerCallbackQuery({ text: "⚠️ No eres miembro activo de este árbol" });
+        return;
+      }
+
+      // Tree threshold check: trees with ≤voteThreshold members skip voting → direct execution
+      const tree = await (prisma as any).tree.findUnique({
+        where: { id: proposal.treeId },
+        select: { voteThreshold: true },
+      });
+      const memberCount = await prisma.treeMember.count({
+        where: { treeId: proposal.treeId, status: "ACTIVE" },
+      });
+      if (memberCount <= (tree?.voteThreshold ?? 20)) {
+        // Direct execution — auto-approve without voting
+        await (prisma as any).kanbanProposal.update({
+          where: { id: proposalId },
+          data: { status: "APPROVED", resolvedAt: new Date() },
+        });
+        await ctx.answerCallbackQuery({ text: "⚡ Árbol pequeño — ejecución directa, propuesta aprobada" });
         return;
       }
 
