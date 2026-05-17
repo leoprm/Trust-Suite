@@ -1930,51 +1930,59 @@ export async function createBot(prisma: PrismaClient): Promise<Bot<BotContext> |
     }
   });
 
-  // ── Chat member: saludar a nuevos miembros ───────────────────────────
-  bot.on("chat_member", async (ctx) => {
+  // ── Welcome: saludar a nuevos miembros ──────────────────────────────
+  bot.on("message:new_chat_members", async (ctx) => {
     const chatType = ctx.chat?.type;
     if (chatType !== "group" && chatType !== "supergroup") return;
 
-    const newMember = ctx.update.chat_member.new_chat_member;
-    const oldMember = ctx.update.chat_member.old_chat_member;
-
-    // Solo cuando alguien ENTRA (estaba left/kicked, ahora member)
-    if (oldMember.status !== "left" && oldMember.status !== "kicked") return;
-    if (newMember.status !== "member") return;
-
-    // No saludar al bot mismo
-    if (newMember.user.is_bot) return;
+    const newMembers = ctx.message.new_chat_members;
+    if (!newMembers || newMembers.length === 0) return;
 
     const chatId = ctx.chat.id.toString();
-    try {
-      const tree = await (prisma as any).tree.findUnique({
-        where: { telegramChatId: chatId },
-        select: { id: true, language: true, introMessageId: true },
-      });
-      if (!tree) return;
 
-      const lang = tree.language || "es";
-      const userName = newMember.user.first_name || "nuevo miembro";
-      const mention = newMember.user.username
-        ? `@${newMember.user.username}`
-        : userName;
+    // Resolve tree (skip if not linked)
+    let tree: any;
+    try {
+      tree = await (prisma as any).tree.findUnique({
+        where: { telegramChatId: chatId },
+        select: { id: true, language: true, name: true },
+      });
+    } catch { return; }
+    if (!tree) return;
+
+    const lang = tree.language || "es";
+
+    for (const member of newMembers) {
+      if (member.is_bot) continue;
+
+      const userName = member.first_name || "nuevo miembro";
+      const mention = member.username ? `@${member.username}` : userName;
 
       const welcomeText = lang === "en"
-        ? `Hi! ${mention} I'm Ari, the multi-agent assistant for this group 👋`
-        : `¡Hola! ${mention} soy Ari, la asistente multi agente del grupo 👋`;
+        ? [
+            `Hi ${mention}! 👋 I'm Ari, the group's multi-agent assistant.`,
+            "",
+            `I help organize tasks, vote on needs, and keep projects moving. You can ask me things like "Ari add buy charcoal" or use /todo to manage the shared task list.`,
+            "",
+            `If you'd like, tell me what your main skills are — it helps me organize the group and match people to the right projects. No pressure, only if you feel like it!`,
+          ].join("\n")
+        : [
+            `¡Hola ${mention}! 👋 Soy Ari, la asistente multi-agente del grupo.`,
+            "",
+            `Ayudo a organizar tareas, votar necesidades y mantener los proyectos en marcha. Podés pedirme cosas como \"Ari anota comprar carbón\" o usar /todo para gestionar la lista de tareas compartida.`,
+            "",
+            `Si querés, contame cuáles son tus principales habilidades — así puedo organizar mejor al grupo y sus proyectos. ¡Sin presión, solo si tenés ganas!`,
+          ].join("\n");
 
-      if (tree.introMessageId) {
+      try {
         await ctx.api.sendMessage(chatId, welcomeText, {
-          reply_parameters: {
-            message_id: Number(tree.introMessageId),
-            chat_id: chatId,
-          },
+          parse_mode: "Markdown",
         });
-      } else {
-        await ctx.api.sendMessage(chatId, welcomeText);
+      } catch (markdownErr: any) {
+        if (markdownErr.message?.includes("can't parse entities")) {
+          await ctx.api.sendMessage(chatId, welcomeText);
+        }
       }
-    } catch (err: any) {
-      console.error("[welcome] Error greeting new member:", err.message);
     }
   });
 
