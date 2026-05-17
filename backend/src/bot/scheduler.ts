@@ -22,6 +22,7 @@ import { autoScale } from "../services/autoScaler";
 import { updateSkillPricing } from "../cron/skillPricingCron";
 import { runTalentMigration } from "../cron/talentMigrationCron";
 import { runHealthCheck } from "../cron/healthCheckCron";
+import { runProposalResolver } from "../cron/proposalResolverCron";
 import { prisma } from "../index";
 
 // ── Constantes ─────────────────────────────────────────────────────────────────
@@ -71,6 +72,7 @@ let disputeResolutionTask: ScheduledTask | null = null;
 let skillPricingTask: ScheduledTask | null = null;
 let talentMigrationTask: ScheduledTask | null = null;
 let healthCheckTask: ScheduledTask | null = null;
+let proposalResolverTask: ScheduledTask | null = null;
 let kanbanWatchdogInterval: NodeJS.Timeout | null = null;
 
 /**
@@ -192,6 +194,21 @@ export function startScheduler(
   });
   console.log("[Scheduler] 🔍 SSH Health Check programado cada 15 minutos");
 
+  // ── Cron: */2 * * * * (cada 2 minutos) — Proposal Resolver ────
+  proposalResolverTask = cron.schedule("*/2 * * * *", async () => {
+    try {
+      const resolutions = await runProposalResolver(prismaClient, bot);
+      if (resolutions.length > 0) {
+        console.log(
+          `[Scheduler] 📋 Proposal Resolver: ${resolutions.length} propuestas resueltas.`,
+        );
+      }
+    } catch (err) {
+      console.error("[Scheduler] Error en proposal resolver:", err);
+    }
+  });
+  console.log("[Scheduler] 📋 Proposal Resolver programado cada 2 minutos");
+
   // ── Kanban Watchdog: 150s interval ──
   kanbanWatchdogInterval = startKanbanWatchdog(prismaClient, bot);
 
@@ -219,7 +236,7 @@ export async function triggerDailyClose(
  */
 export function stopScheduler(): void {
   let stopped = false;
-  for (const task of [midnightTask, decayTask, rotationTask, autoScaleTask, monthlyFeeTask, disputeResolutionTask, skillPricingTask, talentMigrationTask, healthCheckTask]) {
+  for (const task of [midnightTask, decayTask, rotationTask, autoScaleTask, monthlyFeeTask, disputeResolutionTask, skillPricingTask, talentMigrationTask, healthCheckTask, proposalResolverTask]) {
     if (task) {
       task.stop();
       stopped = true;
@@ -235,6 +252,7 @@ export function stopScheduler(): void {
   skillPricingTask = null;
   talentMigrationTask = null;
   healthCheckTask = null;
+  proposalResolverTask = null;
   kanbanWatchdogInterval = null;
   if (stopped) {
     console.log("[Scheduler] ⏹️ Todos los schedulers detenidos.");

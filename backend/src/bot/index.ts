@@ -1754,6 +1754,109 @@ export async function createBot(prisma: PrismaClient): Promise<Bot<BotContext> |
   // ── Reaction handler (votos con reacciones) ─────────────────────────
   registerReactionHandler(bot);
 
+  // ── Kanban Vote DM Handler ──────────────────────────────────────────
+  async function handleKanbanVote(
+    prisma: PrismaClient,
+    ctx: BotContext,
+    proposalId: string,
+    vote: "yes" | "no",
+  ) {
+    const tgUser = ctx.from;
+    if (!tgUser) {
+      await ctx.answerCallbackQuery({ text: "⚠️ No se pudo identificar tu cuenta" });
+      return;
+    }
+
+    try {
+      // Resolve user by telegramUserId
+      const user = await (prisma as any).user.findUnique({
+        where: { telegramUserId: BigInt(tgUser.id) },
+        select: { id: true },
+      });
+      if (!user) {
+        await ctx.answerCallbackQuery({ text: "⚠️ No tienes cuenta vinculada. Usa /start" });
+        return;
+      }
+
+      // Verify proposal exists and is OPEN
+      const proposal = await (prisma as any).kanbanProposal.findUnique({
+        where: { id: proposalId },
+      });
+      if (!proposal) {
+        await ctx.answerCallbackQuery({ text: "⚠️ Propuesta no encontrada" });
+        return;
+      }
+      if (proposal.status !== "OPEN") {
+        await ctx.answerCallbackQuery({
+          text: `⚠️ La propuesta ya está ${proposal.status === "APPROVED" ? "APROBADA" : "RECHAZADA"}`,
+        });
+        return;
+      }
+      if (new Date() > new Date(proposal.expiresAt)) {
+        await ctx.answerCallbackQuery({ text: "⚠️ La votación ya ha expirado" });
+        return;
+      }
+
+      // Verify user is active member of the tree
+      const member = await prisma.treeMember.findUnique({
+        where: { userId_treeId: { userId: user.id, treeId: proposal.treeId } },
+      });
+      if (!member || member.status !== "ACTIVE") {
+        await ctx.answerCallbackQuery({ text: "⚠️ No eres miembro activo de este árbol" });
+        return;
+      }
+
+      // Prevent double vote (unique constraint on proposalId+userId)
+      const existingVote = await (prisma as any).kanbanVote.findUnique({
+        where: { proposalId_userId: { proposalId, userId: user.id } },
+      });
+      if (existingVote) {
+        const prevLabel = existingVote.vote === "yes" ? "Sí" : "No";
+        await ctx.answerCallbackQuery({ text: `⚠️ Ya votaste (${prevLabel})` });
+        return;
+      }
+
+      // Record the vote
+      await (prisma as any).kanbanVote.create({
+        data: { proposalId, userId: user.id, vote },
+      });
+
+      // Increment counter
+      const updateData =
+        vote === "yes"
+          ? { votesYes: { increment: 1 } }
+          : { votesNo: { increment: 1 } };
+      await (prisma as any).kanbanProposal.update({
+        where: { id: proposalId },
+        data: updateData,
+      });
+
+      // Edit DM to show vote confirmation and remove buttons
+      const voteLabel = vote === "yes" ? "Sí" : "No";
+      const voteEmoji = vote === "yes" ? "✅" : "❌";
+      try {
+        await ctx.editMessageText(
+          `${ctx.callbackQuery?.message?.text ?? ""}\n\n${voteEmoji} Tu voto: ${voteLabel} registrado. Resultado en el grupo cuando cierre la votación.`,
+          { reply_markup: undefined },
+        );
+      } catch {
+        // Non-fatal — vote is already recorded; edit may fail if message text is unchanged or too old
+        await ctx.answerCallbackQuery({ text: `${voteEmoji} Tu voto: ${voteLabel} registrado` });
+        return;
+      }
+
+      await ctx.answerCallbackQuery({ text: `${voteEmoji} Tu voto: ${voteLabel} registrado` });
+    } catch (err: any) {
+      // Prisma unique constraint violation → double vote (race condition safety net)
+      if (err?.code === "P2002") {
+        await ctx.answerCallbackQuery({ text: "⚠️ Ya votaste en esta propuesta" });
+        return;
+      }
+      console.error("[kanban:vote] DM handler error:", err.message);
+      await ctx.answerCallbackQuery({ text: "⚠️ Error al registrar voto" });
+    }
+  }
+
   // ── DM: Inline button callbacks (perfil skills/tasks/costs, language selector) ──
   bot.on("callback_query", async (ctx) => {
     const data = ctx.callbackQuery?.data;
@@ -1869,6 +1972,20 @@ export async function createBot(prisma: PrismaClient): Promise<Bot<BotContext> |
         );
       }
       await ctx.answerCallbackQuery();
+      return;
+    }
+
+    // Kanban vote callbacks (DM inline buttons: kanban_vote:PROPOSAL_ID:yes|no)
+    if (data.startsWith("kanban_vote:")) {
+      const parts = data.split(":");
+      // parts = ["kanban_vote", "PROPOSAL_ID", "yes"|"no"]
+      if (parts.length >= 3) {
+        const proposalId = parts.slice(1, -1).join(":"); // handle UUIDs with dashes
+        const vote = parts[parts.length - 1] as "yes" | "no";
+        await handleKanbanVote(prisma, ctx as BotContext, proposalId, vote);
+      } else {
+        await ctx.answerCallbackQuery({ text: "⚠️ Datos de votación inválidos" });
+      }
       return;
     }
 
