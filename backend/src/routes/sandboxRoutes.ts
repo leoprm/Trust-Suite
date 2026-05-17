@@ -4,12 +4,15 @@ import {
   getTreeSandbox,
   removeTreeSandbox,
   healthCheckTreeSandbox,
+  searchMediaInSandbox,
 } from '../controllers/sandboxController';
 import {
   execTreeSandbox,
   readTreeSandbox,
   writeTreeSandbox,
   convertTreeSandbox,
+  uploadTreeSandbox,
+  sandboxUpload,
 } from '../controllers/treeSandboxController';
 import { authenticateJWT } from '../middleware/authMiddleware';
 
@@ -28,5 +31,7 @@ router.post('/:id/sandbox/exec', execTreeSandbox);
 router.post('/:id/sandbox/read', readTreeSandbox);
 router.post('/:id/sandbox/write', writeTreeSandbox);
 router.post('/:id/sandbox/convert', convertTreeSandbox);
+router.post('/:id/sandbox/upload', sandboxUpload.single('file'), uploadTreeSandbox);
+router.post('/:id/sandbox/media-search', searchMediaInSandbox);
 
 export default router;
