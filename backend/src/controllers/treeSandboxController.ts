@@ -2,6 +2,7 @@ import { Request, Response } from 'express';
 import { exec } from 'child_process';
 import fs from 'fs';
 import path from 'path';
+import multer from 'multer';
 import { TreeSandbox } from '../services/treeSandbox';
 import { logEvent, getRequestContext } from '../services/eventLogService';
 
@@ -67,6 +68,59 @@ function resolveSafePath(
 
   return resolved;
 }
+
+// ── Multer for sandbox file uploads ────────────────────────────────────────────
+
+const SB_UPLOAD_MAX_BYTES = 50 * 1024 * 1024; // 50 MB
+export const sandboxUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: SB_UPLOAD_MAX_BYTES },
+});
+
+// ── POST /api/trees/:id/sandbox/upload ────────────────────────────────────────
+// Accepts multipart file upload (photos, documents, etc.) — writes to sandbox dir.
+// Body: multipart field "file"
+
+export const uploadTreeSandbox = async (req: Request, res: Response) => {
+  if (!checkApiKey(req, res)) return;
+
+  if (!req.file) {
+    return res.status(400).json({ error: 'No file uploaded. Send as multipart field "file".' });
+  }
+
+  try {
+    const id = req.params.id as string;
+    const sb = await TreeSandbox.get(id);
+    if (!sb) {
+      return res.status(404).json({ error: 'Sandbox not found for this tree' });
+    }
+
+    const fileName = req.file.originalname || `file_${Date.now()}`;
+    const safePath = resolveSafePath(sb.workspacePath, fileName);
+    if (!safePath) {
+      return res.status(403).json({ error: 'Path escapes sandbox' });
+    }
+
+    const dir = path.dirname(safePath);
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(safePath, req.file.buffer);
+
+    void logEvent({
+      ...getRequestContext(req),
+      treeId: id,
+      action: 'SANDBOX_UPLOAD',
+      entityType: 'TreeSandbox',
+      entityId: id,
+      source: 'SYSTEM',
+      metadataJson: { fileName, size: req.file.size },
+    });
+
+    res.status(201).json({ path: fileName, size: req.file.size });
+  } catch (error: any) {
+    console.error('[uploadTreeSandbox] ERROR:', error?.message || error);
+    res.status(500).json({ error: 'File upload failed', detail: error?.message });
+  }
+};
 
 // ── POST /api/trees/:id/sandbox/exec ────────────────────────────────────────
 // Body: { command: string, timeout?: number }

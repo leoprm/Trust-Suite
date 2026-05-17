@@ -19,6 +19,10 @@ export interface BotSessionData {
   onboardingTreeId: string | null;
   /** ID del árbol seleccionado para conversación en DM */
   dmTreeId: string | null;
+  /** File path awaiting link to a task (attach:link flow, step 2) */
+  awaitingLinkFile: string | null;
+  /** Tree ID for the file awaiting link (attach:link flow) */
+  awaitingLinkTreeId: string | null;
 }
 
 /**

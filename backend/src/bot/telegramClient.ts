@@ -29,11 +29,15 @@ export async function syncAllMembers(
 ): Promise<number> {
   const apiId = process.env.TELEGRAM_API_ID;
   const apiHash = process.env.TELEGRAM_API_HASH;
+  const botToken = process.env.TELEGRAM_BOT_TOKEN;
 
   if (!apiId || !apiHash) {
     throw new Error(
       "TELEGRAM_API_ID / TELEGRAM_API_HASH not set in environment",
     );
+  }
+  if (!botToken) {
+    throw new Error("TELEGRAM_BOT_TOKEN not set in environment");
   }
 
   const script = path.resolve(__dirname, "../../lib/tg_members.py");
@@ -41,6 +45,7 @@ export async function syncAllMembers(
     api_id: Number(apiId),
     api_hash: apiHash,
     chat_id: chatId,
+    bot_token: botToken,
   });
 
   const participants = await new Promise<TgParticipant[]>((resolve, reject) => {
@@ -101,6 +106,7 @@ export async function syncAllMembers(
         user = await prisma.user.create({
           data: {
             username: p.username || `tg${p.id}`,
+            firstName: p.first_name || null,
             telegramUserId: tgId,
           },
         });
@@ -113,6 +119,13 @@ export async function syncAllMembers(
             data: { username: p.username },
           });
         }
+      }
+      // Always update firstName if provided and different
+      if (p.first_name && user.firstName !== p.first_name) {
+        await prisma.user.update({
+          where: { id: user.id },
+          data: { firstName: p.first_name },
+        });
       }
 
       // --- upsert TreeMember ---

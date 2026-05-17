@@ -23,7 +23,7 @@ from telethon.errors import FloodWaitError
 
 
 async def _collect_participants(
-    api_id: int, api_hash: str, chat_id: int
+    api_id: int, api_hash: str, chat_id: int, bot_token: str
 ) -> list[dict[str, Any]]:
     """Connect, iterate participants, return serialisable list."""
 
@@ -31,7 +31,7 @@ async def _collect_participants(
     participants: list[dict[str, Any]] = []
 
     try:
-        await client.connect()
+        await client.start(bot_token=bot_token)
 
         async for user in client.iter_participants(chat_id):
             if user.bot:
@@ -61,9 +61,9 @@ async def _collect_participants(
             pass
 
 
-def run(api_id: int, api_hash: str, chat_id: int) -> list[dict[str, Any]]:
+def run(api_id: int, api_hash: str, chat_id: int, bot_token: str) -> list[dict[str, Any]]:
     """Synchronous entry-point — runs the async collector."""
-    return asyncio.run(_collect_participants(api_id, api_hash, chat_id))
+    return asyncio.run(_collect_participants(api_id, api_hash, chat_id, bot_token))
 
 
 def main() -> None:
@@ -81,16 +81,17 @@ def main() -> None:
     api_id = payload.get("api_id")
     api_hash = payload.get("api_hash")
     chat_id = payload.get("chat_id")
+    bot_token = payload.get("bot_token")
 
-    if not api_id or not api_hash or not chat_id:
+    if not api_id or not api_hash or not chat_id or not bot_token:
         print(
-            "ERROR: missing required fields: api_id, api_hash, chat_id",
+            "ERROR: missing required fields: api_id, api_hash, chat_id, bot_token",
             file=sys.stderr,
         )
         sys.exit(1)
 
     try:
-        participants = run(int(api_id), api_hash, int(chat_id))
+        participants = run(int(api_id), api_hash, int(chat_id), bot_token)
     except Exception:
         import traceback
 

@@ -81,9 +81,49 @@ export class TreeSandbox {
     };
   }
 
+  /** Archive lecciones.md before destroying the tree. Dedup: skips if identical
+   *  content already exists in the global archive. Fails silently — never blocks
+   *  deletion. */
+  private static async archiveLecciones(treeId: string): Promise<void> {
+    try {
+      const leccionesPath = path.join(TREES_BASE, treeId, 'memory', 'LECCIONES.md');
+      if (!fs.existsSync(leccionesPath)) return;
+
+      const content = fs.readFileSync(leccionesPath, 'utf-8').trim();
+      if (!content) return;
+
+      const archiveDir = path.join(TREES_BASE, '.archive');
+      fs.mkdirSync(archiveDir, { recursive: true });
+
+      const archivePath = path.join(archiveDir, 'lecciones.md');
+      let archiveContent = '';
+      if (fs.existsSync(archivePath)) {
+        archiveContent = fs.readFileSync(archivePath, 'utf-8');
+      }
+
+      // Dedup: skip if this exact content block already exists in the archive
+      if (archiveContent.includes(content)) {
+        console.log(`[TreeSandbox] lecciones.md for tree ${treeId.slice(0, 8)}… already archived — skipping`);
+        return;
+      }
+
+      // Append with a tree header for traceability
+      const header = `## 🌳 ${treeId}\n_Archivado: ${new Date().toISOString()}_\n\n`;
+      const separator = archiveContent ? '\n\n' : '';
+      const append = separator + header + content;
+      fs.appendFileSync(archivePath, append, 'utf-8');
+      console.log(`[TreeSandbox] Archived lecciones.md for tree ${treeId.slice(0, 8)}…`);
+    } catch (err: any) {
+      console.warn(`[TreeSandbox] archiveLecciones failed for tree ${treeId.slice(0, 8)}…:`, err?.message || err);
+    }
+  }
+
   static async destroy(treeId: string): Promise<void> {
     const sandbox = await prisma.treeSandbox.findUnique({ where: { treeId } });
     if (!sandbox) return;
+
+    // Archive lecciones.md before wiping the workspace
+    await TreeSandbox.archiveLecciones(treeId);
 
     // Remove workspace directory
     const workspacePath = path.join(TREES_BASE, treeId);

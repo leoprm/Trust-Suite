@@ -194,20 +194,20 @@ export function startScheduler(
   });
   console.log("[Scheduler] 🔍 SSH Health Check programado cada 15 minutos");
 
-  // ── Cron: */2 * * * * (cada 2 minutos) — Proposal Resolver ────
-  proposalResolverTask = cron.schedule("*/2 * * * *", async () => {
-    try {
-      const resolutions = await runProposalResolver(prismaClient, bot);
-      if (resolutions.length > 0) {
-        console.log(
-          `[Scheduler] 📋 Proposal Resolver: ${resolutions.length} propuestas resueltas.`,
-        );
-      }
-    } catch (err) {
-      console.error("[Scheduler] Error en proposal resolver:", err);
-    }
-  });
-  console.log("[Scheduler] 📋 Proposal Resolver programado cada 2 minutos");
+  // DISABLED: modelo proposal eliminado en simplificación v4.
+  // proposalResolverTask = cron.schedule("*/2 * * * *", async () => {
+  //   try {
+  //     const resolutions = await runProposalResolver(prismaClient, bot);
+  //     if (resolutions.length > 0) {
+  //       console.log(
+  //         `[Scheduler] 📋 Proposal Resolver: ${resolutions.length} propuestas resueltas.`,
+  //       );
+  //     }
+  //   } catch (err) {
+  //     console.error("[Scheduler] Error en proposal resolver:", err);
+  //   }
+  // });
+  // console.log("[Scheduler] 📋 Proposal Resolver programado cada 2 minutos");
 
   // ── Kanban Watchdog: 150s interval ──
   kanbanWatchdogInterval = startKanbanWatchdog(prismaClient, bot);

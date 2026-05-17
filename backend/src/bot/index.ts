@@ -1,4 +1,5 @@
 import https from "https";
+import { spawn } from "child_process";
 import { promises as fsPromises } from "fs";
 import { Bot, session, InputFile } from "grammy";
 import { PrismaClient } from "@prisma/client";
@@ -1928,6 +1929,34 @@ export async function createBot(prisma: PrismaClient): Promise<Bot<BotContext> |
       const tgUrl = `https://api.telegram.org/file/bot${process.env.TELEGRAM_BOT_TOKEN}/${fileInfo.file_path}`;
       const fileBuffer = await httpsDownload(tgUrl);
 
+      // Silent save: guardar la nota de voz en filesystem del árbol
+      if (chatId && (ctx.chat?.type === "group" || ctx.chat?.type === "supergroup")) {
+        try {
+          const voiceTree = await findTreeByChat(prisma, chatId);
+          if (voiceTree) {
+            const TREES_BASE = process.env.SANDBOX_BASE_DIR || "/home/leo/trees";
+            const rawName = ctx.from?.first_name
+              || ctx.from?.username
+              || ctx.from?.id.toString()
+              || "unknown";
+            const senderName = rawName
+              .replace(/[^a-zA-Z0-9_\-\u00e1\u00e9\u00ed\u00f3\u00fa\u00f1\u00c1\u00c9\u00cd\u00d3\u00da\u00d1 ]/g, "")
+              .trim()
+              .replace(/\s+/g, "_")
+              .slice(0, 64) || "unknown";
+            const today = new Date().toISOString().slice(0, 10);
+            const voiceFileName = `voice_${Date.now()}.ogg`;
+            const dir = `${TREES_BASE}/${voiceTree.id}/media/${senderName}`;
+            await fsPromises.mkdir(dir, { recursive: true });
+            const destFile = `${dir}/${today}_${voiceFileName}`;
+            await fsPromises.writeFile(destFile, fileBuffer);
+            console.log(`[Voice] Media saved: ${destFile}`);
+          }
+        } catch (_saveErr: any) {
+          console.error("[Voice] Silent save error:", _saveErr.message || _saveErr);
+        }
+      }
+
       // 2. POST to /api/audio/transcribe
       const blob = new Blob([fileBuffer], {
         type: msg.voice.mime_type || "audio/ogg",
@@ -2152,6 +2181,66 @@ export async function createBot(prisma: PrismaClient): Promise<Bot<BotContext> |
     }
   }
 
+  // ── Silent media save: fire-and-forget directo a filesystem ────────────
+  // Descarga el archivo de Telegram y lo guarda en
+  //   TREES_BASE/<treeId>/media/<senderName>/<YYYY-MM-DD>_<filename>
+  // Sin preguntar, sin botones, sin esperar respuesta.
+  async function silentSaveMedia(
+    ctx: BotContext,
+    fileId: string,
+    fileName: string,
+    treeId: string,
+  ): Promise<void> {
+    try {
+      const fileInfo = await ctx.api.getFile(fileId);
+      if (!fileInfo.file_path) {
+        console.error("[MediaSave] Telegram returned no file_path for", fileId);
+        return;
+      }
+
+      const tgUrl = `https://api.telegram.org/file/bot${process.env.TELEGRAM_BOT_TOKEN}/${fileInfo.file_path}`;
+      const fileBuffer = await httpsDownload(tgUrl);
+
+      const TREES_BASE = process.env.SANDBOX_BASE_DIR || "/home/leo/trees";
+      const rawName = ctx.from?.first_name
+        || ctx.from?.username
+        || ctx.from?.id.toString()
+        || "unknown";
+      const senderName = rawName
+        .replace(/[^a-zA-Z0-9_\-\u00e1\u00e9\u00ed\u00f3\u00fa\u00f1\u00c1\u00c9\u00cd\u00d3\u00da\u00d1 ]/g, "")
+        .trim()
+        .replace(/\s+/g, "_")
+        .slice(0, 64) || "unknown";
+
+      const today = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
+      const dir = `${TREES_BASE}/${treeId}/media/${senderName}`;
+      await fsPromises.mkdir(dir, { recursive: true });
+
+      const destFile = `${dir}/${today}_${fileName}`;
+      await fsPromises.writeFile(destFile, fileBuffer);
+      console.log(`[MediaSave] Saved: ${destFile}`);
+    } catch (err: any) {
+      console.error("[MediaSave] Error:", err.message || err);
+      // Fire-and-forget: never throw to caller
+    }
+  }
+
+  // ── Auto-index: fire-and-forget CLIP indexing after media save ──────────
+
+  function spawnClipIndex(treeId: string): void {
+    try {
+      const scriptPath = require("path").join(__dirname, "..", "..", "lib", "clip_index.py");
+      const child = spawn("python3", [scriptPath, "index", treeId], {
+        detached: true,
+        stdio: "ignore",
+      });
+      child.unref();
+      console.log(`[ClipIndex] Spawned fire-and-forget index for tree ${treeId} (pid ${child.pid})`);
+    } catch (err: any) {
+      console.error("[ClipIndex] Spawn error:", err.message || err);
+    }
+  }
+
   bot.on("message:photo", async (ctx) => {
     console.log("[Photo] Handler triggered");
     const msg = ctx.message;
@@ -2162,42 +2251,20 @@ export async function createBot(prisma: PrismaClient): Promise<Bot<BotContext> |
 
     // Must be awaiting evidence
     if (!taskId) {
-      // Auto-forward: si es grupo con árbol, avisar a Ari por lenguaje natural
+      // Silent save: guardar en filesystem del árbol sin preguntar
       const chatId2 = ctx.chat?.id.toString();
       if (chatId2 && (ctx.chat?.type === "group" || ctx.chat?.type === "supergroup")) {
         try {
           const tree2 = await findTreeByChat(prisma, chatId2);
-          if (tree2 && process.env.HERMES_BRIDGE_ENABLED === "true") {
+          if (tree2) {
             const photo = msg.photo[msg.photo.length - 1];
             const fileId = photo.file_id;
             const fileName = `photo_${Date.now()}.jpg`;
-            // Download and save locally
-            const fileInfo = await ctx.api.getFile(fileId);
-            if (fileInfo.file_path) {
-              const tgUrl = `https://api.telegram.org/file/bot${process.env.TELEGRAM_BOT_TOKEN}/${fileInfo.file_path}`;
-              const fileBuffer = await httpsDownload(tgUrl);
-              const tmpDir = `/tmp/tm-attachments/${tree2.id}`;
-              await fsPromises.mkdir(tmpDir, { recursive: true });
-              const localPath = `${tmpDir}/${fileName}`;
-              await fsPromises.writeFile(localPath, fileBuffer);
-              const displayName = ctx.from?.first_name || ctx.from?.id.toString() || "alguien";
-              const response = await routeToHermes(
-                `${displayName} compartió una imagen (guardada en ${localPath}). Pregúntale qué quiere hacer con ella.`,
-                tree2.id, ctx.from?.id.toString() ?? "unknown", undefined, displayName,
-                ctx.chat?.id, msg.message_id,
-              );
-              if (response && response.text) {
-                try {
-                  await ctx.reply(response.text, { parse_mode: "Markdown" });
-                } catch {
-                  await ctx.reply(response.text);
-                }
-              }
-            }
-            return;
+            silentSaveMedia(ctx, fileId, fileName, tree2.id);
+            spawnClipIndex(tree2.id);
           }
         } catch (_err: any) {
-          console.error("[Photo] Auto-forward error:", _err.message || _err);
+          console.error("[Photo] Silent save error:", _err.message || _err);
         }
       }
       return;
@@ -2245,42 +2312,19 @@ export async function createBot(prisma: PrismaClient): Promise<Bot<BotContext> |
 
     // Must be awaiting evidence
     if (!taskId) {
-      // Auto-forward: si es grupo con árbol, avisar a Ari por lenguaje natural
+      // Silent save: guardar en filesystem del árbol sin preguntar
       const chatId2 = ctx.chat?.id.toString();
       if (chatId2 && (ctx.chat?.type === "group" || ctx.chat?.type === "supergroup")) {
         try {
           const tree2 = await findTreeByChat(prisma, chatId2);
-          if (tree2 && process.env.HERMES_BRIDGE_ENABLED === "true") {
+          if (tree2) {
             const doc = msg.document;
             const fileId = doc.file_id;
             const fileName = doc.file_name ?? `document_${Date.now()}`;
-            // Download and save locally
-            const fileInfo = await ctx.api.getFile(fileId);
-            if (fileInfo.file_path) {
-              const tgUrl = `https://api.telegram.org/file/bot${process.env.TELEGRAM_BOT_TOKEN}/${fileInfo.file_path}`;
-              const fileBuffer = await httpsDownload(tgUrl);
-              const tmpDir = `/tmp/tm-attachments/${tree2.id}`;
-              await fsPromises.mkdir(tmpDir, { recursive: true });
-              const localPath = `${tmpDir}/${fileName}`;
-              await fsPromises.writeFile(localPath, fileBuffer);
-              const displayName = ctx.from?.first_name || ctx.from?.id.toString() || "alguien";
-              const response = await routeToHermes(
-                `${displayName} compartió un archivo: ${fileName} (guardado en ${localPath}). Pregúntale qué quiere hacer con él.`,
-                tree2.id, ctx.from?.id.toString() ?? "unknown", undefined, displayName,
-                ctx.chat?.id, msg.message_id,
-              );
-              if (response && response.text) {
-                try {
-                  await ctx.reply(response.text, { parse_mode: "Markdown" });
-                } catch {
-                  await ctx.reply(response.text);
-                }
-              }
-            }
-            return;
+            silentSaveMedia(ctx, fileId, fileName, tree2.id);
           }
         } catch (_err: any) {
-          console.error("[Document] Auto-forward error:", _err.message || _err);
+          console.error("[Document] Silent save error:", _err.message || _err);
         }
       }
       return;
@@ -2316,6 +2360,48 @@ export async function createBot(prisma: PrismaClient): Promise<Bot<BotContext> |
         "⚠️ No se pudo procesar el documento como evidencia. Intenta de nuevo o contacta al administrador.",
         { reply_to_message_id: msg.message_id },
       );
+    }
+  });
+
+  // ── Video & audio: guardado silencioso (mismo patrón que photo/document) ──
+
+  bot.on("message:video", async (ctx) => {
+    const msg = ctx.message;
+    if (!msg?.video) return;
+
+    const chatId2 = ctx.chat?.id.toString();
+    if (!chatId2 || (ctx.chat?.type !== "group" && ctx.chat?.type !== "supergroup")) return;
+
+    try {
+      const tree2 = await findTreeByChat(prisma, chatId2);
+      if (tree2) {
+        const video = msg.video;
+        const fileId = video.file_id;
+        const fileName = video.file_name ?? `video_${Date.now()}.mp4`;
+        silentSaveMedia(ctx, fileId, fileName, tree2.id);
+      }
+    } catch (_err: any) {
+      console.error("[Video] Silent save error:", _err.message || _err);
+    }
+  });
+
+  bot.on("message:audio", async (ctx) => {
+    const msg = ctx.message;
+    if (!msg?.audio) return;
+
+    const chatId2 = ctx.chat?.id.toString();
+    if (!chatId2 || (ctx.chat?.type !== "group" && ctx.chat?.type !== "supergroup")) return;
+
+    try {
+      const tree2 = await findTreeByChat(prisma, chatId2);
+      if (tree2) {
+        const audio = msg.audio;
+        const fileId = audio.file_id;
+        const fileName = audio.file_name ?? `audio_${Date.now()}.mp3`;
+        silentSaveMedia(ctx, fileId, fileName, tree2.id);
+      }
+    } catch (_err: any) {
+      console.error("[Audio] Silent save error:", _err.message || _err);
     }
   });
 
