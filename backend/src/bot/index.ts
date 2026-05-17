@@ -1,4 +1,5 @@
 import https from "https";
+import { promises as fsPromises } from "fs";
 import { Bot, session, InputFile } from "grammy";
 import { PrismaClient } from "@prisma/client";
 import { BotContext, BotSessionData } from "./types";
@@ -21,7 +22,7 @@ import { formatForChannel, sendViaTelegram } from "./channelAdapter";
 import { textToSpeech } from "../services/ttsService";
 import { TreeSandbox } from "../services/treeSandbox";
 import { initI18n, t } from "./i18n";
-import { routeToHermes } from "./hermesBridge";
+import { routeToHermes, shouldAriRespond } from "./hermesBridge";
 import { parseDeadline } from "./deadlineParser";
 import { checkTodoReminders } from "./todoReminders";
 import { detectNaturalAddIntent } from "./todoNaturalAdd";
@@ -146,7 +147,7 @@ export async function createBot(prisma: PrismaClient): Promise<Bot<BotContext> |
   bot.use(
     session({
       initial(): BotSessionData {
-        return { userId: null, authenticatedAt: null, awaitingEvidenceTaskId: null, awaitingEvidenceBotMsgId: null, onboardingStep: null, onboardingTreeId: null };
+        return { userId: null, authenticatedAt: null, awaitingEvidenceTaskId: null, awaitingEvidenceBotMsgId: null, onboardingStep: null, onboardingTreeId: null, dmTreeId: null, awaitingLinkFile: null, awaitingLinkTreeId: null };
       },
     })
   );
@@ -756,7 +757,7 @@ export async function createBot(prisma: PrismaClient): Promise<Bot<BotContext> |
                 let adderUser = await prisma.user.findUnique({ where: { telegramUserId: tgId } });
                 if (!adderUser) {
                   adderUser = await prisma.user.create({
-                    data: { username: `tg_${adderId}`, telegramUserId: tgId, language: null },
+                    data: { username: `tg_${adderId}`, telegramUserId: tgId, firstName: ctx.update.my_chat_member.from.first_name || null, language: null },
                   });
                 }
                 await prisma.treeMember.upsert({
@@ -900,7 +901,7 @@ export async function createBot(prisma: PrismaClient): Promise<Bot<BotContext> |
             let user = await prisma.user.findUnique({ where: { telegramUserId: tgId } });
             if (!user) {
               user = await prisma.user.create({
-                data: { username: `tg_${adderId}`, telegramUserId: tgId, language: null },
+                data: { username: `tg_${adderId}`, telegramUserId: tgId, firstName: ctx.from?.first_name || null, language: null },
               });
             }
             await prisma.treeMember.upsert({
@@ -1077,6 +1078,14 @@ export async function createBot(prisma: PrismaClient): Promise<Bot<BotContext> |
       return; // drop — don't process further
     }
 
+    // Keep firstName in sync (fire-and-forget)
+    if (tgUser.first_name) {
+      prisma.user.updateMany({
+        where: { telegramUserId: BigInt(tgUser.id), firstName: { not: tgUser.first_name } },
+        data: { firstName: tgUser.first_name },
+      }).catch(() => {});
+    }
+
     // ── Hook point: typing semaphore (not yet implemented) ──────────────
     // Future: await typingSemaphore.acquire(ctx);
 
@@ -1201,14 +1210,7 @@ export async function createBot(prisma: PrismaClient): Promise<Bot<BotContext> |
         }
         await ctx.reply(response.text!, { parse_mode: "Markdown" });
 
-        // Voice generation: fire-and-forget (TTS se mantiene)
-        const userLang = user.language ?? undefined;
-        generateVoice(response.text!, userLang).then((vb) => {
-          if (vb) {
-            const vmsgs = formatForChannel({ text: "", voiceBuffer: vb }, "telegram");
-            sendViaTelegram(ctx, vmsgs).catch(() => {});
-          }
-        });
+        // TTS: only for voice messages (DM text → no audio)
       } else {
         await ctx.reply("⚠️ El agente no está disponible en este momento. Intenta de nuevo más tarde.");
       }
@@ -1692,7 +1694,59 @@ export async function createBot(prisma: PrismaClient): Promise<Bot<BotContext> |
       cmdText = extractCommandText(msg.text);
     }
 
-    // 3. Si no hay comando ni mención → solo análisis pasivo, no responder
+    // ── Conversation Window: proactive engagement (Hermes Bridge) ────
+    // Runs BEFORE the cmdText null gate to decide if Ari should join
+    // ambient conversation via keyword scanning or active window state.
+    // The LLM decides whether to actually respond — we just gate the routing.
+    let isConversationWindow = false;
+    if (process.env.HERMES_BRIDGE_ENABLED === "true" && chatId) {
+      const {
+        conversationWindows,
+        scanForKeywordMatch: hbScan,
+      } = await import("./hermesBridge");
+
+      // 1. Tagged/reply → open/renew window (Hermes Bridge routes it below)
+      if (isReplyToBot && cmdText !== null) {
+        conversationWindows.resetWindow(chatId);
+        isConversationWindow = true;
+      }
+
+      // 2. Active conversation window → always route to Ari (LLM decides)
+      if (!isConversationWindow && conversationWindows.hasActiveWindow(chatId) && cmdText === null) {
+        conversationWindows.tickWindow(chatId);
+        // Still active after tick? → route
+        if (conversationWindows.hasActiveWindow(chatId)) {
+          cmdText = msg.text.trim();
+          isConversationWindow = true;
+        }
+      }
+
+      // 3. No active window → scan for engagement keywords
+      if (!isConversationWindow && cmdText === null) {
+        const keyword = hbScan(msg.text);
+        if (keyword) {
+          conversationWindows.openWindow(chatId, keyword);
+          cmdText = msg.text.trim();
+          isConversationWindow = true;
+        }
+      }
+    }
+
+    // 3. Si no hay comando ni mención → verificar si es conversación 1:1
+    if (cmdText === null || cmdText === "") {
+      // One-on-one mode: if tree has only 1 active member, respond to everything
+      if (chatId) {
+        const soloTree = await findTreeByChat(prisma, chatId!);
+        if (soloTree) {
+          const memberCount = await (prisma as any).treeMember.count({
+            where: { treeId: soloTree.id, status: "ACTIVE" },
+          });
+          if (memberCount <= 1) {
+            cmdText = msg.text.trim();
+          }
+        }
+      }
+    }
     if (cmdText === null || cmdText === "") return;
 
     // 3.5 Payment check: verificar acceso antes de procesar
@@ -1704,7 +1758,7 @@ export async function createBot(prisma: PrismaClient): Promise<Bot<BotContext> |
       }
     }
 
-    // ── Hermes Bridge: si está habilitado, enrutar todo al agente ──────
+    // ── Hermes Bridge: si está habilitado, enrutar al agente con decisión previa ──
     if (process.env.HERMES_BRIDGE_ENABLED === "true") {
       const tree = await findTreeByChat(prisma, chatId!);
       if (!tree) {
@@ -1712,77 +1766,81 @@ export async function createBot(prisma: PrismaClient): Promise<Bot<BotContext> |
         return;
       }
 
-      const userId = ctx.from?.id.toString() ?? "unknown";
-      const displayName = ctx.from?.first_name || userId;
+      const displayName = ctx.from?.first_name || ctx.from?.id.toString() || "alguien";
 
       // ── Prepend display name so the agent knows who is speaking ──────
       const fullMessage = `${displayName}: ${cmdText}`;
 
-      // Fetch recent chat history for context
-      let chatHistory: any[] | undefined;
+      // Determine explicit triggers for the decision filter
+      const isReplyToBot = !!(
+        msg.reply_to_message &&
+        (msg.reply_to_message.from?.username === "TrustMakerBot" ||
+         msg.reply_to_message.from?.is_bot === true)
+      );
+      // Check if Ari is mentioned/tagged by name (case-insensitive)
+      const isTagged = /@Ari\b|@TrustMakerBot\b/i.test(msg.text);
+
+      // Fetch recent messages for decision context (same query, different mapping)
+      let recentMessages: { senderName: string; content: string }[] = [];
       try {
-        const recentMessages = await (prisma as any).chatMessage.findMany({
+        const rawMessages = await (prisma as any).chatMessage.findMany({
           where: { treeId: tree.id },
           orderBy: { createdAt: "desc" },
           take: 10,
-          select: { role: true, content: true },
+          select: { content: true },
         });
-        if (recentMessages.length > 0) {
-          chatHistory = recentMessages.reverse().map((m: any) => ({
-            role: m.role,
-            content: m.content,
-          }));
-        }
+        // Parse "DisplayName: message" format stored in chatMessage.content
+        recentMessages = rawMessages
+          .reverse()
+          .map((m: any) => {
+            const content = m.content ?? "";
+            const colonIdx = content.indexOf(": ");
+            if (colonIdx > 0) {
+              return {
+                senderName: content.slice(0, colonIdx),
+                content: content.slice(colonIdx + 2),
+              };
+            }
+            return { senderName: "", content };
+          });
       } catch { /* non-critical */ }
 
-      // Show typing indicator while Hermes processes (refresh every 4s)
-      const typingInterval = setInterval(() => {
-        ctx.replyWithChatAction("typing").catch(() => {});
-      }, 4000);
+      // ── Decision gate: should Ari respond? ──────────────────────────
       ctx.replyWithChatAction("typing").catch(() => {});
-
-      // Progress message every 3 min — user knows Ari didn't freeze
-      const progressMsgIds: number[] = [];
-      const progressInterval = setInterval(async () => {
-        try {
-          const msg = await ctx.reply(
-            "⏳ Ari sigue trabajando en esto, ya te responde...",
-          );
-          progressMsgIds.push(msg.message_id);
-        } catch { /* ignore — non-critical */ }
-      }, 180_000); // 3 minutos
-
-      let response;
+      let decision;
       try {
-        response = await routeToHermes(
-          fullMessage, tree.id, userId, chatHistory, displayName,
-          ctx.chat?.id, msg.message_id,
+        decision = await shouldAriRespond(
+          fullMessage,
+          tree.id,
+          recentMessages,
+          isReplyToBot,
+          isTagged,
         );
-      } finally {
-        clearInterval(typingInterval);
-        clearInterval(progressInterval);
+      } catch (err: any) {
+        console.error("[HermesBridge] shouldAriRespond threw:", err.message);
+        // On error, fall through to silent — better than spamming
+        return;
       }
 
-      if (response) {
-        // Queue: saturation or position
-        if (response.saturationMessage) {
-          await ctx.reply(response.saturationMessage);
-          return;
-        }
-        if (response.queued) {
-          await ctx.reply(
-            `🔄 Ari está procesando otro mensaje. Estás en la posición ${response.queuePosition} de la cola.`,
-          );
-          return;
-        }
+      if (!decision.shouldRespond) {
+        // Ari decided to stay silent — no message sent
+        return;
+      }
 
-        // Send text immediately (with Markdown fallback + intro tracking)
+      // ── Ari responded — reset conversation window ────────────────────
+      try {
+        const { conversationWindows } = await import("./hermesBridge");
+        conversationWindows.resetWindow(tree.id);
+      } catch { /* best-effort */ }
+
+      // ── Ari responded — send the text ───────────────────────────────
+      if (decision.text) {
         let sentMsg: any;
         try {
-          sentMsg = await ctx.reply(response.text!, { parse_mode: "Markdown" });
+          sentMsg = await ctx.reply(decision.text, { parse_mode: "Markdown" });
         } catch (markdownErr: any) {
           if (markdownErr.message?.includes("can't parse entities")) {
-            sentMsg = await ctx.reply(response.text!);
+            sentMsg = await ctx.reply(decision.text);
           } else {
             throw markdownErr;
           }
@@ -1792,17 +1850,6 @@ export async function createBot(prisma: PrismaClient): Promise<Bot<BotContext> |
         if (sentMsg?.message_id) {
           trackIntroMessage(prisma, tree.id, sentMsg.message_id).catch(() => {});
         }
-
-        // Voice generation: fire-and-forget (TTS se mantiene)
-        const userLang = ctx.from ? await getUserLanguage(prisma, ctx.from.id) : undefined;
-        generateVoice(response.text!, userLang).then((vb) => {
-          if (vb) {
-            const vmsgs = formatForChannel({ text: "", voiceBuffer: vb }, "telegram");
-            sendViaTelegram(ctx, vmsgs).catch(() => {});
-          }
-        });
-      } else {
-        await ctx.reply("⚠️ El agente no está disponible en este momento. Intenta de nuevo más tarde.");
       }
       return;
     }
@@ -1838,14 +1885,7 @@ export async function createBot(prisma: PrismaClient): Promise<Bot<BotContext> |
           }
         }
 
-        // Voice generation: fire-and-forget (don't block text delivery)
-        const userLang = ctx.from ? await getUserLanguage(prisma, ctx.from.id) : undefined;
-        generateVoice(result.text, userLang).then((vb) => {
-          if (vb) {
-            const vmsgs = formatForChannel({ text: "", voiceBuffer: vb }, "telegram");
-            sendViaTelegram(ctx, vmsgs).catch(() => {});
-          }
-        });
+        // TTS: only for voice messages (text commands → no audio)
       }
     } else {
       // ── Modo conversación natural (SPEC-2) ──
@@ -1858,14 +1898,7 @@ export async function createBot(prisma: PrismaClient): Promise<Bot<BotContext> |
         );
         await sendViaTelegram(ctx, messages);
 
-        // Voice generation: fire-and-forget (don't block text delivery)
-        const natLang = ctx.from ? await getUserLanguage(prisma, ctx.from.id) : undefined;
-        generateVoice(naturalResult.text, natLang).then((vb) => {
-          if (vb) {
-            const vmsgs = formatForChannel({ text: "", voiceBuffer: vb }, "telegram");
-            sendViaTelegram(ctx, vmsgs).catch(() => {});
-          }
-        });
+        // TTS: only for voice messages (text → no audio)
       }
     }
   });
@@ -2075,15 +2108,100 @@ export async function createBot(prisma: PrismaClient): Promise<Bot<BotContext> |
     }
   }
 
+  // ── Auto-save: guardar archivo en sandbox del árbol (modo no-evidencia) ──────
+
+  async function saveToSandbox(
+    ctx: BotContext,
+    fileId: string,
+    fileName: string,
+    treeId: string,
+  ): Promise<string | null> {
+    try {
+      const fileInfo = await ctx.api.getFile(fileId);
+      if (!fileInfo.file_path) {
+        console.error("[Sandbox] Telegram returned no file_path for", fileId);
+        return null;
+      }
+
+      const tgUrl = `https://api.telegram.org/file/bot${process.env.TELEGRAM_BOT_TOKEN}/${fileInfo.file_path}`;
+      const fileBuffer = await httpsDownload(tgUrl);
+
+      const formData = new FormData();
+      formData.append("file", new Blob([fileBuffer as unknown as ArrayBufferView]), fileName);
+
+      const resp = await fetch(
+        `http://localhost:3100/api/trees/${treeId}/sandbox/upload`,
+        {
+          method: "POST",
+          headers: { Authorization: `Bearer ${API_SERVER_KEY}` },
+          body: formData,
+        },
+      );
+
+      if (!resp.ok) {
+        const errText = await resp.text();
+        console.error("[Sandbox] Upload rejected:", resp.status, errText);
+        return null;
+      }
+
+      const data = (await resp.json()) as any;
+      return data.path ?? null;
+    } catch (err: any) {
+      console.error("[Sandbox] Upload exception:", err.message || err);
+      return null;
+    }
+  }
+
   bot.on("message:photo", async (ctx) => {
+    console.log("[Photo] Handler triggered");
     const msg = ctx.message;
-    if (!msg?.photo || msg.photo.length === 0) return;
+    if (!msg?.photo || msg.photo.length === 0) { console.log("[Photo] No photo data"); return; }
 
     const session = ctx.session;
     const taskId = session.awaitingEvidenceTaskId;
 
     // Must be awaiting evidence
-    if (!taskId) return;
+    if (!taskId) {
+      // Auto-forward: si es grupo con árbol, avisar a Ari por lenguaje natural
+      const chatId2 = ctx.chat?.id.toString();
+      if (chatId2 && (ctx.chat?.type === "group" || ctx.chat?.type === "supergroup")) {
+        try {
+          const tree2 = await findTreeByChat(prisma, chatId2);
+          if (tree2 && process.env.HERMES_BRIDGE_ENABLED === "true") {
+            const photo = msg.photo[msg.photo.length - 1];
+            const fileId = photo.file_id;
+            const fileName = `photo_${Date.now()}.jpg`;
+            // Download and save locally
+            const fileInfo = await ctx.api.getFile(fileId);
+            if (fileInfo.file_path) {
+              const tgUrl = `https://api.telegram.org/file/bot${process.env.TELEGRAM_BOT_TOKEN}/${fileInfo.file_path}`;
+              const fileBuffer = await httpsDownload(tgUrl);
+              const tmpDir = `/tmp/tm-attachments/${tree2.id}`;
+              await fsPromises.mkdir(tmpDir, { recursive: true });
+              const localPath = `${tmpDir}/${fileName}`;
+              await fsPromises.writeFile(localPath, fileBuffer);
+              const displayName = ctx.from?.first_name || ctx.from?.id.toString() || "alguien";
+              const response = await routeToHermes(
+                `${displayName} compartió una imagen (guardada en ${localPath}). Pregúntale qué quiere hacer con ella.`,
+                tree2.id, ctx.from?.id.toString() ?? "unknown", undefined, displayName,
+                ctx.chat?.id, msg.message_id,
+              );
+              if (response && response.text) {
+                try {
+                  await ctx.reply(response.text, { parse_mode: "Markdown" });
+                } catch {
+                  await ctx.reply(response.text);
+                }
+              }
+            }
+            return;
+          }
+        } catch (_err: any) {
+          console.error("[Photo] Auto-forward error:", _err.message || _err);
+        }
+      }
+      return;
+    }
 
     // Check reply-to matches the bot message that requested evidence (if set)
     const botMsgId = session.awaitingEvidenceBotMsgId;
@@ -2126,7 +2244,47 @@ export async function createBot(prisma: PrismaClient): Promise<Bot<BotContext> |
     const taskId = session.awaitingEvidenceTaskId;
 
     // Must be awaiting evidence
-    if (!taskId) return;
+    if (!taskId) {
+      // Auto-forward: si es grupo con árbol, avisar a Ari por lenguaje natural
+      const chatId2 = ctx.chat?.id.toString();
+      if (chatId2 && (ctx.chat?.type === "group" || ctx.chat?.type === "supergroup")) {
+        try {
+          const tree2 = await findTreeByChat(prisma, chatId2);
+          if (tree2 && process.env.HERMES_BRIDGE_ENABLED === "true") {
+            const doc = msg.document;
+            const fileId = doc.file_id;
+            const fileName = doc.file_name ?? `document_${Date.now()}`;
+            // Download and save locally
+            const fileInfo = await ctx.api.getFile(fileId);
+            if (fileInfo.file_path) {
+              const tgUrl = `https://api.telegram.org/file/bot${process.env.TELEGRAM_BOT_TOKEN}/${fileInfo.file_path}`;
+              const fileBuffer = await httpsDownload(tgUrl);
+              const tmpDir = `/tmp/tm-attachments/${tree2.id}`;
+              await fsPromises.mkdir(tmpDir, { recursive: true });
+              const localPath = `${tmpDir}/${fileName}`;
+              await fsPromises.writeFile(localPath, fileBuffer);
+              const displayName = ctx.from?.first_name || ctx.from?.id.toString() || "alguien";
+              const response = await routeToHermes(
+                `${displayName} compartió un archivo: ${fileName} (guardado en ${localPath}). Pregúntale qué quiere hacer con él.`,
+                tree2.id, ctx.from?.id.toString() ?? "unknown", undefined, displayName,
+                ctx.chat?.id, msg.message_id,
+              );
+              if (response && response.text) {
+                try {
+                  await ctx.reply(response.text, { parse_mode: "Markdown" });
+                } catch {
+                  await ctx.reply(response.text);
+                }
+              }
+            }
+            return;
+          }
+        } catch (_err: any) {
+          console.error("[Document] Auto-forward error:", _err.message || _err);
+        }
+      }
+      return;
+    }
 
     // Check reply-to matches the bot message that requested evidence (if set)
     const botMsgId = session.awaitingEvidenceBotMsgId;
@@ -2461,6 +2619,120 @@ export async function createBot(prisma: PrismaClient): Promise<Bot<BotContext> |
       return;
     }
 
+    // Attach:link_confirm — user picks from multiple matching tasks
+    if (data.startsWith("attach:link_confirm:")) {
+      const parts = data.split(":");
+      // parts = ["attach", "link_confirm", todoId, ...filePathParts]
+      const todoId = parts[2];
+      const filePath = parts.slice(3).join(":");
+
+      if (!todoId || !filePath) {
+        await ctx.answerCallbackQuery({ text: "⚠️ Datos inválidos" });
+        return;
+      }
+
+      try {
+        const todo = await (prisma as any).todo.findUnique({
+          where: { id: todoId },
+          select: { id: true, text: true, summary: true },
+        });
+        if (!todo) {
+          await ctx.editMessageText("⚠️ La tarea ya no existe.");
+          return;
+        }
+        const fileNote = `\n📎 Archivo vinculado: ${filePath}`;
+        await (prisma as any).todo.update({
+          where: { id: todo.id },
+          data: { text: (todo.text || "") + fileNote },
+        });
+        await ctx.editMessageText(
+          `🔗 Archivo vinculado a la tarea *${todo.summary}*.`,
+          { parse_mode: "Markdown" }
+        );
+      } catch (err: any) {
+        console.error("[attach:link_confirm] Error:", err.message);
+        await ctx.answerCallbackQuery({ text: "⚠️ Error al vincular" });
+      }
+      return;
+    }
+
+    // Attach file callbacks (sandbox file buttons: photo/document uploads)
+    if (data.startsWith("attach:")) {
+      const parts = data.split(":");
+      // parts = ["attach", action, treeId, ...filePathParts]
+      const action = parts[1];
+      const treeId = parts[2];
+      const filePath = parts.slice(3).join(":");
+
+      if (!action || !treeId || !filePath) {
+        await ctx.answerCallbackQuery({ text: "⚠️ Datos inválidos" });
+        return;
+      }
+
+      await ctx.answerCallbackQuery();
+
+      switch (action) {
+        case "link": {
+          // Step 1: save state, ask user which task to link
+          const session = (ctx as BotContext).session;
+          session.awaitingLinkFile = filePath;
+          session.awaitingLinkTreeId = treeId;
+          await ctx.editMessageText(
+            "🔗 ¿A qué tarea quieres vincular este archivo?\nResponde con el nombre o ID de la tarea."
+          );
+          break;
+        }
+        case "analyze": {
+          try {
+            await ctx.editMessageText("🔍 Enviando a Ari para análisis...");
+            await routeToHermes(
+              `Analiza el archivo "${filePath}" en el sandbox del árbol ${treeId}. Describe su contenido, utilidad y si detectas algo relevante para las necesidades del árbol.`,
+              treeId,
+              ctx.from?.id?.toString() ?? "0",
+              undefined,
+              ctx.from?.first_name,
+              ctx.chat?.id,
+              ctx.callbackQuery?.message?.message_id,
+            );
+          } catch (err: any) {
+            console.error("[attach:analyze] Error routing to Hermes:", err.message);
+          }
+          break;
+        }
+        case "keep": {
+          await ctx.editMessageText("💾 Archivo guardado en el sandbox del árbol.");
+          break;
+        }
+        case "discard": {
+          try {
+            const TREES_BASE = process.env.SANDBOX_BASE_DIR || "/home/leo/trees";
+            const fullPath = require("path").join(TREES_BASE, treeId, filePath);
+            const resolved = require("path").resolve(fullPath);
+            // Safety: ensure path is inside the tree's sandbox
+            const sandboxRoot = require("path").resolve(TREES_BASE, treeId);
+            if (!resolved.startsWith(sandboxRoot)) {
+              await ctx.editMessageText("⚠️ Ruta insegura, descarte cancelado.");
+              return;
+            }
+            require("fs").unlinkSync(resolved);
+            await ctx.editMessageText("🗑 Archivo descartado.");
+          } catch (err: any) {
+            console.error("[attach:discard] Error deleting file:", err.message);
+            await ctx.editMessageText(
+              err.code === "ENOENT"
+                ? "⚠️ El archivo ya no existe."
+                : "⚠️ Error al descartar el archivo."
+            );
+          }
+          break;
+        }
+        default: {
+          await ctx.answerCallbackQuery({ text: "⚠️ Acción no reconocida" });
+        }
+      }
+      return;
+    }
+
     const handled = await handleProfileCallback(prisma, ctx as BotContext);
     if (!handled) {
       // Unknown callback — acknowledge silently
@@ -2494,6 +2766,64 @@ export async function createBot(prisma: PrismaClient): Promise<Bot<BotContext> |
   bot.on("message:text", async (ctx, next) => {
     const msg = ctx.message;
     if (!msg || !("text" in msg)) return next();
+
+    // ── Attach:link step 2 — user responds with task name/ID ──────────
+    const session = (ctx as BotContext).session;
+    if (session.awaitingLinkFile && session.awaitingLinkTreeId) {
+      const taskQuery = msg.text.trim();
+      const treeId = session.awaitingLinkTreeId;
+      const filePath = session.awaitingLinkFile;
+
+      // Clear session state immediately
+      session.awaitingLinkFile = null;
+      session.awaitingLinkTreeId = null;
+
+      try {
+        // Search for the task by summary or ID in this tree
+        const todos = await (prisma as any).todo.findMany({
+          where: {
+            treeId,
+            status: "PENDING",
+            OR: [
+              { id: taskQuery },
+              { summary: { contains: taskQuery } },
+            ],
+          },
+          take: 5,
+        });
+
+        if (todos.length === 0) {
+          await ctx.reply(
+            `⚠️ No encontré ninguna tarea pendiente que coincida con "${taskQuery}" en este árbol.`
+          );
+        } else if (todos.length === 1) {
+          // Single match — link and confirm
+          // Store the file reference in the todo's text field (append)
+          const todo = todos[0];
+          const fileNote = `\n📎 Archivo vinculado: ${filePath}`;
+          await (prisma as any).todo.update({
+            where: { id: todo.id },
+            data: { text: (todo.text || "") + fileNote },
+          });
+          await ctx.reply(
+            `🔗 Archivo vinculado a la tarea "${todo.summary}".`
+          );
+        } else {
+          // Multiple matches — ask to pick one
+          const buttons = todos.map((t: any) => [{
+            text: t.summary.slice(0, 40) + (t.summary.length > 40 ? "…" : ""),
+            callback_data: `attach:link_confirm:${t.id}:${filePath}`,
+          }]);
+          await ctx.reply("🔗 Varias tareas coinciden. ¿A cuál quieres vincular el archivo?", {
+            reply_markup: { inline_keyboard: buttons },
+          });
+        }
+      } catch (err: any) {
+        console.error("[attach:link] Error linking file:", err.message);
+        await ctx.reply("⚠️ Error al vincular el archivo con la tarea.");
+      }
+      return;
+    }
 
     // Check if this is a reply to a bot message (force_reply pattern)
     if (msg.reply_to_message) {

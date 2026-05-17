@@ -20,42 +20,74 @@ import { messageQueue } from "./messageQueue";
 const HERMES_API = "http://127.0.0.1:8644/v1/chat/completions";
 
 // ── ConversationWindow ───────────────────────────────────────────────────
-// In-memory throttle per tree. Each openWindow starts a countdown of 20
-// interactions. tickWindow decrements; when it hits 0 the window auto-closes.
+// In-memory per-tree window for proactive engagement. Each openWindow starts
+// a countdown of 20 interactions. tickWindow decrements; when it hits 0 the
+// window auto-closes. resetWindow extends it back to 20.
 
-interface WindowState {
-  active: boolean;
+export interface WindowState {
+  treeId: string;
+  keyword: string | null;
   remaining: number;
+  openedAt: Date;
 }
 
-const conversationWindows = new Map<string, WindowState>();
+export class ConversationWindow {
+  private windows: Map<string, WindowState> = new Map();
 
-export function openWindow(treeId: string): void {
-  conversationWindows.set(treeId, { active: true, remaining: 20 });
-}
+  /** Open a conversation window on a tree. Default 20-message lifespan. */
+  openWindow(treeId: string, keyword?: string): WindowState {
+    const state: WindowState = {
+      treeId,
+      keyword: keyword ?? null,
+      remaining: 20,
+      openedAt: new Date(),
+    };
+    this.windows.set(treeId, state);
+    return state;
+  }
 
-export function resetWindow(treeId: string): void {
-  conversationWindows.set(treeId, { active: true, remaining: 20 });
-}
+  /** Decrement remaining count. Returns the new state, or null when expired. */
+  tickWindow(treeId: string): WindowState | null {
+    const state = this.windows.get(treeId);
+    if (!state) return null;
+    state.remaining--;
+    if (state.remaining <= 0) {
+      this.windows.delete(treeId);
+      return null;
+    }
+    return state;
+  }
 
-export function tickWindow(treeId: string): void {
-  const w = conversationWindows.get(treeId);
-  if (!w || !w.active) return;
-  w.remaining = Math.max(0, w.remaining - 1);
-  if (w.remaining <= 0) {
-    w.active = false;
+  /** Extend window lifespan back to 20 messages. Returns state or null. */
+  resetWindow(treeId: string): WindowState | null {
+    const state = this.windows.get(treeId);
+    if (!state) return null;
+    state.remaining = 20;
+    return state;
+  }
+
+  /** Force-close a window. */
+  closeWindow(treeId: string): void {
+    this.windows.delete(treeId);
+  }
+
+  /** Check if a tree has an active conversation window. */
+  hasActiveWindow(treeId: string): boolean {
+    return this.windows.has(treeId);
+  }
+
+  /** Get current window state (null if none). */
+  getWindow(treeId: string): WindowState | null {
+    return this.windows.get(treeId) ?? null;
+  }
+
+  /** Legacy alias for hasActiveWindow. */
+  isWindowActive(treeId: string): boolean {
+    return this.hasActiveWindow(treeId);
   }
 }
 
-export function isWindowActive(treeId: string): boolean {
-  const w = conversationWindows.get(treeId);
-  return w?.active === true && w.remaining > 0;
-}
-
-export function closeWindow(treeId: string): void {
-  const w = conversationWindows.get(treeId);
-  if (w) w.active = false;
-}
+export const conversationWindows = new ConversationWindow();
 
 export interface HermesBridgeResponse {
   text: string | null;
@@ -156,27 +188,60 @@ interface ChatMessage {
 }
 
 // ── Keyword scanning ────────────────────────────────────────────────────
-const BRIDGE_KEYWORDS = [
-  "ari",
-  "trust maker",
-  "trustmaker",
-  "árbol",
-  "tree",
-  "agente",
-  "asistente",
-  "@TrustMakerBot",
+// Detects engagement signals in ambient (non-addressed) group messages.
+// Returns matched keyword string or null if no match.
+
+const ENGAGEMENT_KEYWORDS: RegExp[] = [
+  // Spanish question starters
+  /\b(qué|que|quién|quien|quiénes|quienes|cómo|como|cuándo|cuando|dónde|donde|por qu[ée]|cuál|cual|cuáles|cuales)\b/i,
+  // Help / need signals
+  /\b(ayuda|help|necesito|necesitamos|alguien\s+sabe|alguien\s+me\s+puede|se\s+necesita)\b/i,
+  // Engagement / opinion requests
+  /\b(qué\s+opinan|qué\s+piensan|alguien\s+ha\s+(hecho|probado|usado)|recomiendan|sugerencias|consejos?)\b/i,
+  // Bridge keywords (legacy — ari, trust maker, etc.)
+  /\b(ari|trust\s*maker|trustmaker|árbol|agente|asistente|@TrustMakerBot)\b/i,
+  // Urgent / time-sensitive
+  /\b(urgente|emergencia|rápido|rapido|ahora\s+mismo|para\s+ya|cu[áa]nto\s+antes)\b/i,
+  // Technical / project questions
+  /\b(c[óo]mo\s+se\s+hace|c[óo]mo\s+funciona|qu[ée]\s+es\s+(un|una|el|la)|para\s+qu[ée]\s+sirve)\b/i,
 ];
 
-/**
- * Escanea texto en busca de keywords del bridge.
- * Case-insensitive. Sin DB ni I/O. Solo string matching.
- */
+/** Legacy boolean scanner — preserved for backward compatibility. */
 export function scanForKeywords(text: string): boolean {
   const lower = text.toLowerCase();
-  for (const kw of BRIDGE_KEYWORDS) {
-    if (lower.includes(kw)) return true;
+  for (const re of ENGAGEMENT_KEYWORDS) {
+    if (re.test(lower)) return true;
   }
   return false;
+}
+
+/**
+ * Scan a message for engagement keywords.
+ * Returns the matched text, or null if no match.
+ */
+export function scanForKeywordMatch(text: string): string | null {
+  if (!text || text.length < 3) return null;
+  for (const re of ENGAGEMENT_KEYWORDS) {
+    const m = text.match(re);
+    if (m) return m[0];
+  }
+  return null;
+}
+
+/**
+ * Local pre-filter — always passes through to the LLM-based shouldAriRespond().
+ * Exists as a lightweight gate that only stops truly expired windows.
+ *
+ * Rules:
+ *  - Always respond if window is active (remaining > 0).
+ *  - Never respond if remaining is 0 (window expired).
+ */
+export function shouldAriRespondLocal(
+  window: WindowState | null,
+  messageText: string,
+): boolean {
+  if (!window) return false;
+  return window.remaining > 0;
 }
 
 /**
@@ -846,128 +911,4 @@ export async function routeToHermes(
       messageQueue.dequeue();
     }
   }
-}
-
-// ═══════════════════════════════════════════════════════════════════════
-// Conversation Window — proactive engagement for ambient group messages
-// ═══════════════════════════════════════════════════════════════════════
-
-interface WindowState {
-  treeId: string;
-  keyword: string | null;
-  remaining: number;
-  openedAt: Date;
-}
-
-class ConversationWindowManager {
-  private windows: Map<string, WindowState> = new Map();
-
-  /** Open a conversation window on a tree. Default 5-message lifespan. */
-  openWindow(treeId: string, keyword?: string): WindowState {
-    const state: WindowState = {
-      treeId,
-      keyword: keyword ?? null,
-      remaining: 5,
-      openedAt: new Date(),
-    };
-    this.windows.set(treeId, state);
-    return state;
-  }
-
-  /** Decrement remaining count. Returns null when window expires. */
-  tickWindow(treeId: string): WindowState | null {
-    const state = this.windows.get(treeId);
-    if (!state) return null;
-    state.remaining--;
-    if (state.remaining <= 0) {
-      this.windows.delete(treeId);
-      return null;
-    }
-    return state;
-  }
-
-  /** Extend window lifespan back to 5 messages. */
-  resetWindow(treeId: string): WindowState | null {
-    const state = this.windows.get(treeId);
-    if (!state) return null;
-    state.remaining = 5;
-    return state;
-  }
-
-  /** Force-close a window. */
-  closeWindow(treeId: string): void {
-    this.windows.delete(treeId);
-  }
-
-  /** Check if a tree has an active conversation window. */
-  hasActiveWindow(treeId: string): boolean {
-    return this.windows.has(treeId);
-  }
-
-  /** Get current window state (null if none). */
-  getWindow(treeId: string): WindowState | null {
-    return this.windows.get(treeId) ?? null;
-  }
-}
-
-export const conversationWindows = new ConversationWindowManager();
-
-// ── Keyword patterns that signal Ari should join a conversation ───────
-const ENGAGEMENT_KEYWORDS = [
-  // Spanish question starters
-  /\b(qué|que|quién|quien|quiénes|quienes|cómo|como|cuándo|cuando|dónde|donde|por qu[ée]|cuál|cual|cuáles|cuales)\b/i,
-  // Help / need signals
-  /\b(ayuda|help|necesito|necesitamos|alguien\s+sabe|alguien\s+me\s+puede|se\s+necesita)\b/i,
-  // Engagement / opinion requests
-  /\b(qué\s+opinan|qué\s+piensan|alguien\s+ha\s+(hecho|probado|usado)|recomiendan|sugerencias|consejos?)\b/i,
-  // Direct addressing of Ari in ambient chat (not a command)
-  /\b(ari[\s,!?]|ari\s+(dime|cu[ée]ntame|qu[ée]\s+(opinas|piensas|sabes)|ay[úu]dame|expl[íi]came))\b/i,
-  // Urgent / time-sensitive
-  /\b(urgente|emergencia|rápido|rapido|ahora mismo|para\s+ya|cu[áa]nto\s+antes)\b/i,
-  // Technical / project questions
-  /\b(c[óo]mo\s+se\s+hace|c[óo]mo\s+funciona|qu[ée]\s+es\s+(un|una|el|la)|para\s+qu[ée]\s+sirve)\b/i,
-];
-
-/**
- * Scan a message for keywords that should trigger a conversation window.
- * Returns the matched keyword pattern string, or null if no match.
- */
-export function scanForKeywords(text: string): string | null {
-  if (!text || text.length < 3) return null;
-  for (const re of ENGAGEMENT_KEYWORDS) {
-    const m = text.match(re);
-    if (m) return m[0];
-  }
-  return null;
-}
-
-/**
- * Decide whether Ari should respond given the window state and current message.
- *
- * Heuristics:
- *  - Always respond on first message of a new window (keyword-triggered open).
- *  - Respond if window.remaining is at 5 (fresh engagement).
- *  - Respond if message contains a question mark (explicit question).
- *  - Respond probabilistically (~30%) on mid-window messages to feel natural.
- *  - Never respond if remaining is 0 (window closed).
- */
-export function shouldAriRespond(
-  window: WindowState | null,
-  messageText: string,
-): boolean {
-  if (!window) return false;
-  if (window.remaining <= 0) return false;
-
-  // Always respond on window open (fresh engagement)
-  if (window.remaining === 5) return true;
-
-  // Explicit question
-  if (messageText.includes("?")) return true;
-
-  // Mid-window: probabilistic to feel organic (~30%)
-  if (window.remaining >= 2) {
-    return Math.random() < 0.3;
-  }
-
-  return false;
 }
