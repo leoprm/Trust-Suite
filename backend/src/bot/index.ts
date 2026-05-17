@@ -1346,12 +1346,23 @@ export async function createBot(prisma: PrismaClient): Promise<Bot<BotContext> |
       }, 4000);
       ctx.replyWithChatAction("typing").catch(() => {});
 
+      // Progress message every 3 min — user knows Ari didn't freeze
+      const progressMsgIds: number[] = [];
+      const progressInterval = setInterval(async () => {
+        try {
+          const msg = await ctx.reply(
+            "⏳ Ari sigue trabajando en esto, ya te responde...",
+          );
+          progressMsgIds.push(msg.message_id);
+        } catch { /* ignore — non-critical */ }
+      }, 180_000); // 3 minutos
+
       let response;
       try {
         response = await routeToHermes(fullMessage, tree.id, userId, chatHistory, displayName);
       } finally {
-        // Stop typing indicator
         clearInterval(typingInterval);
+        clearInterval(progressInterval);
       }
 
       if (response) {
