@@ -688,16 +688,16 @@ async function buildSystemPrompt(
 
   // ── Read local skills from sandbox ─────────────────────────────────────
   try {
-    if (fs.existsSync(skillsDir)) {
+    if (fs.existsSync(localSkillsDir)) {
       const skillFiles = fs
-        .readdirSync(skillsDir)
+        .readdirSync(localSkillsDir)
         .filter((f) => f.endsWith(".md"));
       if (skillFiles.length > 0) {
         lines.push("");
         lines.push("6. SKILLS LOCALES DISPONIBLES EN ESTE ÁRBOL:");
         for (const file of skillFiles) {
           try {
-            const raw = fs.readFileSync(path.join(skillsDir, file), "utf-8");
+            const raw = fs.readFileSync(path.join(localSkillsDir, file), "utf-8");
             // Extract frontmatter name and description
             const nameMatch = raw.match(/^---\s*\nname:\s*(.+)$/m);
             const descMatch = raw.match(/^description:\s*(.+)$/m);
