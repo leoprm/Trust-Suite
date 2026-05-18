@@ -672,13 +672,13 @@ async function buildSystemPrompt(
   lines.push("");
   lines.push("3. El bot automaticamente:");
   lines.push("   - Abre una ventana de 4 horas para candidatos.");
-  lines.push("   - A las 3h40m envia un recordatorio al grupo: "Quedan 20 min. Nadie mas?"");
+  lines.push('   - A las 3h40m envia un recordatorio al grupo: "Quedan 20 min. Nadie mas?"');
   lines.push("   - A las 4h cierra la ventana y crea una encuesta ANONIMA con los candidatos.");
-  lines.push("   - La encuesta incluye: candidatos + "Contratar externo" + "Cancelar tarea"");
+  lines.push('   - La encuesta incluye: candidatos + "Contratar externo" + "Cancelar tarea"');
   lines.push("   - Tu (Ari) NO necesitas manejar el timer — el bot lo hace.");
   lines.push("");
-  lines.push("4. Cuando un miembro presiona "Yo puedo", el bot registra al candidato.");
-  lines.push("   Y notifica al grupo: "@user se postulo (N candidatos)"");
+  lines.push('4. Cuando un miembro presiona "Yo puedo", el bot registra al candidato.');
+  lines.push('   Y notifica al grupo: "@user se postulo (N candidatos)"');
   lines.push("   Consulta los candidatos con:");
   lines.push("     GET http://localhost:3100/api/candidates?taskId=<TASK_ID>");
   lines.push("     Authorization: Bearer HERMES_API_SERVER_KEY");
