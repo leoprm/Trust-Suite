@@ -115,6 +115,12 @@ enum ExternalTaskStatus {
   REJECTED
 }
 
+enum ExternalTaskLocationType {
+  REMOTE
+  ONSITE
+  HYBRID
+}
+
 enum PenaltyType {
   XP_LOSS
   BEHAVIOR_REVIEW
@@ -1163,7 +1169,9 @@ model ExternalTask {
   createdBy     String
   title         String
   description   String              @db.Text
-  skills        Json                @default("[]")
+  skills        Json                         @default("[]")
+  location      String?                      @db.VarChar(255)
+  locationType  ExternalTaskLocationType     @default(REMOTE)
   budget        Int
   currency      String              @default("CLP")
   workerId      String?

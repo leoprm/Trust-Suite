@@ -24,7 +24,7 @@ async function requireTreeMembership(userId: string, treeId: string, res: Respon
 // ═══════════════════════════════════════════════════════════════════════════════
 export const createExternalTask = async (req: Request, res: Response) => {
   try {
-    const { treeId, title, description, skills, budget, currency, kanbanTaskId, kanbanBoard } = req.body;
+    const { treeId, title, description, skills, location, locationType, budget, currency, kanbanTaskId, kanbanBoard } = req.body;
     const userId = req.user?.id;
 
     if (!userId) {
@@ -72,6 +72,17 @@ export const createExternalTask = async (req: Request, res: Response) => {
       }
     }
 
+    // Validate locationType if provided
+    const validLocationTypes = ['REMOTE', 'ONSITE', 'HYBRID'];
+    if (locationType && !validLocationTypes.includes(locationType)) {
+      return res.status(400).json({ error: `locationType must be one of: ${validLocationTypes.join(', ')}` });
+    }
+
+    // Normalize location: accept string or nullish
+    const normalizedLocation = location && typeof location === 'string' && location.trim()
+      ? location.trim()
+      : null;
+
     const task = await prisma.externalTask.create({
       data: {
         treeId,
@@ -79,6 +90,8 @@ export const createExternalTask = async (req: Request, res: Response) => {
         title: title.trim(),
         description: description.trim(),
         skills: skillsArr as any,
+        location: normalizedLocation,
+        locationType: locationType || 'REMOTE',
         budget: Math.round(budget),
         currency: currency || 'CLP',
         status: 'OPEN',
