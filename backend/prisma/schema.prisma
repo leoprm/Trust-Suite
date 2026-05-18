@@ -121,6 +121,17 @@ enum ExternalTaskLocationType {
   HYBRID
 }
 
+enum ExternalTaskType {
+  HUMAN
+  AGENT
+}
+
+enum WorkerLevelReason {
+  TASK_COMPLETED
+  XP_DECAY
+  ADMIN_ADJUST
+}
+
 enum PenaltyType {
   XP_LOSS
   BEHAVIOR_REVIEW
@@ -143,99 +154,101 @@ enum InvestmentMatchStatus {
 }
 
 model User {
-  id              String    @id @default(uuid())
-  username        String    @unique
-  firstName       String?   // Telegram first_name
-  email           String?   @unique
-  password        String?
-  role            UserRole  @default(USER)
-  isPlatformAdmin Boolean   @default(false)  // Si true, exento de cobro
-  telegramUserId  BigInt?   @unique
-  createdAt       DateTime  @default(now())
-  skills          String?   // JSON: {'design':45,'frontend':72}
-  totalXp         Int       @default(0)
-  memberships    TreeMember[]
-  invitedMembers TreeMember[]      @relation("Inviter")
-  createdNeeds   Need[]            @relation("NeedCreator")
-  ideas          Idea[]
-  ideaVotes      IdeaVote[]
-  userAIs        UserAI[]
-  loginAttempts  LoginAttempt[]    @relation("UserLoginAttempts")
-  refreshTokens  RefreshToken[]
-  eventLogs      EventLog[]
-  language       String?
-  createdTokens  TokenInvitacion[] @relation("TokenCreator")
-  evaluatedResults Result[]
-  byoApiKeys ByoApiKey[]
-  chatMessages ChatMessage[]
-  tasksCreated   Task[]            @relation("TaskCreator")
-  tasksAssigned  Task[]            @relation("TaskAssignee")
-  disputedTasks  Task[]            @relation("TaskDisputer")
-  interventionRatings AgentInterventionRating[]
-  penaltyVotes        AgentPenaltyVote[]
-  socialProfiles      MemberSocialProfile[]
-  availableForHire    Boolean  @default(false)
-  hourlyRate          Int?
-  currency            String?  @default("CLP")
-  telegramUsername    String?
-  location            String?
-  externalTasksCreated ExternalTask[]  @relation("ExternalTaskCreator")
-  externalTasksWorked  ExternalTask[]  @relation("Worker")
+  id                   String                    @id @default(uuid())
+  username             String                    @unique
+  firstName            String? // Telegram first_name
+  email                String?                   @unique
+  password             String?
+  role                 UserRole                  @default(USER)
+  isPlatformAdmin      Boolean                   @default(false) // Si true, exento de cobro
+  telegramUserId       BigInt?                   @unique
+  createdAt            DateTime                  @default(now())
+  skills               String? // JSON: {'design':45,'frontend':72}
+  totalXp              Int                       @default(0)
+  memberships          TreeMember[]
+  invitedMembers       TreeMember[]              @relation("Inviter")
+  createdNeeds         Need[]                    @relation("NeedCreator")
+  ideas                Idea[]
+  ideaVotes            IdeaVote[]
+  userAIs              UserAI[]
+  loginAttempts        LoginAttempt[]            @relation("UserLoginAttempts")
+  refreshTokens        RefreshToken[]
+  eventLogs            EventLog[]
+  language             String?
+  createdTokens        TokenInvitacion[]         @relation("TokenCreator")
+  evaluatedResults     Result[]
+  byoApiKeys           ByoApiKey[]
+  chatMessages         ChatMessage[]
+  tasksCreated         Task[]                    @relation("TaskCreator")
+  tasksAssigned        Task[]                    @relation("TaskAssignee")
+  disputedTasks        Task[]                    @relation("TaskDisputer")
+  interventionRatings  AgentInterventionRating[]
+  penaltyVotes         AgentPenaltyVote[]
+  socialProfiles       MemberSocialProfile[]
+  availableForHire     Boolean                   @default(false)
+  hourlyRate           Int?
+  currency             String?                   @default("CLP")
+  telegramUsername     String?
+  location             String?
+  externalTasksCreated ExternalTask[]            @relation("ExternalTaskCreator")
+  externalTasksWorked  ExternalTask[]            @relation("Worker")
+  workerSkills         WorkerSkill[]
+  workerLevelHistory   WorkerLevelHistory[]
 }
 
 model Tree {
-  id              String          @id @default(uuid())
-  name            String
-  description     String?         @db.Text
-  icono           String          @default("🌳")
-  creatorId       String?
-  admissionPolicy AdmissionPolicy @default(INVITE_ONLY)
-  telegramChatId  String?         @unique
-  parentTreeId    String?
-  whatsappGroupId String?         // ID del grupo de WhatsApp vinculado
-  code            String?         @unique  // Código corto para vincular subárboles (ej: ABC123)
-  language        String          @default("es")
-  introMessageId  BigInt?         // message_id del mensaje intro de Ari (reply target para bienvenidas)
-  onboardingInviterId BigInt?    // Telegram user ID del creador del grupo (único que puede responder onboarding)
-  objectives      String?         @db.Text  // T24: tipo de organización y objetivos
-  totalBudget     Float?          // Presupuesto total del árbol (CLP)
-  paymentMode     PaymentMode     @default(INDIVIDUAL)
-  sponsorId       String?         // User ID del sponsor si paymentMode = CENTRALIZED
-  maxMembers      Int             @default(200)
-  leaveAttempts   Int             @default(0)
-  blockedUntil    DateTime?
-  pendingDeletionAt DateTime?
-  standby         Boolean         @default(false)
-  createdAt       DateTime        @default(now())
-  members         TreeMember[]
-  agentMemberships AgentMembership[]
-  agentRoleHistory AgentRoleHistory[]
-  needs            Need[]            @relation("TreeNeeds")
-  tasks            Task[]
-  eventLogs        EventLog[]
-  tokens           TokenInvitacion[] @relation("TokenTree")
-  ratings          Rating[]
-  agentInterventions AgentIntervention[]
-  chatMessages     ChatMessage[]
-  ledgerEntries    TransactionLedger[]
-  sandbox          TreeSandbox?
-  skillPricing     SkillPricing[]
-  budgetAllocationsChild BudgetAllocation[] @relation("ChildBudget")
-  budgetAllocationsParent BudgetAllocation[] @relation("ParentBudget")
-  parentTree      Tree?            @relation("TreeChildren", fields: [parentTreeId], references: [id])
-  childTrees      Tree[]           @relation("TreeChildren")
-  solutions       SolutionCatalog[]
-  treeStacks      TreeTechStack[]
-  managedServers  ManagedServer[]
-  socialProfiles  MemberSocialProfile[]
-  treeStructures TreeStructure[]
-  investmentProfile         TreeInvestmentProfile?
-  investorMatches           InvestmentMatch[]          @relation("InvestorMatches")
-  seekerMatches             InvestmentMatch[]          @relation("SeekerMatches")
-  todos                     Todo[]
-  externalTasks             ExternalTask[]
-  paused                   Boolean      @default(false)
-  voteThreshold             Int          @default(20)
+  id                      String                 @id @default(uuid())
+  name                    String
+  description             String?                @db.Text
+  icono                   String                 @default("🌳")
+  creatorId               String?
+  admissionPolicy         AdmissionPolicy        @default(INVITE_ONLY)
+  telegramChatId          String?                @unique
+  parentTreeId            String?
+  whatsappGroupId         String? // ID del grupo de WhatsApp vinculado
+  code                    String?                @unique // Código corto para vincular subárboles (ej: ABC123)
+  language                String                 @default("es")
+  introMessageId          BigInt? // message_id del mensaje intro de Ari (reply target para bienvenidas)
+  onboardingInviterId     BigInt? // Telegram user ID del creador del grupo (único que puede responder onboarding)
+  objectives              String?                @db.Text // T24: tipo de organización y objetivos
+  totalBudget             Float? // Presupuesto total del árbol (CLP)
+  paymentMode             PaymentMode            @default(INDIVIDUAL)
+  sponsorId               String? // User ID del sponsor si paymentMode = CENTRALIZED
+  maxMembers              Int                    @default(200)
+  leaveAttempts           Int                    @default(0)
+  blockedUntil            DateTime?
+  pendingDeletionAt       DateTime?
+  standby                 Boolean                @default(false)
+  createdAt               DateTime               @default(now())
+  members                 TreeMember[]
+  agentMemberships        AgentMembership[]
+  agentRoleHistory        AgentRoleHistory[]
+  needs                   Need[]                 @relation("TreeNeeds")
+  tasks                   Task[]
+  eventLogs               EventLog[]
+  tokens                  TokenInvitacion[]      @relation("TokenTree")
+  ratings                 Rating[]
+  agentInterventions      AgentIntervention[]
+  chatMessages            ChatMessage[]
+  ledgerEntries           TransactionLedger[]
+  sandbox                 TreeSandbox?
+  skillPricing            SkillPricing[]
+  budgetAllocationsChild  BudgetAllocation[]     @relation("ChildBudget")
+  budgetAllocationsParent BudgetAllocation[]     @relation("ParentBudget")
+  parentTree              Tree?                  @relation("TreeChildren", fields: [parentTreeId], references: [id])
+  childTrees              Tree[]                 @relation("TreeChildren")
+  solutions               SolutionCatalog[]
+  treeStacks              TreeTechStack[]
+  managedServers          ManagedServer[]
+  socialProfiles          MemberSocialProfile[]
+  treeStructures          TreeStructure[]
+  investmentProfile       TreeInvestmentProfile?
+  investorMatches         InvestmentMatch[]      @relation("InvestorMatches")
+  seekerMatches           InvestmentMatch[]      @relation("SeekerMatches")
+  todos                   Todo[]
+  externalTasks           ExternalTask[]
+  paused                  Boolean                @default(false)
+  voteThreshold           Int                    @default(20)
 }
 
 model TreeTechStack {
@@ -243,12 +256,12 @@ model TreeTechStack {
   treeId      String
   stackItemId String
   installedAt DateTime @default(now())
-  installedBy String?   // userId
+  installedBy String? // userId
   status      String   @default("active") // active, deprecated, replaced
-  config      String?   // JSON con configuración específica
+  config      String? // JSON con configuración específica
 
-  tree      Tree           @relation(fields: [treeId], references: [id], onDelete: Cascade)
-  stackItem TechStackItem  @relation(fields: [stackItemId], references: [id], onDelete: Cascade)
+  tree      Tree          @relation(fields: [treeId], references: [id], onDelete: Cascade)
+  stackItem TechStackItem @relation(fields: [stackItemId], references: [id], onDelete: Cascade)
 
   @@unique([treeId, stackItemId])
   @@index([treeId])
@@ -256,61 +269,62 @@ model TreeTechStack {
 
 model TechStackItem {
   id          String   @id @default(uuid())
-  name        String            // "FarmOS", "Odoo", "WooCommerce"
-  category    String            // "agricultura", "contabilidad", "ecommerce"
+  name        String // "FarmOS", "Odoo", "WooCommerce"
+  category    String // "agricultura", "contabilidad", "ecommerce"
   description String   @db.Text
-  repoUrl     String?           // GitHub URL
-  websiteUrl  String?           // Sitio oficial
-  tags        String?           // JSON: ["open-source", "self-hosted", "php"]
-  addedBy     String            // needId que lo introdujo
+  repoUrl     String? // GitHub URL
+  websiteUrl  String? // Sitio oficial
+  tags        String? // JSON: ["open-source", "self-hosted", "php"]
+  addedBy     String // needId que lo introdujo
   createdAt   DateTime @default(now())
 
-  treeStacks  TreeTechStack[]
+  treeStacks TreeTechStack[]
 
   @@index([category])
   @@index([tags])
 }
 
 model TreeMember {
-  id          String         @id @default(uuid())
-  userId      String
-  treeId      String
-  invitedById String?
-  status      MemberStatus   @default(ACTIVE)
-  role        MembershipRole @default(MEMBER)
-  isAI        Boolean        @default(false)
-  aiProfile   String?
-  aiProvider  String?
-  aiModel     String?
-  aiStatus    AIMemberStatus @default(IDLE)
-  level       Int            @default(1)
-  xp          Float          @default(0)
-  dailyPoints    Int            @default(100)
-  monthlyFee     Int?
-  paymentStatus  PaymentStatus  @default(GRACE)
-  graceUntil     DateTime?
-  lastPaymentAt  DateTime?
-  paymentSplits  PaymentSplit[]
-  balance        MemberBalance?
-  ledgerEntries  TransactionLedger[]
-  joinedAt       DateTime       @default(now())
-  lastDmAt       DateTime?
-  user      User  @relation(fields: [userId], references: [id], onDelete: Cascade)
-  tree      Tree  @relation(fields: [treeId], references: [id], onDelete: Cascade)
-  invitedBy User? @relation("Inviter", fields: [invitedById], references: [id], onDelete: SetNull)
+  id            String              @id @default(uuid())
+  userId        String
+  treeId        String
+  invitedById   String?
+  status        MemberStatus        @default(ACTIVE)
+  role          MembershipRole      @default(MEMBER)
+  isAI          Boolean             @default(false)
+  aiProfile     String?
+  aiProvider    String?
+  aiModel       String?
+  aiStatus      AIMemberStatus      @default(IDLE)
+  level         Int                 @default(1)
+  xp            Float               @default(0)
+  dailyPoints   Int                 @default(100)
+  monthlyFee    Int?
+  paymentStatus PaymentStatus       @default(GRACE)
+  graceUntil    DateTime?
+  lastPaymentAt DateTime?
+  paymentSplits PaymentSplit[]
+  balance       MemberBalance?
+  ledgerEntries TransactionLedger[]
+  joinedAt      DateTime            @default(now())
+  lastDmAt      DateTime?
+  user          User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tree          Tree                @relation(fields: [treeId], references: [id], onDelete: Cascade)
+  invitedBy     User?               @relation("Inviter", fields: [invitedById], references: [id], onDelete: SetNull)
+
   @@unique([userId, treeId])
 }
 
 model Agent {
-  id          String             @id @default(uuid())
-  name        String             @unique
-  description String?            @db.Text
-  type        String             @default("HERMES")
-  createdAt   DateTime           @default(now())
-  memberships AgentMembership[]
-  ratings     Rating[]
-  profile     AgentProfile?
-  roleHistory AgentRoleHistory[]
+  id            String              @id @default(uuid())
+  name          String              @unique
+  description   String?             @db.Text
+  type          String              @default("HERMES")
+  createdAt     DateTime            @default(now())
+  memberships   AgentMembership[]
+  ratings       Rating[]
+  profile       AgentProfile?
+  roleHistory   AgentRoleHistory[]
   interventions AgentIntervention[]
 }
 
@@ -324,160 +338,167 @@ model AgentMembership {
   xp        Float        @default(0)
   createdAt DateTime     @default(now())
   updatedAt DateTime     @updatedAt
-  agent     Agent @relation(fields: [agentId], references: [id], onDelete: Cascade)
-  tree      Tree  @relation(fields: [treeId], references: [id], onDelete: Cascade)
+  agent     Agent        @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  tree      Tree         @relation(fields: [treeId], references: [id], onDelete: Cascade)
   ratings   Rating[]
+
   @@unique([agentId, treeId])
 }
 
 model AgentProfile {
-  agentId             String   @id
-  totalRatings        Int      @default(0)
-  avgStars            Float    @default(0)
-  xpByRole            Json     @default("{}")
+  agentId             String    @id
+  totalRatings        Int       @default(0)
+  avgStars            Float     @default(0)
+  xpByRole            Json      @default("{}")
   primaryRole         String?
   secondaryRole       String?
-  confidenceScore     Float    @default(0)
+  confidenceScore     Float     @default(0)
   lastActiveAt        DateTime?
-  explorationEligible Boolean  @default(true)
-  currentTreeCount    Int      @default(0)
-  updatedAt           DateTime @updatedAt
-  agent               Agent    @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  explorationEligible Boolean   @default(true)
+  currentTreeCount    Int       @default(0)
+  updatedAt           DateTime  @updatedAt
+  agent               Agent     @relation(fields: [agentId], references: [id], onDelete: Cascade)
 }
 
 model AgentRoleHistory {
-  id                String           @id @default(uuid())
-  agentId           String
-  treeId            String
-  role              String
-  assignedAt        DateTime         @default(now())
-  releasedAt        DateTime?
-  assignmentReason  AssignmentReason
-  performanceScore  Float?
-  agent             Agent            @relation(fields: [agentId], references: [id], onDelete: Cascade)
-  tree              Tree             @relation(fields: [treeId], references: [id], onDelete: Cascade)
+  id               String           @id @default(uuid())
+  agentId          String
+  treeId           String
+  role             String
+  assignedAt       DateTime         @default(now())
+  releasedAt       DateTime?
+  assignmentReason AssignmentReason
+  performanceScore Float?
+  agent            Agent            @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  tree             Tree             @relation(fields: [treeId], references: [id], onDelete: Cascade)
+
   @@index([agentId])
   @@index([treeId])
   @@index([agentId, treeId])
 }
 
 model MemberSocialProfile {
-  id                 String   @id @default(uuid())
-  userId             String
-  treeId             String
-  proposedNeedTopics Json     @default("[]")
-  votingPatterns     Json     @default("{}")
-  taskCompletionRate Float    @default(0)
-  chatActivity       Json     @default("{}")
+  id                  String    @id @default(uuid())
+  userId              String
+  treeId              String
+  proposedNeedTopics  Json      @default("[]")
+  votingPatterns      Json      @default("{}")
+  taskCompletionRate  Float     @default(0)
+  chatActivity        Json      @default("{}")
   contributionSummary String?
-  lastAnalyzedAt     DateTime?
-  createdAt          DateTime @default(now())
-  updatedAt          DateTime @updatedAt
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
-  tree Tree @relation(fields: [treeId], references: [id], onDelete: Cascade)
+  lastAnalyzedAt      DateTime?
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+  user                User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tree                Tree      @relation(fields: [treeId], references: [id], onDelete: Cascade)
+
   @@unique([userId, treeId])
   @@index([treeId])
 }
 
 model Rating {
-  id                     String   @id @default(uuid())
-  agentId                String
-  treeId                 String
-  taskId                 String
-  role                   String
-  stars                  Int
-  crossTreeContribution  Boolean  @default(true)
-  createdAt              DateTime @default(now())
-  agent     Agent @relation(fields: [agentId], references: [id], onDelete: Cascade)
-  tree      Tree  @relation(fields: [treeId], references: [id], onDelete: Cascade)
-  membership AgentMembership @relation(fields: [agentId, treeId], references: [agentId, treeId])
-  task      Task  @relation(fields: [taskId], references: [id])
+  id                    String          @id @default(uuid())
+  agentId               String
+  treeId                String
+  taskId                String
+  role                  String
+  stars                 Int
+  crossTreeContribution Boolean         @default(true)
+  createdAt             DateTime        @default(now())
+  agent                 Agent           @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  tree                  Tree            @relation(fields: [treeId], references: [id], onDelete: Cascade)
+  membership            AgentMembership @relation(fields: [agentId, treeId], references: [agentId, treeId])
+  task                  Task            @relation(fields: [taskId], references: [id])
+
   @@index([agentId, treeId])
   @@index([taskId])
 }
 
 model AgentIntervention {
-  id          String   @id @default(uuid())
-  agentId     String
-  treeId      String
-  description String?  @db.Text
-  taskId      String?
-  createdAt   DateTime @default(now())
-  agent       Agent    @relation(fields: [agentId], references: [id], onDelete: Cascade)
-  tree        Tree     @relation(fields: [treeId], references: [id], onDelete: Cascade)
-  task        Task?    @relation(fields: [taskId], references: [id], onDelete: SetNull)
-  ratings     AgentInterventionRating[]
+  id           String                    @id @default(uuid())
+  agentId      String
+  treeId       String
+  description  String?                   @db.Text
+  taskId       String?
+  createdAt    DateTime                  @default(now())
+  agent        Agent                     @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  tree         Tree                      @relation(fields: [treeId], references: [id], onDelete: Cascade)
+  task         Task?                     @relation(fields: [taskId], references: [id], onDelete: SetNull)
+  ratings      AgentInterventionRating[]
   penaltyVotes AgentPenaltyVote[]
+
   @@index([agentId, treeId])
   @@index([treeId, createdAt])
 }
 
 model AgentInterventionRating {
-  id              String   @id @default(uuid())
-  interventionId  String
-  userId          String
-  useful          Boolean  @default(false)
-  annoying        Boolean  @default(false)
-  correct         Boolean  @default(false)
-  comment         String?  @db.Text
-  createdAt       DateTime @default(now())
-  intervention    AgentIntervention @relation(fields: [interventionId], references: [id], onDelete: Cascade)
-  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id             String            @id @default(uuid())
+  interventionId String
+  userId         String
+  useful         Boolean           @default(false)
+  annoying       Boolean           @default(false)
+  correct        Boolean           @default(false)
+  comment        String?           @db.Text
+  createdAt      DateTime          @default(now())
+  intervention   AgentIntervention @relation(fields: [interventionId], references: [id], onDelete: Cascade)
+  user           User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+
   @@unique([interventionId, userId])
   @@index([interventionId])
 }
 
 model AgentPenaltyVote {
-  id              String      @id @default(uuid())
-  interventionId  String
-  userId          String
-  penalty         PenaltyType
-  createdAt       DateTime    @default(now())
-  intervention    AgentIntervention @relation(fields: [interventionId], references: [id], onDelete: Cascade)
-  user            User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id             String            @id @default(uuid())
+  interventionId String
+  userId         String
+  penalty        PenaltyType
+  createdAt      DateTime          @default(now())
+  intervention   AgentIntervention @relation(fields: [interventionId], references: [id], onDelete: Cascade)
+  user           User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+
   @@unique([interventionId, userId])
   @@index([interventionId])
 }
 
 model Need {
-  id                  String     @id @default(uuid())
-  treeId              String?
-  creatorId           String
-  title               String
-  description         String     @db.Text
-  importance          Int?
-  dailyVotes          Int        @default(0)
-  status              NeedStatus @default(OPEN)
-  isComplex           Boolean    @default(false)
-  approvalPollId      String?
-  approvalMessageId   Int?
-  telegramMessageId   Int?
-  createdAt           DateTime   @default(now())
-  creator  User       @relation("NeedCreator", fields: [creatorId], references: [id])
-  tree     Tree?      @relation("TreeNeeds", fields: [treeId], references: [id])
-  needIdeas NeedIdea[]
-  ideas     Idea[]
-  results         Result[]
-  tasks           Task[]
-  paymentSplits   PaymentSplit[]
-  solutions       SolutionCatalog[]
+  id                String            @id @default(uuid())
+  treeId            String?
+  creatorId         String
+  title             String
+  description       String            @db.Text
+  importance        Int?
+  dailyVotes        Int               @default(0)
+  status            NeedStatus        @default(OPEN)
+  isComplex         Boolean           @default(false)
+  approvalPollId    String?
+  approvalMessageId Int?
+  telegramMessageId Int?
+  createdAt         DateTime          @default(now())
+  creator           User              @relation("NeedCreator", fields: [creatorId], references: [id])
+  tree              Tree?             @relation("TreeNeeds", fields: [treeId], references: [id])
+  needIdeas         NeedIdea[]
+  ideas             Idea[]
+  results           Result[]
+  tasks             Task[]
+  paymentSplits     PaymentSplit[]
+  solutions         SolutionCatalog[]
 }
 
 model Idea {
-  id                 String   @id @default(uuid())
-  content            String   @db.Text
-  creatorId          String
-  isGlobal           Boolean  @default(false)
-  sourceTreeId       String?
-  totalLikes         Int      @default(0)
-  needId             String?
-  telegramMessageId  Int?
-  createdAt          DateTime @default(now())
-  creator  User       @relation(fields: [creatorId], references: [id])
-  need     Need?      @relation(fields: [needId], references: [id])
-  needIdeas NeedIdea[]
-  votes     IdeaVote[]
-  results   Result[]
+  id                String     @id @default(uuid())
+  content           String     @db.Text
+  creatorId         String
+  isGlobal          Boolean    @default(false)
+  sourceTreeId      String?
+  totalLikes        Int        @default(0)
+  needId            String?
+  telegramMessageId Int?
+  createdAt         DateTime   @default(now())
+  creator           User       @relation(fields: [creatorId], references: [id])
+  need              Need?      @relation(fields: [needId], references: [id])
+  needIdeas         NeedIdea[]
+  votes             IdeaVote[]
+  results           Result[]
 }
 
 model NeedIdea {
@@ -487,8 +508,9 @@ model NeedIdea {
   matchedBy  MatchSource @default(AI)
   matchScore Float       @default(0)
   createdAt  DateTime    @default(now())
-  need Need @relation(fields: [needId], references: [id], onDelete: Cascade)
-  idea Idea @relation(fields: [ideaId], references: [id], onDelete: Cascade)
+  need       Need        @relation(fields: [needId], references: [id], onDelete: Cascade)
+  idea       Idea        @relation(fields: [ideaId], references: [id], onDelete: Cascade)
+
   @@unique([needId, ideaId])
 }
 
@@ -499,29 +521,30 @@ model IdeaVote {
   needId    String
   weight    Int      @default(1)
   createdAt DateTime @default(now())
-  idea Idea @relation(fields: [ideaId], references: [id], onDelete: Cascade)
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  idea      Idea     @relation(fields: [ideaId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
   @@unique([ideaId, userId, needId])
 }
 
 model Result {
-  id                String      @id @default(uuid())
+  id                String             @id @default(uuid())
   needId            String
   ideaId            String
-  summary           String      @db.Text
+  summary           String             @db.Text
   evaluation        Int?
-  createdBy         MatchSource @default(AI)
+  createdBy         MatchSource        @default(AI)
   evaluatedById     String?
   evaluatedAt       DateTime?
-  satisfactionScore Int         @default(0)
-  satisfactionCount Int         @default(0)
-  judgeComment      String?     @db.Text
-  judgeAnalysis     String?     @db.Text
-  createdAt         DateTime    @default(now())
-  updatedAt         DateTime    @updatedAt
-  need      Need  @relation(fields: [needId], references: [id], onDelete: Cascade)
-  idea      Idea  @relation(fields: [ideaId], references: [id], onDelete: Cascade)
-  evaluator User? @relation(fields: [evaluatedById], references: [id], onDelete: SetNull)
+  satisfactionScore Int                @default(0)
+  satisfactionCount Int                @default(0)
+  judgeComment      String?            @db.Text
+  judgeAnalysis     String?            @db.Text
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+  need              Need               @relation(fields: [needId], references: [id], onDelete: Cascade)
+  idea              Idea               @relation(fields: [ideaId], references: [id], onDelete: Cascade)
+  evaluator         User?              @relation(fields: [evaluatedById], references: [id], onDelete: SetNull)
   satisfactionPolls SatisfactionPoll[]
 }
 
@@ -532,38 +555,38 @@ model SatisfactionPoll {
   chatId    String
   messageId Int
   createdAt DateTime @default(now())
-  result Result @relation(fields: [resultId], references: [id], onDelete: Cascade)
+  result    Result   @relation(fields: [resultId], references: [id], onDelete: Cascade)
 }
 
 model Task {
-  id              String     @id @default(uuid())
-  treeId          String
-  needId          String?
-  title           String
-  description     String?    @db.Text
-  budget          Int                    // CLP
-  status          TaskStatus @default(PENDING)
-  assigneeId      String?               // userId (humano o AI)
-  creatorId       String                // userId que creó la task
-  skills          String?               // JSON array: ["design", "frontend"]
-  evidenceUrl     String?               // URL o path de archivo subido
-  evidenceType    String?               // IMAGE, FILE, LINK
-  complexity      String?               // "simple" | "media" | "compleja" — definido por el creador
-  xpAwarded       Int?                  // XP otorgado al verificar (según complejidad)
-  disputedById      String?               // userId que disputó
-  disputeReason     String?
+  id                 String     @id @default(uuid())
+  treeId             String
+  needId             String?
+  title              String
+  description        String?    @db.Text
+  budget             Int // CLP
+  status             TaskStatus @default(PENDING)
+  assigneeId         String? // userId (humano o AI)
+  creatorId          String // userId que creó la task
+  skills             String? // JSON array: ["design", "frontend"]
+  evidenceUrl        String? // URL o path de archivo subido
+  evidenceType       String? // IMAGE, FILE, LINK
+  complexity         String? // "simple" | "media" | "compleja" — definido por el creador
+  xpAwarded          Int? // XP otorgado al verificar (según complejidad)
+  disputedById       String? // userId que disputó
+  disputeReason      String?
   disputeEvidenceUrl String?
-  disputedAt        DateTime?
-  disputeExpiresAt  DateTime?
-  createdAt       DateTime   @default(now())
-  updatedAt       DateTime   @updatedAt
+  disputedAt         DateTime?
+  disputeExpiresAt   DateTime?
+  createdAt          DateTime   @default(now())
+  updatedAt          DateTime   @updatedAt
 
-  tree     Tree  @relation(fields: [treeId], references: [id], onDelete: Cascade)
-      need     Need? @relation(fields: [needId], references: [id], onDelete: SetNull)
-  assignee User? @relation("TaskAssignee", fields: [assigneeId], references: [id], onDelete: SetNull)
-  creator    User  @relation("TaskCreator", fields: [creatorId], references: [id])
-  disputedBy User? @relation("TaskDisputer", fields: [disputedById], references: [id], onDelete: SetNull)
-  ratings    Rating[]
+  tree               Tree                @relation(fields: [treeId], references: [id], onDelete: Cascade)
+  need               Need?               @relation(fields: [needId], references: [id], onDelete: SetNull)
+  assignee           User?               @relation("TaskAssignee", fields: [assigneeId], references: [id], onDelete: SetNull)
+  creator            User                @relation("TaskCreator", fields: [creatorId], references: [id])
+  disputedBy         User?               @relation("TaskDisputer", fields: [disputedById], references: [id], onDelete: SetNull)
+  ratings            Rating[]
   agentInterventions AgentIntervention[]
 
   @@index([treeId])
@@ -576,10 +599,10 @@ model Task {
 model SkillPricing {
   id          String   @id @default(uuid())
   treeId      String
-  skillTag    String   // "frontend", "backend", "design"
-  ratePerHour Float    // USD por hora
-  demandLevel Int      @default(1)  // 1-10, calculado automáticamente
-  supplyCount Int      @default(0)  // cuántos miembros tienen esta skill
+  skillTag    String // "frontend", "backend", "design"
+  ratePerHour Float // USD por hora
+  demandLevel Int      @default(1) // 1-10, calculado automáticamente
+  supplyCount Int      @default(0) // cuántos miembros tienen esta skill
   updatedAt   DateTime @updatedAt
   createdAt   DateTime @default(now())
 
@@ -598,19 +621,21 @@ model Subscription {
   currentPeriodEnd     DateTime
   monthlyCost          Float?
   createdAt            DateTime           @default(now())
+
   @@index([userId])
   @@index([status])
 }
 
 model UserAI {
-  id             String        @id @default(uuid())
+  id             String         @id @default(uuid())
   userId         String
   name           String
   provider       UserAIProvider
   apiKeyHash     String
-  monthlySavings Float         @default(0)
-  createdAt      DateTime      @default(now())
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  monthlySavings Float          @default(0)
+  createdAt      DateTime       @default(now())
+  user           User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+
   @@index([userId])
   @@index([userId, provider])
 }
@@ -622,7 +647,8 @@ model RefreshToken {
   expiresAt DateTime
   revokedAt DateTime?
   createdAt DateTime  @default(now())
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
   @@index([userId])
   @@index([tokenHash])
 }
@@ -632,7 +658,8 @@ model LoginAttempt {
   userId    String
   ipAddress String?
   createdAt DateTime @default(now())
-  user User @relation("UserLoginAttempts", fields: [userId], references: [id], onDelete: Cascade)
+  user      User     @relation("UserLoginAttempts", fields: [userId], references: [id], onDelete: Cascade)
+
   @@index([userId, createdAt])
 }
 
@@ -643,8 +670,8 @@ model TokenInvitacion {
   usado     Boolean   @default(false)
   createdAt DateTime  @default(now())
   expiresAt DateTime?
-  arbol   Tree @relation("TokenTree", fields: [arbolId], references: [id], onDelete: Cascade)
-  creador User @relation("TokenCreator", fields: [creadorId], references: [id], onDelete: Cascade)
+  arbol     Tree      @relation("TokenTree", fields: [arbolId], references: [id], onDelete: Cascade)
+  creador   User      @relation("TokenCreator", fields: [creadorId], references: [id], onDelete: Cascade)
 }
 
 model ByoApiKey {
@@ -656,7 +683,8 @@ model ByoApiKey {
   costPerToken Float    @default(0)
   maxParallel  Int      @default(5)
   createdAt    DateTime @default(now())
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
   @@index([userId])
   @@index([userId, provider])
 }
@@ -666,11 +694,12 @@ model ChatMessage {
   userId    String
   treeId    String
   agentId   String?
-  role      String   // "user" | "assistant"
+  role      String // "user" | "assistant"
   content   String   @db.Text
   createdAt DateTime @default(now())
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade, map: "chatmessage_user_fk")
-  tree Tree @relation(fields: [treeId], references: [id], onDelete: Cascade, map: "chatmessage_tree_fk")
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade, map: "chatmessage_user_fk")
+  tree      Tree     @relation(fields: [treeId], references: [id], onDelete: Cascade, map: "chatmessage_tree_fk")
+
   @@index([userId, treeId, createdAt])
   @@index([treeId, agentId, createdAt])
 }
@@ -690,8 +719,9 @@ model EventLog {
   severity     EventSeverity @default(INFO)
   source       EventSource   @default(USER)
   createdAt    DateTime      @default(now())
-  tree  Tree? @relation(fields: [treeId], references: [id], onDelete: SetNull)
-  actor User? @relation(fields: [actorId], references: [id], onDelete: SetNull)
+  tree         Tree?         @relation(fields: [treeId], references: [id], onDelete: SetNull)
+  actor        User?         @relation(fields: [actorId], references: [id], onDelete: SetNull)
+
   @@index([treeId])
   @@index([actorId])
   @@index([entityType, entityId])
@@ -701,12 +731,12 @@ model EventLog {
 }
 
 model PaymentSplit {
-  id          String   @id @default(uuid())
-  needId      String
-  memberId    String   // quien recibe el split
-  percentage  Float    // 0.0 a 100.0
-  reason      String   // "need_creator", "task_executor"
-  createdAt   DateTime @default(now())
+  id         String   @id @default(uuid())
+  needId     String
+  memberId   String // quien recibe el split
+  percentage Float // 0.0 a 100.0
+  reason     String // "need_creator", "task_executor"
+  createdAt  DateTime @default(now())
 
   need   Need       @relation(fields: [needId], references: [id])
   member TreeMember @relation(fields: [memberId], references: [id])
@@ -718,9 +748,9 @@ model PaymentSplit {
 model MemberBalance {
   id               String   @id @default(uuid())
   memberId         String   @unique
-  availableBalance Int      @default(0)  // CLP, retirable
-  pendingBalance   Int      @default(0)  // CLP, en período de clearing
-  stripeAccountId  String?  // Stripe Connect account ID
+  availableBalance Int      @default(0) // CLP, retirable
+  pendingBalance   Int      @default(0) // CLP, en período de clearing
+  stripeAccountId  String? // Stripe Connect account ID
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 
@@ -731,11 +761,11 @@ model TransactionLedger {
   id              String   @id @default(uuid())
   treeId          String
   memberId        String
-  type            String   // SPLIT_CREDIT | WITHDRAWAL | PENDING_CREDIT | PENDING_CONVERTED | REVERSAL
-  amount          Int      // CLP — positive = credit, negative = debit
+  type            String // SPLIT_CREDIT | WITHDRAWAL | PENDING_CREDIT | PENDING_CONVERTED | REVERSAL
+  amount          Int // CLP — positive = credit, negative = debit
   description     String?
-  stripeReference String?  // Stripe transfer/payout ID
-  metadataJson    String?  // JSON: { taskId?, needId?, reason?, ... }
+  stripeReference String? // Stripe transfer/payout ID
+  metadataJson    String? // JSON: { taskId?, needId?, reason?, ... }
   createdAt       DateTime @default(now())
 
   tree   Tree       @relation(fields: [treeId], references: [id])
@@ -749,23 +779,21 @@ model TransactionLedger {
 // ── Budget Allocation (Tree Hierarchy) ───────────────────────────────────
 
 model BudgetAllocation {
-  id             String   @id @default(uuid())
+  id             String    @id @default(uuid())
   parentTreeId   String
-  childTreeId    String   @unique  // Cada subárbol tiene UNA asignación
-  percentage     Float    // 0-100% del presupuesto del padre
-  fixedAmount    Float?   // Alternativa: monto fijo en vez de %
-  effectiveFrom  DateTime @default(now())
+  childTreeId    String    @unique // Cada subárbol tiene UNA asignación
+  percentage     Float // 0-100% del presupuesto del padre
+  fixedAmount    Float? // Alternativa: monto fijo en vez de %
+  effectiveFrom  DateTime  @default(now())
   effectiveUntil DateTime?
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
 
   parentTree Tree @relation("ParentBudget", fields: [parentTreeId], references: [id])
   childTree  Tree @relation("ChildBudget", fields: [childTreeId], references: [id])
 
   @@index([parentTreeId])
 }
-
-
 
 model TreeSandbox {
   id        String   @id @default(uuid())
@@ -794,26 +822,26 @@ model PollMapping {
 model PlatformConfig {
   id        String   @id @default(uuid())
   key       String   @unique
-  value     String   // JSON string con el valor (número, objeto, etc.)
-  label     String   @default("")  // Descripción en español
-  category  String   @default("")  // "api_cost", "fixed", "margin", etc.
+  value     String // JSON string con el valor (número, objeto, etc.)
+  label     String   @default("") // Descripción en español
+  category  String   @default("") // "api_cost", "fixed", "margin", etc.
   updatedAt DateTime @updatedAt
   createdAt DateTime @default(now())
 }
 
 model ApiUsage {
-  id             String   @id @default(uuid())
-  userId         BigInt   // telegramUserId del usuario
-  treeId         String   // árbol donde se hizo la consulta
-  provider       String   @default("deepseek")  // deepseek, openai, anthropic
-  model          String   @default("")          // modelo específico
-  tokensIn       Int      @default(0)           // prompt_tokens
-  tokensOut      Int      @default(0)           // completion_tokens
-  cost           Float    @default(0)           // costo en USD calculado
-  messagePreview String   @default("")          // primeros 100 chars del mensaje
-  isFreePeriod        Boolean @default(false)    // si el usuario está en período gratuito
-  absorbedByPlatform  Float   @default(0)        // costo absorbido si en período gratis
-  createdAt      DateTime @default(now())
+  id                 String   @id @default(uuid())
+  userId             BigInt // telegramUserId del usuario
+  treeId             String // árbol donde se hizo la consulta
+  provider           String   @default("deepseek") // deepseek, openai, anthropic
+  model              String   @default("") // modelo específico
+  tokensIn           Int      @default(0) // prompt_tokens
+  tokensOut          Int      @default(0) // completion_tokens
+  cost               Float    @default(0) // costo en USD calculado
+  messagePreview     String   @default("") // primeros 100 chars del mensaje
+  isFreePeriod       Boolean  @default(false) // si el usuario está en período gratuito
+  absorbedByPlatform Float    @default(0) // costo absorbido si en período gratis
+  createdAt          DateTime @default(now())
 
   @@index([userId])
   @@index([treeId])
@@ -828,9 +856,9 @@ model SolutionCatalog {
   treeId          String
   title           String
   description     String   @db.Text
-  resolutionLevel Int      // 1=simple, 2=github, 3=custom
+  resolutionLevel Int // 1=simple, 2=github, 3=custom
   repoUrl         String?
-  keywords        String?  // JSON array
+  keywords        String? // JSON array
   publishedAt     DateTime @default(now())
 
   need Need @relation(fields: [needId], references: [id])
@@ -848,17 +876,17 @@ enum ManagedServerStatus {
 }
 
 model ManagedServer {
-  id           String               @id @default(uuid())
-  treeId       String
-  name         String
-  ip           String
-  port         Int                  @default(22)
-  username     String
-  encryptedKey String               @db.Text
-  status           ManagedServerStatus  @default(PENDING_VERIFICATION)
+  id               String              @id @default(uuid())
+  treeId           String
+  name             String
+  ip               String
+  port             Int                 @default(22)
+  username         String
+  encryptedKey     String              @db.Text
+  status           ManagedServerStatus @default(PENDING_VERIFICATION)
   lastCheck        DateTime?
-  consecutiveFails Int                  @default(0)
-  createdAt        DateTime             @default(now())
+  consecutiveFails Int                 @default(0)
+  createdAt        DateTime            @default(now())
 
   tree Tree @relation(fields: [treeId], references: [id], onDelete: Cascade)
 
@@ -868,14 +896,14 @@ model ManagedServer {
 // ── Talent Migration (T22: Auto-regulación) ──────────────────────────────
 
 model TalentMigrationSuggestion {
-  id           String   @id @default(uuid())
-  memberId     String
-  fromTreeId   String
-  toTreeId     String
-  skillTag     String
-  currentRate  Float
-  betterRate   Float
-  createdAt    DateTime @default(now())
+  id          String   @id @default(uuid())
+  memberId    String
+  fromTreeId  String
+  toTreeId    String
+  skillTag    String
+  currentRate Float
+  betterRate  Float
+  createdAt   DateTime @default(now())
 
   @@index([memberId])
   @@index([fromTreeId, toTreeId])
@@ -884,12 +912,12 @@ model TalentMigrationSuggestion {
 // ── Kanban Bot Task Tracking ─────────────────────────────────────────────
 
 model BotKanbanTask {
-  id             String   @id @default(uuid())
+  id             String    @id @default(uuid())
   kanbanTaskId   String
   chatId         String
   status         String
   lastNotifiedAt DateTime?
-  createdAt      DateTime @default(now())
+  createdAt      DateTime  @default(now())
 
   @@index([kanbanTaskId])
   @@index([chatId])
@@ -899,31 +927,31 @@ model BotKanbanTask {
 
 model GroupRole {
   id              String    @id @default(uuid())
-  groupType       String    // e.g. "constructora", "agencia digital"
-  roleName        String    // e.g. "jefe de obra", "diseñador senior"
-  typicalCount    Int       // typical count for this role in groups of this type
-  ratioToMembers  Float?    // e.g. 0.125 = 1 per 8 members
-  requiredSkills  String?   // JSON array of skill tag names
-  avgLoad         Int?      // estimated workload 1-10
+  groupType       String // e.g. "constructora", "agencia digital"
+  roleName        String // e.g. "jefe de obra", "diseñador senior"
+  typicalCount    Int // typical count for this role in groups of this type
+  ratioToMembers  Float? // e.g. 0.125 = 1 per 8 members
+  requiredSkills  String? // JSON array of skill tag names
+  avgLoad         Int? // estimated workload 1-10
   occurrences     Int       @default(1) // how many groups have/confirmed this role
   source          String    @default("seed") // seed | organic (grupo real confirmó)
   lastConfirmedAt DateTime? // when last confirmed by feedback
   createdAt       DateTime  @default(now())
 
+  @@unique([groupType, roleName])
   @@index([groupType])
   @@index([roleName])
-  @@unique([groupType, roleName])
 }
 
 // ── Ari: Group Structure Recommender (sub-árboles, presupuestos, metas) ──
 
 model GroupStructure {
   id               String   @id @default(uuid())
-  groupType        String   // e.g. "constructora", "agencia digital"
+  groupType        String // e.g. "constructora", "agencia digital"
   typicalSubTrees  Json     @default("[]") // [{name: "Obra Gruesa", budgetPct: 40, members: 4, goals: "..."}]
-  budgetAllocation Json?    // {tools: 30, personnel: 50, services: 10, contingency: 10}
-  capitalInicial   Float?   // Estimated initial capital (CLP)
-  roiMonth         Int?     // Month when group reaches financial autonomy
+  budgetAllocation Json? // {tools: 30, personnel: 50, services: 10, contingency: 10}
+  capitalInicial   Float? // Estimated initial capital (CLP)
+  roiMonth         Int? // Month when group reaches financial autonomy
   source           String   @default("seed") // seed | organic
   usageCount       Int      @default(1)
   createdAt        DateTime @default(now())
@@ -934,10 +962,10 @@ model GroupStructure {
 model GroupMilestone {
   id             String   @id @default(uuid())
   groupType      String
-  phase          Int      // 1-4
-  phaseName      String   // "Constitución", "Primeros Resultados", etc.
+  phase          Int // 1-4
+  phaseName      String // "Constitución", "Primeros Resultados", etc.
   objectives     Json     @default("[]") // string array
-  expectedMonths Int      // months to reach this milestone
+  expectedMonths Int // months to reach this milestone
   targetKPIs     Json     @default("{}") // {tasksCompleted: 5, votingRate: 80, ...}
   createdAt      DateTime @default(now())
 
@@ -948,7 +976,7 @@ model TreeStructure {
   id            String   @id @default(uuid())
   treeId        String   @unique
   structureJson Json     @default("{}") // full snapshot: {groupType, subTrees, milestones, capitalInicial, roi, breakEven}
-  acceptedBy    String?  // userId who accepted/adopted
+  acceptedBy    String? // userId who accepted/adopted
   modifiedAt    DateTime @default(now())
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
@@ -959,20 +987,20 @@ model TreeStructure {
 }
 
 model TreeMilestone {
-  id              String                                            @id @default(uuid())
-  treeId          String
-  subTreeName     String
-  milestonePhase  Int
-  milestoneName   String
-  targetDate      DateTime
-  targetKPIs      Json?
-  currentKPIs     Json?
-  status          TreeMilestoneStatus                               @default(PENDING)
-  completedAt     DateTime?
-  needId          String?
-  taskId          String?
-  createdAt       DateTime                                          @default(now())
-  updatedAt       DateTime                                          @updatedAt
+  id             String              @id @default(uuid())
+  treeId         String
+  subTreeName    String
+  milestonePhase Int
+  milestoneName  String
+  targetDate     DateTime
+  targetKPIs     Json?
+  currentKPIs    Json?
+  status         TreeMilestoneStatus @default(PENDING)
+  completedAt    DateTime?
+  needId         String?
+  taskId         String?
+  createdAt      DateTime            @default(now())
+  updatedAt      DateTime            @updatedAt
 
   @@index([treeId])
 }
@@ -985,15 +1013,15 @@ enum TreeMilestoneStatus {
 }
 
 model TreeExpense {
-  id           String   @id @default(uuid())
-  treeId       String
-  subTreeName  String   // "Obra Gruesa", "Administración", etc.
-  category     String   // TOOLS, PERSONNEL, SERVICES, INFRA, CONTINGENCY
-  amount       Float    // CLP
-  description  String?
-  isActual     Boolean  @default(false) // true = real expense, false = budgeted
-  incurredAt   DateTime?
-  createdAt    DateTime @default(now())
+  id          String    @id @default(uuid())
+  treeId      String
+  subTreeName String // "Obra Gruesa", "Administración", etc.
+  category    String // TOOLS, PERSONNEL, SERVICES, INFRA, CONTINGENCY
+  amount      Float // CLP
+  description String?
+  isActual    Boolean   @default(false) // true = real expense, false = budgeted
+  incurredAt  DateTime?
+  createdAt   DateTime  @default(now())
 
   @@index([treeId])
   @@index([treeId, subTreeName])
@@ -1002,12 +1030,12 @@ model TreeExpense {
 // ── Beta Capacity Gate: Waitlist ──────────────────────────────────────────
 
 model Waitlist {
-  id             String   @id @default(uuid())
+  id             String    @id @default(uuid())
   treeName       String
   telegramChatId String
   contactUserId  String
-  status         String   @default("WAITING") // WAITING | NOTIFIED | JOINED | DECLINED
-  createdAt      DateTime @default(now())
+  status         String    @default("WAITING") // WAITING | NOTIFIED | JOINED | DECLINED
+  createdAt      DateTime  @default(now())
   notifiedAt     DateTime?
 
   @@index([status])
@@ -1016,22 +1044,22 @@ model Waitlist {
 
 /// Investment profile for a tree — investor or seeking investment.
 model TreeInvestmentProfile {
-  id              Int    @id @default(autoincrement())
-  treeId          String @unique
-  tree            Tree   @relation(fields: [treeId], references: [id], onDelete: Cascade)
-  isInvestor      Boolean         @default(false)
-  seekingInvestment Boolean       @default(false)
-  capitalAvailable Float?         // if investor: how much available to invest (CLP)
-  amountSeeking   Float?          // if seeker: how much they need (CLP)
-  industries      Json            @default("[]")  // industries of interest / sector
-  investmentTypes Json            @default("[]")  // [REVENUE_SHARE, LOAN, EQUITY]
-  maxRevenueShare Float?          // maximum % of revenue willing to share (seeker) or request (investor)
-  maxTermMonths   Int?            // maximum loan/investment term in months
-  confidenceScore Float           @default(0)     // 0-100, computed from history
-  purpose         String?         @db.Text        // what is the money for
-  portfolioSummary String?        @db.Text        // investor: track record summary
-  createdAt       DateTime        @default(now())
-  updatedAt       DateTime        @updatedAt
+  id                Int      @id @default(autoincrement())
+  treeId            String   @unique
+  tree              Tree     @relation(fields: [treeId], references: [id], onDelete: Cascade)
+  isInvestor        Boolean  @default(false)
+  seekingInvestment Boolean  @default(false)
+  capitalAvailable  Float? // if investor: how much available to invest (CLP)
+  amountSeeking     Float? // if seeker: how much they need (CLP)
+  industries        Json     @default("[]") // industries of interest / sector
+  investmentTypes   Json     @default("[]") // [REVENUE_SHARE, LOAN, EQUITY]
+  maxRevenueShare   Float? // maximum % of revenue willing to share (seeker) or request (investor)
+  maxTermMonths     Int? // maximum loan/investment term in months
+  confidenceScore   Float    @default(0) // 0-100, computed from history
+  purpose           String?  @db.Text // what is the money for
+  portfolioSummary  String?  @db.Text // investor: track record summary
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
 
   @@index([isInvestor])
   @@index([seekingInvestment])
@@ -1044,18 +1072,18 @@ model InvestmentMatch {
   investor       Tree                  @relation("InvestorMatches", fields: [investorTreeId], references: [id], onDelete: Cascade)
   seekerTreeId   String
   seeker         Tree                  @relation("SeekerMatches", fields: [seekerTreeId], references: [id], onDelete: Cascade)
-  amount         Float                 // amount matched (CLP)
-  revenueShare   Float?                // % revenue share (only for REVENUE_SHARE)
-  termMonths     Int?                  // duration in months
+  amount         Float // amount matched (CLP)
+  revenueShare   Float? // % revenue share (only for REVENUE_SHARE)
+  termMonths     Int? // duration in months
   investmentType InvestmentType        @default(REVENUE_SHARE)
   status         InvestmentMatchStatus @default(PROPOSED)
-  proposedBy     String?               // who proposed the match (Ari agent ID)
-  acceptedAt     DateTime?             // both sides accepted
-  completedAt    DateTime?             // investment finished
+  proposedBy     String? // who proposed the match (Ari agent ID)
+  acceptedAt     DateTime? // both sides accepted
+  completedAt    DateTime? // investment finished
   createdAt      DateTime              @default(now())
   updatedAt      DateTime              @updatedAt
 
-  ratings        InvestmentRating[]
+  ratings InvestmentRating[]
 
   @@index([investorTreeId])
   @@index([seekerTreeId])
@@ -1064,14 +1092,14 @@ model InvestmentMatch {
 
 /// Rating of an investment partner after a completed match.
 model InvestmentRating {
-  id           String @id @default(uuid())
-  matchId      String
-  match        InvestmentMatch @relation(fields: [matchId], references: [id], onDelete: Cascade)
-  raterTreeId  String          // who is rating
-  ratedTreeId  String          // who is being rated
-  score        Int             // 1-5
-  comment      String?         @db.Text
-  createdAt    DateTime        @default(now())
+  id          String          @id @default(uuid())
+  matchId     String
+  match       InvestmentMatch @relation(fields: [matchId], references: [id], onDelete: Cascade)
+  raterTreeId String // who is rating
+  ratedTreeId String // who is being rated
+  score       Int // 1-5
+  comment     String?         @db.Text
+  createdAt   DateTime        @default(now())
 
   @@unique([matchId, raterTreeId])
   @@index([ratedTreeId])
@@ -1080,23 +1108,23 @@ model InvestmentRating {
 // ── Todo Items ──────────────────────────────────────────────────────────
 
 model Todo {
-  id            String   @id @default(uuid())
-  treeId        String
-  chatId        BigInt
-  messageId     BigInt
-  createdBy     BigInt
-  createdByName String?
-  text          String
-  summary       String
-  likeCount     Int      @default(0)
-  status         String   @default("PENDING")
-  assignedTo     BigInt?              // Telegram user ID who claimed the task
-  assignedToName String?              // Display name of who claimed the task
+  id             String    @id @default(uuid())
+  treeId         String
+  chatId         BigInt
+  messageId      BigInt
+  createdBy      BigInt
+  createdByName  String?
+  text           String
+  summary        String
+  likeCount      Int       @default(0)
+  status         String    @default("PENDING")
+  assignedTo     BigInt? // Telegram user ID who claimed the task
+  assignedToName String? // Display name of who claimed the task
   deadline       DateTime?
-  reminderSent   Boolean  @default(false)
+  reminderSent   Boolean   @default(false)
   reminderSentAt DateTime?
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
 
   tree Tree @relation(fields: [treeId], references: [id], onDelete: Cascade)
 
@@ -1115,7 +1143,7 @@ enum CandidateStatus {
 model Candidate {
   id        String          @id @default(uuid())
   userId    String
-  taskId    String          // kanbanTaskId de la tarea human-worker
+  taskId    String // kanbanTaskId de la tarea human-worker
   treeId    String
   status    CandidateStatus @default(PENDING)
   createdAt DateTime        @default(now())
@@ -1129,17 +1157,17 @@ model Candidate {
 
 model CandidateAnnouncement {
   id                String    @id @default(uuid())
-  taskId             String    // kanbanTaskId
-  treeId             String
-  telegramChatId     String
-  announcementMsgId  Int       // Telegram message_id of the original announcement
-  deadline           DateTime  // announcement_created_at + 4h
-  reminderSentAt     DateTime? // when the 3h40m reminder was sent
-  reminderMsgId      Int?      // Telegram message_id of the reminder
-  pollId             String?   // Telegram poll_id when poll is created
-  pollMessageId      Int?      // Telegram message_id of the poll
-  pollClosed         Boolean   @default(false)
-  createdAt          DateTime  @default(now())
+  taskId            String // kanbanTaskId
+  treeId            String
+  telegramChatId    String
+  announcementMsgId Int // Telegram message_id of the original announcement
+  deadline          DateTime // announcement_created_at + 4h
+  reminderSentAt    DateTime? // when the 3h40m reminder was sent
+  reminderMsgId     Int? // Telegram message_id of the reminder
+  pollId            String? // Telegram poll_id when poll is created
+  pollMessageId     Int? // Telegram message_id of the poll
+  pollClosed        Boolean   @default(false)
+  createdAt         DateTime  @default(now())
 
   @@index([taskId])
   @@index([treeId])
@@ -1165,7 +1193,7 @@ model ExternalTaskNotification {
   id             String   @id @default(uuid())
   externalTaskId String
   userId         String
-  messageId      Int?     // Telegram message_id sent to this worker
+  messageId      Int? // Telegram message_id sent to this worker
   createdAt      DateTime @default(now())
 
   @@unique([externalTaskId, userId])
@@ -1176,31 +1204,64 @@ model ExternalTaskNotification {
 // ── ExternalTask (Human-in-the-Loop) ──────────────────────────────────────
 
 model ExternalTask {
-  id            String              @id @default(uuid())
-  treeId        String
-  kanbanTaskId  String?
-  kanbanBoard   String?
-  createdBy     String
-  title         String
-  description   String              @db.Text
-  skills        Json                         @default("[]")
-  location      String?                      @db.VarChar(255)
-  locationType  ExternalTaskLocationType     @default(REMOTE)
-  budget        Int
-  currency      String              @default("CLP")
-  workerId      String?
-  status        ExternalTaskStatus  @default(OPEN)
+  id             String                   @id @default(uuid())
+  treeId         String
+  kanbanTaskId   String?
+  kanbanBoard    String?
+  createdBy      String
+  title          String
+  description    String                   @db.Text
+  skills         Json                     @default("[]")
+  location       String?                  @db.VarChar(255)
+  locationType   ExternalTaskLocationType @default(REMOTE)
+  difficulty     Int?                     @default(5)
+  quality        Float?
+  budget         Int
+  currency       String                   @default("CLP")
+  workerId       String?
+  status         ExternalTaskStatus       @default(OPEN)
   deliverableUrl String?
   approvedBy     String?
-  rejectReason   String?             @db.Text
-  createdAt     DateTime            @default(now())
-  updatedAt     DateTime            @updatedAt
+  rejectReason   String?                  @db.Text
+  createdAt      DateTime                 @default(now())
+  updatedAt      DateTime                 @updatedAt
 
-  tree    Tree @relation(fields: [treeId], references: [id], onDelete: Cascade)
-  creator User @relation("ExternalTaskCreator", fields: [createdBy], references: [id])
+  tree    Tree  @relation(fields: [treeId], references: [id], onDelete: Cascade)
+  creator User  @relation("ExternalTaskCreator", fields: [createdBy], references: [id])
   worker  User? @relation("Worker", fields: [workerId], references: [id], onDelete: SetNull)
 
   @@index([treeId])
   @@index([workerId])
   @@index([status])
+}
+
+// ── Worker Skills & Leveling ────────────────────────────────────────────────
+
+model WorkerSkill {
+  id        String   @id @default(uuid())
+  userId    String
+  skill     String
+  xp        Int      @default(0)
+  level     Int      @default(1)
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, skill])
+  @@index([userId])
+}
+
+model WorkerLevelHistory {
+  id        String            @id @default(uuid())
+  userId    String
+  skill     String
+  xpDelta   Int
+  reason    WorkerLevelReason
+  taskId    String?
+  createdAt DateTime          @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([userId, skill, createdAt])
 }
