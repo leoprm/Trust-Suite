@@ -93,6 +93,7 @@ import adminRoutes from './routes/adminRoutes';
 import structureRoutes from './routes/structureRoutes';
 import investmentRoutes from './routes/investmentRoutes';
 import externalTaskRoutes from './routes/externalTasks';
+import hooksRoutes from './routes/hooks';
 // Note: roleRoutes is registered inline below to avoid circular dependency with eventLogService
 import { createBot } from './bot/index';
 import { initTrustManagerBot } from './bot/trustManagerBot';
@@ -278,6 +279,7 @@ app.use('/api/admin', adminRoutes);
 app.use('/api/structure', structureRoutes);
 app.use('/api/investment', investmentRoutes);
 app.use('/api/external-tasks', externalTaskRoutes);
+app.use('/api/hooks', hooksRoutes);
 
 // Role recommendation endpoints
 import { recommendRoles, feedbackRoles } from './controllers/roleRecommendationController';
