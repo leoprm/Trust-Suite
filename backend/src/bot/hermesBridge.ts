@@ -576,6 +576,24 @@ async function buildSystemPrompt(
   lines.push("- Si el usuario da pistas nuevas durante las iteraciones, refina con un nuevo POST a media-search.");
   lines.push('- No preguntes "¿quieres que busque?" — busca directo.');
 
+  // ── Obsidian Vault search ──────────────────────────────────────────────
+  lines.push("");
+  lines.push("═══ BÚSQUEDA EN OBSIDIAN VAULT ═══");
+  lines.push("");
+  lines.push("Tienes un vault Obsidian en obsidian/ dentro de tu sandbox. Úsalo como memoria.");
+  lines.push("");
+  lines.push("ANTES de responder, busca en el vault cuando el mensaje:");
+  lines.push('  - Menciona archivos, decisiones pasadas, o personas ("el documento de...", "la decisión sobre...")');
+  lines.push('  - Contiene "qué era", "recuerdas", "cuándo", "quién hizo", "dónde está", "cómo se llamaba"');
+  lines.push('  - Pregunta por algo que pasó antes en el árbol');
+  lines.push("");
+  lines.push("Cómo buscar:");
+  lines.push("  POST .../sandbox/exec → { \"command\": \"grep -ril 'término' obsidian/\" }");
+  lines.push("  POST .../sandbox/exec → { \"command\": \"find obsidian/ -name '*keyword*'\" }");
+  lines.push("  POST .../sandbox/read  → { \"path\": \"obsidian/...\" } (para leer la nota encontrada)");
+  lines.push("");
+  lines.push("⚠️  NUNCA respondas de memoria si el vault puede tener la respuesta. Busca primero.");
+
   // ── Office skills ─────────────────────────────────────────────────────
   lines.push("");
   lines.push("═══════ HABILIDADES DE OFIMÁTICA ═══════");
