@@ -25,7 +25,21 @@ export interface BotSessionData {
   awaitingLinkTreeId: string | null;
   /** Whether the user chose "subtree_yes" in onboarding step 2 (used for step 3->4/5 routing) */
   onboardingSubtree?: boolean;
-  /** Worker flow state: /trabajar onboarding or /perfil field edits */
+  /** Worker onboarding step: skills | hourlyRate | currency | location | confirm */
+  workerOnboardingStep?: string;
+  /** Skills entered during /trabajar (comma-separated) */
+  workerSkills?: string;
+  /** Hourly rate entered during /trabajar */
+  workerHourlyRate?: number;
+  /** Currency selected during /trabajar */
+  workerCurrency?: string;
+  /** Location entered during /trabajar */
+  workerLocation?: string;
+  /** Field being edited via /perfil inline (skills | rate | location | currency) */
+  workerEditField?: string;
+  /** Task ID awaiting delivery file upload */
+  workerDeliverTaskId?: string;
+  /** Worker flow: /trabajar onboarding or /perfil edit state */
   workerFlow?: {
     step: number;
     skills: string | null;

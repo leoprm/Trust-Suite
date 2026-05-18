@@ -644,3 +644,98 @@ function hWK(key: string, lng: string, vars?: Record<string, string>): string {
   }
   return text;
 }
+
+// Unified worker callback router (used by index.ts callback handler)
+
+export async function handleWorkerCallback(
+  prisma: PrismaClient,
+  ctx: BotContext,
+): Promise<void> {
+  const data = ctx.callbackQuery?.data;
+  if (!data) return;
+
+  // worker_currency:CODE (onboarding)
+  if (data.startsWith("worker_currency:")) {
+    const currency = data.slice("worker_currency:".length);
+    await handleWorkerCurrencyCallback(prisma, ctx, currency);
+    return;
+  }
+
+  // worker_confirm:yes|no (onboarding)
+  if (data.startsWith("worker_confirm:")) {
+    const choice = data.slice("worker_confirm:".length);
+    await handleWorkerConfirmCallback(prisma, ctx, choice);
+    return;
+  }
+
+  // worker_edit:FIELD (/perfil)
+  if (data.startsWith("worker_edit:")) {
+    const action = data.slice("worker_edit:".length);
+    await handleWorkerEditCallback(prisma, ctx, action);
+    return;
+  }
+
+  // worker_edit_currency:CODE (/perfil edit)
+  if (data.startsWith("worker_edit_currency:")) {
+    const currency = data.slice("worker_edit_currency:".length);
+    await handleWorkerEditCurrencyCallback(prisma, ctx, currency);
+    return;
+  }
+
+  // worker_toggle:on|off (/perfil toggle)
+  if (data.startsWith("worker_toggle:")) {
+    await handleWorkerToggleCallback(prisma, ctx);
+    return;
+  }
+
+  // worker_noop
+  if (data === "worker_noop") {
+    await ctx.answerCallbackQuery();
+    return;
+  }
+}
+
+// Also route external_* callbacks (for when index.ts delegates to us)
+
+export async function handleExternalCallback(
+  prisma: PrismaClient,
+  ctx: BotContext,
+): Promise<boolean> {
+  const data = ctx.callbackQuery?.data;
+  if (!data) return false;
+
+  if (data.startsWith("external_claim:")) {
+    const taskId = data.slice("external_claim:".length);
+    await handleExternalClaim(prisma, ctx, taskId);
+    return true;
+  }
+
+  if (data.startsWith("external_deliver:")) {
+    const taskId = data.slice("external_deliver:".length);
+    await handleExternalDeliver(prisma, ctx, taskId);
+    return true;
+  }
+
+  return false;
+}
+
+// ── Re-exports for backward compat with index.ts ──
+// These are aliased to the new function names used by index.ts
+
+export async function handleTrabajar(prisma: PrismaClient, ctx: BotContext): Promise<boolean> {
+  await startWorkerOnboarding(prisma, ctx);
+  return true;
+}
+
+export async function handlePerfil(prisma: PrismaClient, ctx: BotContext): Promise<boolean> {
+  await showWorkerProfile(prisma, ctx);
+  return true;
+}
+
+export async function handleTareas(prisma: PrismaClient, ctx: BotContext): Promise<boolean> {
+  await showAvailableTasks(prisma, ctx);
+  return true;
+}
+
+// handleWorkerTextContinuation is the same as handleWorkerEditResponse
+export { handleWorkerEditResponse as handleWorkerTextContinuation };

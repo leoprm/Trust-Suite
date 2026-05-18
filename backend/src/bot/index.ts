@@ -28,19 +28,11 @@ import { parseDeadline } from "./deadlineParser";
 import { checkTodoReminders } from "./todoReminders";
 import { detectNaturalAddIntent } from "./todoNaturalAdd";
 import {
-  startWorkerOnboarding,
-  handleWorkerOnboardingResponse,
-  showWorkerProfile,
-  showAvailableTasks,
-  handleExternalClaim,
-  handleExternalDeliver,
-  handleWorkerDeliveryUpload,
-  handleWorkerCurrencyCallback,
-  handleWorkerConfirmCallback,
-  handleWorkerEditCallback,
-  handleWorkerEditResponse,
-  handleWorkerEditCurrencyCallback,
-  handleWorkerToggleCallback,
+  handleTrabajar,
+  handlePerfil,
+  handleTareas,
+  handleWorkerCallback,
+  handleWorkerTextContinuation,
   workerHelpMessage,
 } from "./worker";
 import { summarizeTodo } from "./formatters";
@@ -2923,9 +2915,16 @@ export async function createBot(prisma: PrismaClient): Promise<Bot<BotContext> |
       return;
     }
 
-    // ── Worker callbacks (onboarding currency/confirm/edit/toggle/claim) ──
+    // Worker callbacks (onboarding currency/confirm/edit/toggle/claim)
     if (data.startsWith("worker_")) {
       await handleWorkerCallback(prisma, ctx as BotContext);
+      return;
+    }
+
+    // External task callbacks (claim/deliver)
+    if (data.startsWith("external_")) {
+      const { handleExternalCallback } = await import("./worker");
+      await handleExternalCallback(prisma, ctx as BotContext);
       return;
     }
 

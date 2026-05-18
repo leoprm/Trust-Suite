@@ -122,7 +122,7 @@ Reglas:
 - Si hay duda, escala a miembros del árbol
 - Timeout: 48h sin reclamar → notificar al árbol
 
-## Bot commands
+## Bot commands (en @AriSuperManagerBot)
 
 | Comando | Descripción |
 |---------|-------------|

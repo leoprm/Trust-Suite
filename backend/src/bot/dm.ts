@@ -313,7 +313,8 @@ export async function handleProfileCallback(
 
   // --- Worker callbacks (delegate to worker.ts) ---
   if (data.startsWith("worker_")) {
-    return await handleWorkerCallback(prisma, ctx);
+    await handleWorkerCallback(prisma, ctx);
+    return true;
   }
 
   const tgUser = ctx.from;
