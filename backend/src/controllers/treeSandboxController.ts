@@ -213,7 +213,11 @@ export const execTreeSandbox = async (req: Request, res: Response) => {
 
 // ── POST /api/trees/:id/sandbox/read ────────────────────────────────────────
 // Body: { path: string }
-// Returns: { content: string, size: number }
+// File mode (path does NOT end with '/'):
+//   Returns: { content: string, size: number }
+// Directory mode (path ends with '/'):
+//   Returns: { files: string[] } — .md files in the directory.
+//   If directory doesn't exist, returns { files: [] }.
 
 export const readTreeSandbox = async (req: Request, res: Response) => {
   if (!checkApiKey(req, res)) return;
@@ -231,11 +235,42 @@ export const readTreeSandbox = async (req: Request, res: Response) => {
       return res.status(404).json({ error: 'Sandbox not found for this tree' });
     }
 
-    const safePath = resolveSafePath(sb.workspacePath, requestedPath);
+    // ── Detect directory mode ──
+    const isDir = requestedPath.endsWith('/');
+    const cleanPath = isDir ? requestedPath.slice(0, -1) : requestedPath;
+
+    const safePath = resolveSafePath(sb.workspacePath, cleanPath);
     if (!safePath) {
       return res.status(403).json({ error: 'Path escapes sandbox' });
     }
 
+    // ── Directory listing ──
+    if (isDir) {
+      if (!fs.existsSync(safePath)) {
+        return res.json({ files: [] });
+      }
+
+      const stat = fs.statSync(safePath);
+      if (!stat.isDirectory()) {
+        return res.status(400).json({ error: 'Path is not a directory' });
+      }
+
+      const entries = fs.readdirSync(safePath);
+      const mdFiles = entries.filter(f => f.endsWith('.md')).sort();
+
+      void logEvent({
+        ...getRequestContext(req),
+        treeId: id,
+        action: 'SANDBOX_LIST',
+        entityType: 'TreeSandbox',
+        entityId: id,
+        source: 'SYSTEM',
+      });
+
+      return res.json({ files: mdFiles });
+    }
+
+    // ── File read mode ──
     if (!fs.existsSync(safePath)) {
       return res.status(404).json({ error: 'File not found', path: requestedPath });
     }
