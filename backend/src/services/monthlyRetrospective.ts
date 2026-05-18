@@ -52,6 +52,9 @@ const MAX_CONVERSATION_CHARS = 80_000;
 /** Minimum message count to bother with a retrospective. */
 const MIN_MESSAGES = 50;
 
+/** Delay between trees to avoid rate limiting (5 minutes). */
+const INTER_TREE_DELAY_MS = 5 * 60 * 1000;
+
 const MONTH_NAMES = [
   "enero", "febrero", "marzo", "abril", "mayo", "junio",
   "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre",
@@ -290,7 +293,8 @@ export async function runMonthlyRetrospective(
   );
 
   const results: RetrospectiveResult[] = [];
-  for (const tree of trees) {
+  for (let i = 0; i < trees.length; i++) {
+    const tree = trees[i];
     try {
       results.push(await processTree(prisma, tree, bot, yearMonth, monthLabel));
     } catch (err: any) {
@@ -303,6 +307,11 @@ export async function runMonthlyRetrospective(
         reportPosted: false,
         error: String(err),
       });
+    }
+    // ── 5-min delay between trees (skip after last) ──
+    if (i < trees.length - 1) {
+      console.log(`[Retro] ⏳ Esperando ${INTER_TREE_DELAY_MS / 60_000} min antes del siguiente árbol…`);
+      await new Promise((r) => setTimeout(r, INTER_TREE_DELAY_MS));
     }
   }
 

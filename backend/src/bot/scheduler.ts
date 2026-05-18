@@ -13,6 +13,7 @@ import { PrismaClient } from "@prisma/client";
 import type { Bot } from "grammy";
 import type { BotContext } from "./types";
 import { runDailyClose, runMonthlyFee } from "./cron";
+import { runMonthlyRetrospective } from "../services/monthlyRetrospective";
 import { runDisputeResolution } from "./disputeResolutionCron";
 import { startKanbanWatchdog, stopKanbanWatchdog } from "./kanbanWatchdog";
 import {
@@ -93,6 +94,13 @@ async function cleanupOldConversations(): Promise<void> {
 
 // ── Tareas programadas ─────────────────────────────────────────────────────────
 
+/** Verifica si hoy es el último día del mes. */
+function isLastDayOfMonth(): boolean {
+  const tomorrow = new Date();
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  return tomorrow.getDate() === 1;
+}
+
 let midnightTask: ScheduledTask | null = null;
 let decayTask: ScheduledTask | null = null;
 let rotationTask: ScheduledTask | null = null;
@@ -104,6 +112,8 @@ let talentMigrationTask: ScheduledTask | null = null;
 let healthCheckTask: ScheduledTask | null = null;
 let proposalResolverTask: ScheduledTask | null = null;
 let cleanupConversationsTask: ScheduledTask | null = null;
+let monthlyRetroTask: ScheduledTask | null = null;
+let monthlyRetroLastDayTask: ScheduledTask | null = null;
 let kanbanWatchdogInterval: NodeJS.Timeout | null = null;
 
 /**
@@ -236,6 +246,38 @@ export function startScheduler(
   });
   console.log("[Scheduler] 🧹 Limpieza de conversaciones programada a las 04:00 (diario)");
 
+  // ── Cron: 0 1 1 * * (día 1 de cada mes a la 01:00) — Retrospectiva mensual con Ari ──
+  monthlyRetroTask = cron.schedule("0 1 1 * *", async () => {
+    console.log("[Scheduler] 📊 Día 1 del mes — ejecutando retrospectiva mensual…");
+    try {
+      const results = await runMonthlyRetrospective(prismaClient, bot);
+      const posted = results.filter((r) => r.reportPosted).length;
+      console.log(
+        `[Scheduler] 📊 Retrospectiva: ${posted}/${results.length} árboles publicaron reporte.`,
+      );
+    } catch (err) {
+      console.error("[Scheduler] Error fatal en retrospectiva mensual:", err);
+    }
+  });
+  console.log("[Scheduler] 📊 Retrospectiva mensual programada al día 1 de cada mes a las 01:00");
+
+  // ── Cron: 0 23 28-31 * * (último día del mes a las 23:00) — Retrospectiva fin de mes ──
+  monthlyRetroLastDayTask = cron.schedule("0 23 28-31 * *", async () => {
+    if (!isLastDayOfMonth()) return;
+
+    console.log("[Scheduler] 📊 Último día del mes — ejecutando retrospectiva de fin de mes…");
+    try {
+      const results = await runMonthlyRetrospective(prismaClient, bot);
+      const posted = results.filter((r) => r.reportPosted).length;
+      console.log(
+        `[Scheduler] 📊 Retrospectiva fin de mes: ${posted}/${results.length} árboles publicaron reporte.`,
+      );
+    } catch (err) {
+      console.error("[Scheduler] Error fatal en retrospectiva de fin de mes:", err);
+    }
+  });
+  console.log("[Scheduler] 📊 Retrospectiva mensual programada al último día de cada mes a las 23:00");
+
   // DISABLED: modelo proposal eliminado en simplificación v4.
   // proposalResolverTask = cron.schedule("*/2 * * * *", async () => {
   //   try {
@@ -278,7 +320,7 @@ export async function triggerDailyClose(
  */
 export function stopScheduler(): void {
   let stopped = false;
-  for (const task of [midnightTask, decayTask, rotationTask, autoScaleTask, monthlyFeeTask, disputeResolutionTask, skillPricingTask, talentMigrationTask, healthCheckTask, proposalResolverTask, cleanupConversationsTask]) {
+  for (const task of [midnightTask, decayTask, rotationTask, autoScaleTask, monthlyFeeTask, disputeResolutionTask, skillPricingTask, talentMigrationTask, healthCheckTask, proposalResolverTask, cleanupConversationsTask, monthlyRetroTask, monthlyRetroLastDayTask]) {
     if (task) {
       task.stop();
       stopped = true;
@@ -296,6 +338,8 @@ export function stopScheduler(): void {
   healthCheckTask = null;
   proposalResolverTask = null;
   cleanupConversationsTask = null;
+  monthlyRetroTask = null;
+  monthlyRetroLastDayTask = null;
   kanbanWatchdogInterval = null;
   if (stopped) {
     console.log("[Scheduler] ⏹️ Todos los schedulers detenidos.");
