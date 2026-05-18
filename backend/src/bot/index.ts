@@ -501,7 +501,7 @@ export async function createBot(prisma: PrismaClient): Promise<Bot<BotContext> |
   }
 
   // ── Onboarding multi-step: flujo de configuración del árbol ──────────
-  // Paso 1: objetivos → Paso 2: subárbol? (inline buttons) → Paso 3: árbol padre → Paso 4: WhatsApp
+  // Paso 1: objetivos → Paso 2: subárbol? (inline buttons) → Paso 3: payment mode → Paso 4: árbol padre → Paso 5: WhatsApp
 
   async function handleOnboardingResponse(ctx: any, prisma: PrismaClient) {
     const session = (ctx as BotContext).session;
@@ -626,11 +626,11 @@ export async function createBot(prisma: PrismaClient): Promise<Bot<BotContext> |
       return;
     }
 
-    if (step === 3) {
-      // ── Paso 3: Código del árbol padre ─────────────────────────────────
+    if (step === 4) {
+      // ── Paso 4: Código del árbol padre ─────────────────────────────────
       if (!text || text === '/skip') {
         // Skip parent tree linking
-        session.onboardingStep = 4;
+        session.onboardingStep = 5;
         await ctx.reply(
           t('onboarding.parent_skipped', lang) + '\n\n' + t('onboarding.whatsapp_prompt', lang), {
             parse_mode: 'Markdown',
@@ -664,7 +664,7 @@ export async function createBot(prisma: PrismaClient): Promise<Bot<BotContext> |
         data: { parentTreeId: parentTree.id },
       });
 
-      session.onboardingStep = 4;
+      session.onboardingStep = 5;
       await ctx.reply(
         t('onboarding.parent_linked', lang, { treeName: (parentTree.icono || '🌳') + ' ' + parentTree.name }) + '\n\n' +
         t('onboarding.whatsapp_prompt', lang), {
@@ -675,8 +675,8 @@ export async function createBot(prisma: PrismaClient): Promise<Bot<BotContext> |
       return;
     }
 
-    if (step === 4) {
-      // ── Paso 4: WhatsApp group ID ──────────────────────────────────────
+    if (step === 5) {
+      // ── Paso 5: WhatsApp group ID ──────────────────────────────────────
       if (!text || text === '/skip') {
         // Skip WhatsApp
         session.onboardingStep = null;
@@ -2691,7 +2691,7 @@ export async function createBot(prisma: PrismaClient): Promise<Bot<BotContext> |
       return;
     }
 
-    // Onboarding multi-step callbacks (Paso 2: subárbol sí/no)
+    // Onboarding multi-step callbacks (Paso 2: subárbol sí/no → Paso 3: payment mode)
     if (data === "onboarding:subtree_yes" || data === "onboarding:subtree_no") {
       const session = (ctx as BotContext).session;
       if (!session.onboardingTreeId || session.onboardingStep !== 2) {
@@ -2713,21 +2713,109 @@ export async function createBot(prisma: PrismaClient): Promise<Bot<BotContext> |
       // Remove inline keyboard from the question message
       try { await ctx.editMessageReplyMarkup({ reply_markup: undefined }); } catch { /* ok */ }
 
-      if (data === "onboarding:subtree_yes") {
-        session.onboardingStep = 3;
-        await ctx.reply(t("onboarding.parent_code_prompt", lang), {
+      // Save subtree choice for step 3→4/5 routing
+      session.onboardingSubtree = (data === "onboarding:subtree_yes");
+      session.onboardingStep = 3;
+
+      // Present payment mode question
+      await ctx.reply(t("onboarding.payment_mode_question", lang), {
+        parse_mode: "Markdown",
+        reply_markup: {
+          inline_keyboard: [[
+            { text: t("onboarding.payment_mode_centralized", lang), callback_data: "onboarding:payment_centralized" },
+            { text: t("onboarding.payment_mode_individual", lang), callback_data: "onboarding:payment_individual" },
+          ]],
+        },
+      });
+      await ctx.answerCallbackQuery();
+      return;
+    }
+
+    // Onboarding multi-step callbacks (Paso 3: payment mode)
+    if (data === "onboarding:payment_centralized" || data === "onboarding:payment_individual") {
+      const session = (ctx as BotContext).session;
+      if (!session.onboardingTreeId || session.onboardingStep !== 3) {
+        await ctx.answerCallbackQuery();
+        return;
+      }
+
+      // Resolve language
+      let lang: string | null = null;
+      const chatType = ctx.chat?.type;
+      if ((chatType === "group" || chatType === "supergroup") && session.onboardingTreeId) {
+        lang = await resolveTreeLanguage(prisma, session.onboardingTreeId);
+      }
+      if (!lang) {
+        lang = await resolveUserLanguage(prisma, ctx);
+      }
+      if (!lang) lang = "es";
+
+      // Remove inline keyboard from the question message
+      try { await ctx.editMessageReplyMarkup({ reply_markup: undefined }); } catch { /* ok */ }
+
+      const paymentMode: "CENTRALIZED" | "INDIVIDUAL" =
+        data === "onboarding:payment_centralized" ? "CENTRALIZED" : "INDIVIDUAL";
+
+      if (paymentMode === "CENTRALIZED") {
+        // Find the user to set as sponsor
+        const tgId = BigInt(ctx.from!.id);
+        const sponsorUser = await prisma.user.findUnique({
+          where: { telegramUserId: tgId },
+          select: { id: true },
+        });
+
+        await (prisma as any).tree.update({
+          where: { id: session.onboardingTreeId },
+          data: {
+            paymentMode: "CENTRALIZED",
+            sponsorId: sponsorUser?.id || null,
+          },
+        });
+
+        await ctx.reply(t("onboarding.payment_mode_centralized_selected", lang) +
+          "\n\n💳 Configura tu método de pago con /pagar", {
+            parse_mode: "Markdown",
+          });
+
+        // Centralized: done with onboarding (no parent code or WhatsApp for now)
+        session.onboardingStep = null;
+        session.onboardingTreeId = null;
+        session.onboardingSubtree = undefined;
+        await new Promise(r => setTimeout(r, 500));
+        await ctx.reply(t("onboarding.onboarding_complete", lang), {
           parse_mode: "Markdown",
-          reply_markup: { force_reply: true, input_field_placeholder: t("onboarding.parent_code_placeholder", lang) },
         });
       } else {
-        // No es sub-árbol → saltar a paso 4 (WhatsApp)
-        session.onboardingStep = 4;
-        await ctx.reply(
-          t("onboarding.parent_skipped", lang) + "\n\n" + t("onboarding.whatsapp_prompt", lang), {
+        // Individual mode
+        await (prisma as any).tree.update({
+          where: { id: session.onboardingTreeId },
+          data: { paymentMode: "INDIVIDUAL" },
+        });
+
+        await ctx.reply(t("onboarding.payment_mode_individual_selected", lang), {
+          parse_mode: "Markdown",
+        });
+
+        // Route based on subtree choice
+        if (session.onboardingSubtree) {
+          // Sub-tree → go to step 4 (parent code)
+          session.onboardingStep = 4;
+          await new Promise(r => setTimeout(r, 600));
+          await ctx.reply(t("onboarding.parent_code_prompt", lang), {
             parse_mode: "Markdown",
-            reply_markup: { force_reply: true, input_field_placeholder: t("onboarding.whatsapp_placeholder", lang) },
-          }
-        );
+            reply_markup: { force_reply: true, input_field_placeholder: t("onboarding.parent_code_placeholder", lang) },
+          });
+        } else {
+          // Independent → skip parent code, go to step 5 (WhatsApp)
+          session.onboardingStep = 5;
+          await new Promise(r => setTimeout(r, 600));
+          await ctx.reply(
+            t("onboarding.parent_skipped", lang) + "\n\n" + t("onboarding.whatsapp_prompt", lang), {
+              parse_mode: "Markdown",
+              reply_markup: { force_reply: true, input_field_placeholder: t("onboarding.whatsapp_placeholder", lang) },
+            }
+          );
+        }
       }
       await ctx.answerCallbackQuery();
       return;

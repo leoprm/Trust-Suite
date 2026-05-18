@@ -13,7 +13,7 @@ export interface BotSessionData {
   awaitingEvidenceTaskId: string | null;
   /** Bot's message ID that requested evidence (used to detect replies) */
   awaitingEvidenceBotMsgId: number | null;
-  /** Paso actual del flujo de onboarding multi-step (1-4). null = no en onboarding */
+  /** Paso actual del flujo de onboarding multi-step (1-5). null = no en onboarding */
   onboardingStep: number | null;
   /** ID del árbol que se está configurando en el onboarding */
   onboardingTreeId: string | null;
@@ -23,6 +23,8 @@ export interface BotSessionData {
   awaitingLinkFile: string | null;
   /** Tree ID for the file awaiting link (attach:link flow) */
   awaitingLinkTreeId: string | null;
+  /** Whether the user chose "subtree_yes" in onboarding step 2 (used for step 3→4/5 routing) */
+  onboardingSubtree?: boolean;
 }
 
 /**
