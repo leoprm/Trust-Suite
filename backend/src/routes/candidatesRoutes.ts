@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { registerCandidate, getCandidates } from "../controllers/candidatesController";
+import { registerCandidate, getCandidates, resolveCandidate } from "../controllers/candidatesController";
 import { authenticateJWT } from "../middleware/authMiddleware";
 
 const router = Router();
@@ -9,5 +9,8 @@ router.post("/", registerCandidate);
 
 // GET /api/candidates — list candidates for a task (Ari API key only)
 router.get("/", getCandidates);
+
+// POST /api/candidates/resolve — resolve voting (Ari closes the 4h window)
+router.post("/resolve", resolveCandidate);
 
 export default router;

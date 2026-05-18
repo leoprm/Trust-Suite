@@ -95,6 +95,7 @@ import investmentRoutes from './routes/investmentRoutes';
 import externalTaskRoutes from './routes/externalTasks';
 import hooksRoutes from './routes/hooks';
 import candidatesRoutes from './routes/candidatesRoutes';
+import cancelledPlansRoutes from './routes/cancelledPlansRoutes';
 // Note: roleRoutes is registered inline below to avoid circular dependency with eventLogService
 import { createBot } from './bot/index';
 import { initTrustManagerBot } from './bot/trustManagerBot';
@@ -282,6 +283,7 @@ app.use('/api/investment', investmentRoutes);
 app.use('/api/external-tasks', externalTaskRoutes);
 app.use('/api/hooks', hooksRoutes);
 app.use('/api/candidates', candidatesRoutes);
+app.use('/api/cancelled-plans', cancelledPlansRoutes);
 
 // Role recommendation endpoints
 import { recommendRoles, feedbackRoles } from './controllers/roleRecommendationController';
