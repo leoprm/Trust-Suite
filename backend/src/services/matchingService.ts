@@ -24,6 +24,7 @@ interface TaskForMatching {
   locationType: string; // REMOTE | ONSITE | HYBRID
   budget: number;
   currency: string;
+  difficulty: number;   // 1-10, default 5 — multiplicador del precio
 }
 
 // ── Telegram helpers ────────────────────────────────────────────────────────
@@ -163,6 +164,51 @@ export async function notifyMatchingWorkers(task: TaskForMatching): Promise<numb
       return 0;
     }
 
+    // 3.5. Filter by skill level (WorkerSkill.level >= task.difficulty - 2)
+    const levelThreshold = Math.max(1, task.difficulty - 2);
+
+    if (taskSkills.length > 0) {
+      const matchedIds = matched.map((w: any) => w.id);
+
+      // Batch query WorkerSkill for all matched workers + task skills
+      const workerSkills: Array<{ userId: string; skill: string; level: number }> =
+        await (prisma as any).workerSkill.findMany({
+          where: {
+            userId: { in: matchedIds },
+            skill: { in: taskSkills },
+          },
+          select: { userId: true, skill: true, level: true },
+        });
+
+      // Build map: userId -> { skill -> level }
+      const levelMap: Record<string, Record<string, number>> = {};
+      for (const ws of workerSkills) {
+        if (!levelMap[ws.userId]) levelMap[ws.userId] = {};
+        levelMap[ws.userId][ws.skill] = ws.level;
+      }
+
+      const beforeCount = matched.length;
+      matched = matched.filter((w: any) => {
+        const skillLevels = levelMap[w.id] || {};
+        // Worker sin skill registrada → nivel 1 (Prisma default)
+        return taskSkills.some(skill => {
+          const workerLevel = skillLevels[skill] || 1;
+          return workerLevel >= levelThreshold;
+        });
+      });
+
+      console.log(
+        `[matchingService] ${matched.length}/${beforeCount} workers passed level filter ` +
+        `(threshold: level >= ${levelThreshold}, ` +
+        `difficulty: ${task.difficulty}, skills: [${taskSkills.join(',')}])`,
+      );
+
+      if (matched.length === 0) {
+        console.log(`[matchingService] 0 workers with sufficient skill level for "${task.title}"`);
+        return 0;
+      }
+    }
+
     // 4. Filter out already-notified workers
     const alreadyNotified = await (prisma as any).externalTaskNotification.findMany({
       where: {
@@ -179,19 +225,28 @@ export async function notifyMatchingWorkers(task: TaskForMatching): Promise<numb
       return 0;
     }
 
-    // 5. Build message
+    // 5. Build message with difficulty-adjusted price
+    const difficulty = task.difficulty || 5;
+    const multiplier = 1 + (difficulty - 1) * 0.15;
+    const effectiveRate = Math.round(task.budget * multiplier);
+
     const budgetStr = task.budget > 0
-      ? `${task.budget.toLocaleString('es-CL')} ${task.currency}`
+      ? `${effectiveRate.toLocaleString('es-CL')} ${task.currency}`
       : 'Presupuesto no especificado';
+
     const locationStr = task.locationType === 'ONSITE' && task.location
       ? ` — 📍 ${task.location}`
       : task.locationType === 'HYBRID' && task.location
         ? ` — 🔄 ${task.location}`
         : '';
 
+    const diffStr = task.budget > 0
+      ? ` (×${multiplier.toFixed(2)} por dificultad ${difficulty}/10)`
+      : '';
+
     const text = [
       `🔔 *Nueva tarea:* ${task.title}`,
-      `— ${budgetStr}/hora${locationStr}`,
+      `— ${budgetStr}/hora${diffStr}${locationStr}`,
     ].join('\n');
 
     const inlineKeyboard = {
