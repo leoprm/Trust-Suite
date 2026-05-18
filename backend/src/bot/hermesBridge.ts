@@ -707,7 +707,7 @@ export async function shouldAriRespond(
     });
   }
 
-  // ── Call Hermes Agent API (non-streaming — decision is short) ────────
+  // ── Call Hermes Agent API (streaming — avoids empty-response bug with tools) ──
   const controller = new AbortController();
 const timeoutId = setTimeout(() => controller.abort(), 420_000); // 7 min — complex tasks need time
 
@@ -725,7 +725,7 @@ const timeoutId = setTimeout(() => controller.abort(), 420_000); // 7 min — co
       headers,
       body: JSON.stringify({
         messages,
-        stream: false, // non-streaming: decision is a single short line
+        stream: true, // streaming: avoids empty-response bug when agent uses tools
       }),
       signal: controller.signal,
     });
@@ -737,13 +737,47 @@ const timeoutId = setTimeout(() => controller.abort(), 420_000); // 7 min — co
       console.error(
         `[shouldAriRespond] Hermes API returned ${response.status}: ${errorText.slice(0, 200)}`,
       );
-      // On API error, default to silent — better to miss one message than spam
       return { shouldRespond: false };
     }
 
-    const data = await response.json();
-    const content: string =
-      data?.choices?.[0]?.message?.content ?? "";
+    // ── SSE parser (same pattern as routeToHermes) ──
+    const reader = response.body?.getReader();
+    if (!reader) {
+      console.warn("[shouldAriRespond] No readable stream body");
+      return { shouldRespond: false };
+    }
+
+    const decoder = new TextDecoder();
+    let content = "";
+    let buffer = "";
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split("\n");
+      buffer = lines.pop() ?? "";
+
+      for (const line of lines) {
+        const trimmedLine = line.trim();
+        if (!trimmedLine || !trimmedLine.startsWith("data:")) continue;
+
+        const dataStr = trimmedLine.slice(5).trim();
+        if (dataStr === "[DONE]") break;
+
+        try {
+          const parsed = JSON.parse(dataStr);
+          const delta =
+            parsed?.choices?.[0]?.delta?.content ??
+            parsed?.choices?.[0]?.message?.content ??
+            "";
+          content += delta;
+        } catch {
+          // skip unparseable chunks
+        }
+      }
+    }
 
     if (!content) {
       console.warn("[shouldAriRespond] Empty response from Hermes API");
@@ -762,7 +796,7 @@ const timeoutId = setTimeout(() => controller.abort(), 420_000); // 7 min — co
   } catch (err) {
     clearTimeout(timeoutId);
     if (err instanceof Error && err.name === "AbortError") {
-      console.error("[shouldAriRespond] Decision timed out after 30s");
+      console.error("[shouldAriRespond] Decision timed out after 7 min");
     } else {
       console.error("[shouldAriRespond] API call failed:", err);
     }
