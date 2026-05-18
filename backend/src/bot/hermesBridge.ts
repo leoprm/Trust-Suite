@@ -736,6 +736,15 @@ async function buildSystemPrompt(
     taskCounters.set(treeId, 0); // reset after trigger
   }
 
+  // ── Invitation link ────────────────────────────────────────────────────
+  lines.push("");
+  lines.push("═══ REGLAS DE REGISTRO ═══");
+  lines.push("");
+  lines.push("Cuando un nuevo usuario pregunte cómo unirse al árbol o participar:");
+  lines.push("- NO manejes el registro tú.");
+  lines.push(`- Responde: "Para unirte, usa este enlace: https://t.me/TrustManagerBot?start=${treeId}"`);
+  lines.push("- No recopiles datos personales ni método de pago — eso lo maneja @TrustManagerBot.");
+
   return lines.join("\n");
 }
 
