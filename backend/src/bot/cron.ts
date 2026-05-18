@@ -60,20 +60,6 @@ async function closeTree(
       data: { dailyPoints: 100 },
     });
 
-    // Enviar resumen aunque no haya ganador
-    if (bot && chatId) {
-      try {
-        await bot.api.sendMessage(
-          chatId,
-          `🌅 *Cierre diario — ${tree.name}*\n\n` +
-            `📋 Sin necesidades abiertas hoy.\n` +
-            `🔋 Puntos renovados a 100 para ${resetCount.count} miembros.`
-        );
-      } catch (err) {
-        console.error(`[Cron] Error enviando mensaje a ${chatId}:`, err);
-      }
-    }
-
     return { treeName: tree.name, chatId, winner: null, totalNeeds: 0 };
   }
 
@@ -99,25 +85,7 @@ async function closeTree(
     data: { dailyPoints: 100 },
   });
 
-  // ── Enviar resumen al grupo ──
-  if (bot && chatId) {
-    const winnerLine =
-      winner.dailyVotes > 0
-        ? `🏆 *${winner.title}* con ${winner.dailyVotes} votos.`
-        : `📋 Ninguna necesidad recibió votos hoy.`;
-
-    const message =
-      `🌅 *Resultados de hoy — ${tree.name}*\n\n` +
-      `${winnerLine}\n` +
-      `📋 ${totalNeeds} necesidades revisadas.\n` +
-      `🔋 Puntos renovados a 100 para ${resetCount.count} miembros.`;
-
-    try {
-      await bot.api.sendMessage(chatId, message, { parse_mode: "Markdown" });
-    } catch (err) {
-      console.error(`[Cron] Error enviando mensaje a ${chatId}:`, err);
-    }
-  }
+  // ── Enviar resumen al grupo: DESHABILITADO por solicitud del admin ──
 
   return {
     treeName: tree.name,
