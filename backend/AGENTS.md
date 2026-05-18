@@ -1,5 +1,18 @@
 # TrustMaker Backend — Agent Guidelines
 
+## 🚨 IDENTIDAD DEL REPO — LEE ESTO PRIMERO
+
+**Este es el backend de Trust Maker (TrustMaker). NO es Trust Suite / Trust Lite.**
+
+- **Repo correcto:** `/home/leo/Documentos/TrustMaker/backend/`
+- **Repo INCORRECTO (NO USAR):** `/home/leo/Documentos/Trust Suite/backend/`
+- **Bot:** @TrustMakerBot
+- **Puerto:** 3100
+- **DB:** MySQL vía Prisma (`DATABASE_URL` en .env)
+- **Sandbox:** `/home/trustmaker/trees/<treeId>/`
+
+**Si hay duda sobre qué repo es:** `git remote -v` debe mostrar `TrustMaker`, NO `Trust Suite`.
+
 ## ⚠️ CRÍTICO: Sandbox Boundary
 
 **Todo archivo con el que Ari (Hermes Agent) deba interactuar DEBE estar dentro del sandbox del árbol.**

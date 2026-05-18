@@ -14,7 +14,9 @@
 
 import { PrismaClient } from "@prisma/client";
 import { spawn } from "child_process";
+import fs from "fs";
 import path from "path";
+import { incrementUsage } from "../lib/skillUsage";
 import { messageQueue } from "./messageQueue";
 
 const HERMES_API = "http://127.0.0.1:8644/v1/chat/completions";
@@ -298,6 +300,52 @@ async function buildSystemPrompt(
   lines.push(`  Admission: ${tree.admissionPolicy}`);
   if (tree.objectives) {
     lines.push(`  Objectives: ${tree.objectives}`);
+  }
+
+  // ── Global skills ──────────────────────────────────────────────────────
+  const skillsDir = path.join(
+    process.env.HOME || "/home/leo",
+    ".hermes/skills/trustmaker",
+  );
+  lines.push("");
+  lines.push("═══ SKILLS GLOBALES CARGADAS ═══");
+  lines.push("");
+
+  if (fs.existsSync(skillsDir)) {
+    const skillFiles = fs
+      .readdirSync(skillsDir)
+      .filter((f) => f.endsWith(".usos.json"));
+    const skillNames = fs
+      .readdirSync(skillsDir)
+      .filter((f) => f.endsWith(".py") || f.endsWith(".md"));
+
+    const uniqueSkills = new Set<string>();
+    // Skills ya trackeadas (con .usos.json)
+    for (const f of skillFiles) {
+      uniqueSkills.add(f.replace(".usos.json", ""));
+    }
+    // Skills detectadas por archivos fuente (.py/.md), excluyendo helpers
+    for (const f of skillNames) {
+      const base = f.replace(/\.(py|md)$/, "");
+      if (base !== "tools" && base !== "init_sqlite" &&
+          base !== "verify_vote" && base !== "debug_propose" &&
+          base !== "test_all_ops") {
+        uniqueSkills.add(base);
+      }
+    }
+    // Fallback: si no se detectó ninguna, trust-maker es la skill principal
+    if (uniqueSkills.size === 0 && fs.existsSync(path.join(skillsDir, "tools.py"))) {
+      uniqueSkills.add("trust-maker");
+    }
+
+    for (const skill of uniqueSkills) {
+      lines.push(`  - ${skill}`);
+      try {
+        incrementUsage(skill, treeId, skillsDir);
+      } catch {
+        // non-blocking: usage tracking should never break the prompt
+      }
+    }
   }
 
   // ── Active needs ──────────────────────────────────────────────────────
@@ -595,6 +643,78 @@ async function buildSystemPrompt(
   lines.push(
     "If the user asks about membership, trees, or stats, the data above IS authoritative.",
   );
+
+  // ── Skills ─────────────────────────────────────────────────────────────
+  const sandboxBase = process.env.SANDBOX_BASE_DIR || "/home/trustmaker/trees";
+  const localSkillsDir = path.join(sandboxBase, treeId, "skills");
+  const adminId = process.env.TRUSTMAKER_ADMIN_TELEGRAM_ID || "";
+
+  lines.push("");
+  lines.push("═══ REGLAS DE SKILLS ═══");
+  lines.push("");
+  lines.push("1. PERMISOS:");
+  if (adminId) {
+    lines.push(
+      `   - SOLO el usuario con Telegram ID ${adminId} puede usar skill_manage para crear/modificar skills GLOBALES.`,
+    );
+  } else {
+    lines.push(
+      "   - SOLO el admin (TRUSTMAKER_ADMIN_TELEGRAM_ID) puede usar skill_manage para crear/modificar skills GLOBALES.",
+    );
+  }
+  lines.push(
+    "   - Cualquier usuario puede pedir crear skills LOCALES para este árbol.",
+  );
+  lines.push("");
+  lines.push("2. SKILLS LOCALES (este árbol):");
+  lines.push(
+    `   - Ari usa POST /api/trees/${treeId}/sandbox/write -> skills/<nombre>.md + skills/<nombre>.rating.json`,
+  );
+  lines.push("");
+  lines.push("3. SKILLS GLOBALES:");
+  lines.push(
+    "   - Están en ~/.hermes/skills/trustmaker/ y se cargan automáticamente.",
+  );
+  lines.push("");
+  lines.push("4. FORMATO DE SKILL (.md):");
+  lines.push(
+    "   - Frontmatter YAML con: name, description, version, createdBy, createdAt, treeId.",
+  );
+  lines.push("");
+  lines.push("5. CADA 20 TAREAS COMPLETADAS:");
+  lines.push(
+    "   - Evalúa si crear una skill a partir de patrones detectados y proponla al usuario.",
+  );
+
+  // ── Read local skills from sandbox ─────────────────────────────────────
+  try {
+    if (fs.existsSync(skillsDir)) {
+      const skillFiles = fs
+        .readdirSync(skillsDir)
+        .filter((f) => f.endsWith(".md"));
+      if (skillFiles.length > 0) {
+        lines.push("");
+        lines.push("6. SKILLS LOCALES DISPONIBLES EN ESTE ÁRBOL:");
+        for (const file of skillFiles) {
+          try {
+            const raw = fs.readFileSync(path.join(skillsDir, file), "utf-8");
+            // Extract frontmatter name and description
+            const nameMatch = raw.match(/^---\s*\nname:\s*(.+)$/m);
+            const descMatch = raw.match(/^description:\s*(.+)$/m);
+            const name = nameMatch
+              ? nameMatch[1].trim()
+              : file.replace(/\.md$/, "");
+            const desc = descMatch ? ` — ${descMatch[1].trim()}` : "";
+            lines.push(`   - ${name}${desc}`);
+          } catch {
+            lines.push(`   - ${file.replace(/\.md$/, "")}`);
+          }
+        }
+      }
+    }
+  } catch {
+    // Silently skip if skills directory can't be read
+  }
 
   return lines.join("\n");
 }

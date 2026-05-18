@@ -727,13 +727,12 @@ export async function createBot(prisma: PrismaClient): Promise<Bot<BotContext> |
         const chatId = chat.id.toString();
         const adderId = ctx.update.my_chat_member.from.id.toString();
         try {
-          // ── Beta admin bypass ──────────────────────────────────────────
-          const BETA_ADMIN_IDS = (process.env.BETA_ADMIN_TELEGRAM_IDS || "")
-            .split(",")
-            .map((id) => id.trim())
-            .filter(Boolean);
+          // ── Admin bypass ──────────────────────────────────────────────
+          const TRUSTMAKER_ADMIN_TELEGRAM_ID = process.env.TRUSTMAKER_ADMIN_TELEGRAM_ID
+            || process.env.BETA_ADMIN_TELEGRAM_IDS?.split(",")[0]?.trim()
+            || "7516190425";
 
-          const isBetaAdmin = BETA_ADMIN_IDS.includes(adderId);
+          const isBetaAdmin = adderId === TRUSTMAKER_ADMIN_TELEGRAM_ID;
 
           // ── Gate: capacity limit (MAX_TREES) ──────────────────────────
           const MAX_TREES = parseInt(process.env.MAX_TREES || "5", 10);
