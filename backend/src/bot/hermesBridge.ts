@@ -91,6 +91,9 @@ export class ConversationWindow {
 
 export const conversationWindows = new ConversationWindow();
 
+// ── Task counter for skill auto-evaluation (every 20 tasks) ─────────────
+const taskCounters = new Map<string, number>();
+
 export interface HermesBridgeResponse {
   text: string | null;
   /** When true, the message is queued (Ari is busy). Caller should tell user their position. */
@@ -716,6 +719,23 @@ async function buildSystemPrompt(
     // Silently skip if skills directory can't be read
   }
 
+  // ── Skill auto-evaluation trigger (every 20 tasks) ────────────────────
+  const taskCount = taskCounters.get(treeId) ?? 0;
+  if (taskCount >= 20) {
+    lines.push("");
+    lines.push("═══ AUTOEVALUACIÓN DE SKILLS ═══");
+    lines.push("");
+    lines.push("Has completado 20 tareas en este árbol. Revisa las últimas interacciones.");
+    lines.push("Si detectas un patrón, workflow o solución recurrente que merezca ser skill,");
+    lines.push("pregúntale al usuario si quiere guardarlo. Si acepta, crea la skill en el sandbox.");
+    lines.push("");
+    lines.push("Para crear una skill local:");
+    lines.push(`  POST /api/trees/${treeId}/sandbox/write`);
+    lines.push(`  Body: { "path": "skills/<nombre>.md", "content": "<skill en markdown>" }`);
+    lines.push(`  Luego: { "path": "skills/<nombre>.rating.json", "content": "{\\"rating\\": 0}" }`);
+    taskCounters.set(treeId, 0); // reset after trigger
+  }
+
   return lines.join("\n");
 }
 
@@ -1118,12 +1138,15 @@ export async function routeToHermes(
     }
 
     console.log(`[hermesBridge] Response: ${accumulatedContent.length} chars`);
+    // Increment task counter for skill auto-evaluation
+    taskCounters.set(treeId, (taskCounters.get(treeId) ?? 0) + 1);
     return { text: accumulatedContent };
   } catch (err) {
     clearTimeout(timeoutId);
     // If we accumulated partial content before the error, return it
     if (accumulatedContent) {
       console.warn(`[hermesBridge] Stream interrupted, returning ${accumulatedContent.length} partial chars`);
+      taskCounters.set(treeId, (taskCounters.get(treeId) ?? 0) + 1);
       return { text: accumulatedContent };
     }
     if (err instanceof Error && err.name === "AbortError") {
