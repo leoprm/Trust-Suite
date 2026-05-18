@@ -20,8 +20,9 @@ import { incrementUsage } from "../lib/skillUsage";
 import { messageQueue } from "./messageQueue";
 
 const HERMES_API = "http://127.0.0.1:8644/v1/chat/completions";
-const SUPPORT_HERMES_API_URL = process.env.SUPPORT_HERMES_API_URL || "http://127.0.0.1:8646/v1/chat/completions";
-const SUPPORT_HERMES_API_KEY = process.env.SUPPORT_HERMES_API_KEY || "";
+const SUPPORT_HERMES_GATEWAY = process.env.HERMES_SUPPORT_GATEWAY || "http://127.0.0.1:8646";
+const SUPPORT_HERMES_API_URL = process.env.SUPPORT_HERMES_API_URL || `${SUPPORT_HERMES_GATEWAY}/v1/chat/completions`;
+const SUPPORT_HERMES_API_KEY = process.env.HERMES_SUPPORT_API_KEY || process.env.SUPPORT_HERMES_API_KEY || "";
 
 // ── ConversationWindow ───────────────────────────────────────────────────
 // In-memory per-tree window for proactive engagement. Each openWindow starts

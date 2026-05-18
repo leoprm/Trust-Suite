@@ -171,7 +171,6 @@ model User {
   availableForHire    Boolean  @default(false)
   hourlyRate          Int?
   currency            String?  @default("CLP")
-  telegramUsername    String?
   location            String?
   externalTasksCreated ExternalTask[]  @relation("ExternalTaskCreator")
   externalTasksWorked  ExternalTask[]  @relation("Worker")
@@ -1103,8 +1102,6 @@ model Todo {
 model ExternalTask {
   id            String              @id @default(uuid())
   treeId        String
-  kanbanTaskId  String?
-  kanbanBoard   String?
   createdBy     String
   title         String
   description   String              @db.Text
@@ -1114,7 +1111,6 @@ model ExternalTask {
   workerId      String?
   status        ExternalTaskStatus  @default(OPEN)
   deliverableUrl String?
-  approvedBy     String?
   createdAt     DateTime            @default(now())
   updatedAt     DateTime            @updatedAt
 
