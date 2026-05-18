@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { getUserSkills, getUserXpHistory, getMySkills } from '../controllers/userController';
+import { getUserSkills, getUserXpHistory, getMySkills, getWorkerLevels } from '../controllers/userController';
 import { authenticateJWT } from '../middleware/authMiddleware';
 
 const router = Router();
@@ -12,5 +12,8 @@ router.get('/:id/skills', authenticateJWT, getUserSkills);
 
 // GET /api/users/:id/xp → historial de XP ganado
 router.get('/:id/xp', authenticateJWT, getUserXpHistory);
+
+// GET /api/workers/:userId/levels → worker skill levels + history (dashboard)
+router.get('/workers/:userId/levels', authenticateJWT, getWorkerLevels);
 
 export default router;

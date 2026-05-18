@@ -391,7 +391,11 @@ export const deliverTask = async (req: Request, res: Response) => {
             if (result && result.totalXp > 0) {
               console.log(`[externalTask] Awarded ${result.totalXp} XP across ${result.updatedSkills.length} skills for task ${_task.id}`);
             }
-          }).catch(() => {});
+          }).catch(err => {
+            console.error(`[externalTask] XP award failed for task ${_task.id}:`, err.message || err);
+          });
+        } else {
+          console.warn(`[externalTask] Quality evaluation returned null for task ${_task.id} — XP not awarded`);
         }
       });
     }

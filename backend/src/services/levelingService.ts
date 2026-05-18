@@ -78,6 +78,7 @@ export async function awardXp(
 
       const totalXp = (existing?.xp ?? 0) + xpPerSkill;
       const newLevel = xpToLevel(totalXp);
+      const oldLevel = existing?.level ?? 1;
 
       await prisma.workerSkill.upsert({
         where: { userId_skill: { userId, skill } },
@@ -95,6 +96,14 @@ export async function awardXp(
           taskId,
         },
       });
+
+      // Log level-up if it happened
+      if (newLevel > oldLevel) {
+        console.log(
+          `[levelingService] 🎉 Level up! User ${userId} skill "${skill}" ` +
+          `level ${oldLevel} → ${newLevel} (${totalXp} XP, +${xpPerSkill})`,
+        );
+      }
 
       updatedSkills.push(skill);
     } catch (err: any) {

@@ -150,3 +150,53 @@ export const getUserXpHistory = async (req: Request, res: Response) => {
     res.status(500).json({ error: 'Failed to fetch XP history' });
   }
 };
+
+// ── GET /api/workers/:userId/levels ───────────────────────────────────────────
+// Returns WorkerSkill entries + recent level history for a worker dashboard.
+// Response: { userId, skills: [{ skill, xp, level, xpToNext }], recentHistory: [...] }
+export const getWorkerLevels = async (req: Request, res: Response) => {
+  try {
+    const userId = paramStr(req.params.userId);
+
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { id: true },
+    });
+
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    const workerSkills = await prisma.workerSkill.findMany({
+      where: { userId },
+      select: { skill: true, xp: true, level: true },
+      orderBy: { xp: 'desc' },
+    });
+
+    // Enrich with xpToNext for progress bar (matches levelingService XP_PER_LEVEL)
+    const XP_PER_LEVEL = 50;
+    const enriched = workerSkills.map(ws => ({
+      skill: ws.skill,
+      xp: ws.xp,
+      level: ws.level,
+      xpToNext: (ws.level * XP_PER_LEVEL) - ws.xp,
+    }));
+
+    // Recent level history (last 20 entries)
+    const recentHistory = await prisma.workerLevelHistory.findMany({
+      where: { userId },
+      select: { skill: true, xpDelta: true, reason: true, taskId: true, createdAt: true },
+      orderBy: { createdAt: 'desc' },
+      take: 20,
+    });
+
+    res.json({
+      userId,
+      skills: enriched,
+      recentHistory,
+    });
+  } catch (error: any) {
+    console.error('[getWorkerLevels] ERROR:', error?.message || error);
+    res.status(500).json({ error: 'Failed to fetch worker levels' });
+  }
+};

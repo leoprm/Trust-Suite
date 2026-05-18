@@ -17,7 +17,6 @@ import { runMonthlyRetrospective } from "../services/monthlyRetrospective";
 import { runDisputeResolution } from "./disputeResolutionCron";
 import { startKanbanWatchdog, stopKanbanWatchdog } from "./kanbanWatchdog";
 import {
-  applyDecay,
   assignAgentToTreeSlot,
   releaseAgent,
 } from "../services/agentProfileService";
@@ -28,6 +27,7 @@ import { runHealthCheck } from "../cron/healthCheckCron";
 import { runProposalResolver } from "../cron/proposalResolverCron";
 import { runExternalTaskOrchestrator } from "../cron/externalTaskOrchestratorCron";
 import { runCandidateAnnouncementCron } from "../cron/candidateAnnouncementCron";
+import { runXpDecay } from "../cron/xpDecayCron";
 import { nightlyScan } from "../services/skillEvolution";
 import { prisma } from "../index";
 
@@ -145,15 +145,13 @@ export function startScheduler(
   });
   console.log("[Scheduler] ⏰ Cierre diario programado a las 00:00 (hora local)");
 
-  // ── Cron: 0 3 * * * (XP decay diario) ──
+  // ── Cron: 0 3 * * * (XP decay diario para workers) ──
   decayTask = cron.schedule("0 3 * * *", async () => {
-    const lambda = parseFloat(process.env.XP_DECAY_LAMBDA || "0.05");
-    console.log(`[Scheduler] 📉 XP decay iniciado (λ=${lambda})…`);
+    console.log("[Scheduler] 📉 XP decay diario iniciado (workers)…");
     try {
-      const updated = await applyDecay(lambda);
-      console.log(`[Scheduler] 📉 XP decay: ${updated} perfiles actualizados.`);
+      await runXpDecay(prismaClient);
     } catch (err) {
-      console.error("[Scheduler] Error en XP decay:", err);
+      console.error("[Scheduler] Error en XP decay (workers):", err);
     }
   });
   console.log("[Scheduler] 📉 XP decay programado a las 03:00 (diario)");
