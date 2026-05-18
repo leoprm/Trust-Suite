@@ -1,5 +1,6 @@
 import { Request, Response } from 'express';
 import { prisma } from '../index';
+import { TreeSandbox } from '../services/treeSandbox';
 
 // Express params can be string | string[] — normalize to single string
 const paramStr = (v: string | string[]): string => (Array.isArray(v) ? v[0] : v);
@@ -166,6 +167,9 @@ export const getWorkerLevels = async (req: Request, res: Response) => {
     if (!user) {
       return res.status(404).json({ error: 'User not found' });
     }
+
+    // Ensure obsidian vault exists for this worker (lazy, fire-and-forget)
+    try { TreeSandbox.ensureWorkerObsidian(userId); } catch { /* best-effort */ }
 
     const workerSkills = await prisma.workerSkill.findMany({
       where: { userId },

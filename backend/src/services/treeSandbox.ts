@@ -3,7 +3,35 @@ import fs from 'fs';
 import path from 'path';
 
 const TREES_BASE = process.env.SANDBOX_BASE_DIR || '/home/leo/trees';
+const WORKERS_BASE = process.env.WORKERS_BASE_DIR || '/home/trustmaker/workers';
 const PORT_RANGE = { min: 4100, max: 4999 };
+
+const OBSIDIAN_APP_JSON = JSON.stringify({
+  newLinkFormat: 'shortest',
+  useMarkdownLinks: true,
+  showUnsupportedFiles: false,
+  attachmentFolderPath: 'assets',
+  promptDelete: false,
+  livePreview: true,
+});
+
+const INDEX_MD = [
+  '# 🌳 Tree Vault',
+  '',
+  '- [[assets/|Assets]]',
+  '- [[decisions/|Decisions]]',
+  '- [[people/|People]]',
+  '',
+].join('\n');
+
+const WORKER_INDEX_MD = [
+  '# 🧠 Worker Vault',
+  '',
+  '- [[tasks/|Tasks]]',
+  '- [[evaluations/|Evaluations]]',
+  '- [[skills/|Skills]]',
+  '',
+].join('\n');
 
 interface SandboxInfo {
   treeId: string;
@@ -32,6 +60,45 @@ async function findFreePort(): Promise<number> {
   throw new PortPoolExhaustedError();
 }
 
+/** Creates the obsidian vault scaffold inside a workspace directory.
+ *  Idempotent — skips directories that already exist. */
+function scaffoldObsidianVault(workspacePath: string) {
+  const obsidianDir = path.join(workspacePath, 'obsidian');
+  fs.mkdirSync(path.join(obsidianDir, 'assets'), { recursive: true });
+  fs.mkdirSync(path.join(obsidianDir, 'decisions'), { recursive: true });
+  fs.mkdirSync(path.join(obsidianDir, 'people'), { recursive: true });
+
+  const appDir = path.join(obsidianDir, '.obsidian');
+  fs.mkdirSync(appDir, { recursive: true });
+  fs.writeFileSync(path.join(appDir, 'app.json'), OBSIDIAN_APP_JSON, 'utf-8');
+
+  const indexPath = path.join(obsidianDir, 'index.md');
+  if (!fs.existsSync(indexPath)) {
+    fs.writeFileSync(indexPath, INDEX_MD, 'utf-8');
+  }
+
+  console.log(`[TreeSandbox] Obsidian vault scaffolded at ${obsidianDir}`);
+}
+
+/** Worker obsidian vault scaffold — /home/trustmaker/workers/:userId/obsidian/ */
+function scaffoldWorkerObsidian(userId: string) {
+  const obsidianDir = path.join(WORKERS_BASE, userId, 'obsidian');
+  fs.mkdirSync(path.join(obsidianDir, 'tasks'), { recursive: true });
+  fs.mkdirSync(path.join(obsidianDir, 'evaluations'), { recursive: true });
+  fs.mkdirSync(path.join(obsidianDir, 'skills'), { recursive: true });
+
+  const appDir = path.join(obsidianDir, '.obsidian');
+  fs.mkdirSync(appDir, { recursive: true });
+  fs.writeFileSync(path.join(appDir, 'app.json'), OBSIDIAN_APP_JSON, 'utf-8');
+
+  const indexPath = path.join(obsidianDir, 'index.md');
+  if (!fs.existsSync(indexPath)) {
+    fs.writeFileSync(indexPath, WORKER_INDEX_MD, 'utf-8');
+  }
+
+  console.log(`[TreeSandbox] Worker obsidian vault scaffolded for ${userId}`);
+}
+
 export class TreeSandbox {
   static async create(treeId: string): Promise<SandboxInfo> {
     // 0. Verify the tree exists
@@ -58,6 +125,9 @@ export class TreeSandbox {
     fs.mkdirSync(path.join(workspacePath, 'data'), { recursive: true });
     fs.mkdirSync(path.join(workspacePath, 'logs'), { recursive: true });
     fs.mkdirSync(path.join(workspacePath, 'context'), { recursive: true });
+
+    // 2b. Scaffold obsidian vault
+    scaffoldObsidianVault(workspacePath);
 
     // 3. Assign a free port
     const port = await findFreePort();
@@ -133,6 +203,13 @@ export class TreeSandbox {
 
     await prisma.treeSandbox.delete({ where: { treeId } });
     console.log(`[TreeSandbox] Destroyed sandbox for tree ${treeId}`);
+  }
+
+  /** Create or ensure the obsidian vault for a worker without a tree.
+   *  Idempotent — safe to call repeatedly. */
+  static ensureWorkerObsidian(userId: string): string {
+    scaffoldWorkerObsidian(userId);
+    return path.join(WORKERS_BASE, userId, 'obsidian');
   }
 
   static async get(treeId: string): Promise<SandboxInfo | null> {
