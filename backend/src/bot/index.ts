@@ -1185,13 +1185,21 @@ export async function createBot(prisma: PrismaClient): Promise<Bot<BotContext> |
         data: { lastDmAt: new Date() },
       }).catch(() => {}); // fire-and-forget
 
-      // Typing indicator
+      // Keep typing indicator alive during potentially long API call
+      const typingInterval = setInterval(() => {
+        ctx.replyWithChatAction("typing").catch(() => {});
+      }, 4000);
       ctx.replyWithChatAction("typing").catch(() => {});
 
-      const response = await routeToHermes(
+      let response;
+      try {
+        response = await routeToHermes(
         fullMessage, treeId, userId, undefined, displayName,
         ctx.chat?.id, msg.message_id,
       );
+      } finally {
+        clearInterval(typingInterval);
+      }
       if (response) {
         // Queue: saturation or position
         if (response.saturationMessage) {
@@ -1802,6 +1810,10 @@ export async function createBot(prisma: PrismaClient): Promise<Bot<BotContext> |
       } catch { /* non-critical */ }
 
       // ── Decision gate: should Ari respond? ──────────────────────────
+      // Keep typing indicator alive during potentially long API call
+      const typingInterval2 = setInterval(() => {
+        ctx.replyWithChatAction("typing").catch(() => {});
+      }, 4000);
       ctx.replyWithChatAction("typing").catch(() => {});
       let decision;
       try {
@@ -1813,10 +1825,13 @@ export async function createBot(prisma: PrismaClient): Promise<Bot<BotContext> |
           isTagged,
         );
       } catch (err: any) {
+        clearInterval(typingInterval2);
         console.error("[HermesBridge] shouldAriRespond threw:", err.message);
         // On error, fall through to silent — better than spamming
         return;
       }
+
+      clearInterval(typingInterval2);
 
       if (!decision.shouldRespond) {
         // Ari decided to stay silent — no message sent
