@@ -443,6 +443,90 @@ export async function initTrustManagerBot(
     await ctx.answerCallbackQuery();
   });
 
+  // ── Callback: candidate:apply — ExternalTask claim desde DM ────────────
+  // Callback format: candidate:apply:<treeId>:<taskId>
+  // Workers click "Yo puedo" on a DM notification and claim the ExternalTask.
+  bot.callbackQuery(/^candidate:apply:/, async (ctx) => {
+    const tgUser = ctx.from;
+    if (!tgUser) {
+      await ctx.answerCallbackQuery({ text: "No se pudo identificar tu cuenta." });
+      return;
+    }
+
+    const data = ctx.callbackQuery.data;
+    const rest = data.slice("candidate:apply:".length);
+    const colonIdx = rest.indexOf(":");
+    if (colonIdx === -1) {
+      await ctx.answerCallbackQuery({ text: "Datos de callback inválidos." });
+      return;
+    }
+    const treeId = rest.slice(0, colonIdx);
+    const taskId = rest.slice(colonIdx + 1);
+
+    if (!treeId || !taskId) {
+      await ctx.answerCallbackQuery({ text: "Datos de callback incompletos." });
+      return;
+    }
+
+    try {
+      // Resolve user
+      const user = await (prisma as any).user.findUnique({
+        where: { telegramUserId: BigInt(tgUser.id) },
+        select: { id: true, availableForHire: true },
+      });
+      if (!user) {
+        await ctx.answerCallbackQuery({
+          text: "No tienes una cuenta en Trust Maker. Usa /trabajar en @TrustMakerBot para registrarte como worker.",
+          show_alert: true,
+        });
+        return;
+      }
+
+      // Load task
+      const task = await (prisma as any).externalTask.findUnique({
+        where: { id: taskId },
+        select: { id: true, status: true, title: true, treeId: true },
+      });
+
+      if (!task) {
+        await ctx.answerCallbackQuery({ text: "La tarea ya no existe." });
+        return;
+      }
+
+      if (task.status !== "OPEN") {
+        await ctx.answerCallbackQuery({
+          text: `La tarea ya fue tomada (estado: ${task.status}).`,
+        });
+        return;
+      }
+
+      // Claim the task
+      await (prisma as any).externalTask.update({
+        where: { id: taskId },
+        data: { status: "CLAIMED", workerId: user.id },
+      });
+
+      await ctx.answerCallbackQuery({ text: `✅ ¡Tarea "${task.title}" reclamada!` });
+
+      // Edit original DM message to confirm
+      try {
+        await ctx.editMessageText(
+          `✅ *Tarea reclamada:* ${task.title}\\n\\nYa eres el trabajador asignado. El árbol te contactará.`,
+          { parse_mode: "Markdown" },
+        );
+      } catch {
+        // Message may no longer be editable
+      }
+
+      console.log(
+        `[TrustHelpDesk] candidate:apply — user ${user.id} claimed ExternalTask ${taskId} "${task.title}"`,
+      );
+    } catch (err: any) {
+      console.error("[TrustHelpDesk] candidate:apply error:", err.message);
+      await ctx.answerCallbackQuery({ text: "Error al reclamar la tarea. Intenta de nuevo." });
+    }
+  });
+
   // ── Mensajes de texto en modo conversacional ────────────────────────────
   bot.on("message:text", async (ctx) => {
     const tgUser = ctx.from;

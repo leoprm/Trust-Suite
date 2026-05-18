@@ -2,6 +2,7 @@ import { Request, Response } from 'express';
 import fs from 'fs';
 import path from 'path';
 import { prisma } from '../index';
+import { notifyMatchingWorkers as notifyWorkers } from '../services/matchingService';
 
 // ── Sandbox base for deliverable storage ──────────────────────────────────────
 const SANDBOX_BASE = process.env.SANDBOX_BASE_DIR || '/home/trustmaker/trees';
@@ -104,7 +105,16 @@ export const createExternalTask = async (req: Request, res: Response) => {
     });
 
     // Notify workers with matching skills (async, fire-and-forget — don't block response)
-    notifyMatchingWorkers(task).then((count: number) => {
+    notifyWorkers({
+      id: task.id,
+      treeId: task.treeId,
+      title: task.title,
+      skills: skillsArr,
+      location: normalizedLocation,
+      locationType: locationType || 'REMOTE',
+      budget: Math.round(budget),
+      currency: currency || 'CLP',
+    }).then((count: number) => {
       if (count > 0) console.log(`[externalTask] Notified ${count} workers about task ${task.id}`);
     });
 
@@ -433,116 +443,3 @@ export const rejectTask = async (req: Request, res: Response) => {
     res.status(500).json({ error: 'Failed to reject task' });
   }
 };
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// Worker Notification Service (inline — avoids circular deps with bot module)
-// ═══════════════════════════════════════════════════════════════════════════════
-
-const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || '';
-const TELEGRAM_API = 'https://api.telegram.org';
-
-interface MatchedWorker {
-  telegramUserId: bigint;
-  id: string;
-  username: string;
-  firstName: string | null;
-}
-
-interface TaskSummary {
-  id: string;
-  title: string;
-  budget: number;
-  currency: string;
-  treeName: string;
-  skills: string[];
-}
-
-async function sendTelegramMessage(
-  chatId: number,
-  text: string,
-  replyMarkup?: any,
-): Promise<boolean> {
-  if (!BOT_TOKEN) {
-    console.warn('[workerNotification] No TELEGRAM_BOT_TOKEN — skipping');
-    return false;
-  }
-  try {
-    const body: any = { chat_id: chatId, text, parse_mode: 'Markdown', disable_web_page_preview: true };
-    if (replyMarkup) body.reply_markup = JSON.stringify(replyMarkup);
-
-    const res = await fetch(`${TELEGRAM_API}/bot${BOT_TOKEN}/sendMessage`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    });
-
-    if (!res.ok) {
-      const errText = await res.text();
-      console.error(`[workerNotification] Telegram API error ${res.status}: ${errText.slice(0, 200)}`);
-      return false;
-    }
-    return true;
-  } catch (err: any) {
-    console.error(`[workerNotification] sendMessage failed for ${chatId}:`, err.message);
-    return false;
-  }
-}
-
-/**
- * Notify workers with matching skills about a new ExternalTask.
- * Returns the number of workers notified.
- */
-async function notifyMatchingWorkers(task: any): Promise<number> {
-  try {
-    const taskSkills: string[] = Array.isArray(task.skills) ? task.skills.map((s: any) => String(s).toLowerCase().trim()).filter(Boolean) : [];
-
-    const workers = await (prisma as any).user.findMany({
-      where: { availableForHire: true, telegramUserId: { not: null } },
-      select: { id: true, telegramUserId: true, username: true, firstName: true, skills: true },
-    });
-
-    if (workers.length === 0) return 0;
-
-    const matched = workers.filter((w: any) => {
-      if (taskSkills.length === 0) return true;
-      const wSkills: string[] = w.skills ? w.skills.split(',').map((s: string) => s.trim().toLowerCase()).filter(Boolean) : [];
-      if (wSkills.length === 0) return true;
-      return taskSkills.some((ts: string) => wSkills.includes(ts));
-    });
-
-    if (matched.length === 0) {
-      console.log(`[workerNotification] 0 workers matched skills [${taskSkills.join(',')}] for "${task.title}"`);
-      return 0;
-    }
-
-    const budgetStr = task.budget > 0 ? `${(task.budget).toLocaleString('es-CL')} ${task.currency}` : 'Presupuesto no especificado';
-    const skillsStr = taskSkills.length > 0 ? `\n*Skills:* ${taskSkills.join(', ')}` : '';
-    const treeName = (task as any).tree?.name || 'Árbol';
-
-    const text = [
-      `🔔 *Nueva tarea disponible*`,
-      '',
-      `*${task.title}*`,
-      `_${treeName}_`,
-      '',
-      `💰 ${budgetStr}${skillsStr}`,
-    ].join('\n');
-
-    const webAppUrl = process.env.TRUSTMAKER_WEB_URL || 'https://trustmaker.app';
-    const inlineKeyboard = {
-      inline_keyboard: [[{ text: '👀 Ver tarea', url: `${webAppUrl}/tasks/${task.id}` }]],
-    };
-
-    let sent = 0;
-    for (const w of matched) {
-      const ok = await sendTelegramMessage(Number(w.telegramUserId), text, inlineKeyboard);
-      if (ok) sent++;
-    }
-
-    console.log(`[workerNotification] Notified ${sent}/${matched.length} workers for "${task.title}"`);
-    return sent;
-  } catch (err: any) {
-    console.error('[workerNotification] Error:', err.message || err);
-    return 0;
-  }
-}

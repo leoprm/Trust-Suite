@@ -1159,6 +1159,20 @@ model CancelledPlan {
   @@index([treeId])
 }
 
+// ── ExternalTask Notification (fire-once tracking) ─────────────────────────
+
+model ExternalTaskNotification {
+  id             String   @id @default(uuid())
+  externalTaskId String
+  userId         String
+  messageId      Int?     // Telegram message_id sent to this worker
+  createdAt      DateTime @default(now())
+
+  @@unique([externalTaskId, userId])
+  @@index([externalTaskId])
+  @@index([userId])
+}
+
 // ── ExternalTask (Human-in-the-Loop) ──────────────────────────────────────
 
 model ExternalTask {
