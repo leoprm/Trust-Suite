@@ -26,6 +26,7 @@ import { updateSkillPricing } from "../cron/skillPricingCron";
 import { runTalentMigration } from "../cron/talentMigrationCron";
 import { runHealthCheck } from "../cron/healthCheckCron";
 import { runProposalResolver } from "../cron/proposalResolverCron";
+import { nightlyScan } from "../services/skillEvolution";
 import { prisma } from "../index";
 
 // ── Constantes ─────────────────────────────────────────────────────────────────
@@ -115,6 +116,7 @@ let proposalResolverTask: ScheduledTask | null = null;
 let cleanupConversationsTask: ScheduledTask | null = null;
 let monthlyRetroTask: ScheduledTask | null = null;
 let monthlyRetroLastDayTask: ScheduledTask | null = null;
+let skillEvolutionTask: ScheduledTask | null = null;
 let kanbanWatchdogInterval: NodeJS.Timeout | null = null;
 
 /**
@@ -151,6 +153,18 @@ export function startScheduler(
     }
   });
   console.log("[Scheduler] 📉 XP decay programado a las 03:00 (diario)");
+
+  // ── Cron: 0 3 * * * (evolución nocturna de skills) ──
+  skillEvolutionTask = cron.schedule("0 3 * * *", async () => {
+    console.log("[Scheduler] 🧬 Iniciando evolución nocturna de skills...");
+    try {
+      await nightlyScan(prismaClient, bot);
+      console.log("[Scheduler] 🧬 Evolución de skills completada.");
+    } catch (err) {
+      console.error("[Scheduler] Error en evolución de skills:", err);
+    }
+  });
+  console.log("[Scheduler] 🧬 Evolución de skills programada a las 03:00 (diario)");
 
   // ── Cron: 0 0 * * 0 (rotación semanal — domingo 00:00) ──
   rotationTask = cron.schedule("0 0 * * 0", async () => {
@@ -321,7 +335,7 @@ export async function triggerDailyClose(
  */
 export function stopScheduler(): void {
   let stopped = false;
-  for (const task of [midnightTask, decayTask, rotationTask, autoScaleTask, monthlyFeeTask, disputeResolutionTask, skillPricingTask, talentMigrationTask, healthCheckTask, proposalResolverTask, cleanupConversationsTask, monthlyRetroTask, monthlyRetroLastDayTask]) {
+  for (const task of [midnightTask, decayTask, rotationTask, autoScaleTask, monthlyFeeTask, disputeResolutionTask, skillPricingTask, talentMigrationTask, healthCheckTask, proposalResolverTask, cleanupConversationsTask, monthlyRetroTask, monthlyRetroLastDayTask, skillEvolutionTask]) {
     if (task) {
       task.stop();
       stopped = true;
@@ -341,6 +355,7 @@ export function stopScheduler(): void {
   cleanupConversationsTask = null;
   monthlyRetroTask = null;
   monthlyRetroLastDayTask = null;
+  skillEvolutionTask = null;
   kanbanWatchdogInterval = null;
   if (stopped) {
     console.log("[Scheduler] ⏹️ Todos los schedulers detenidos.");
