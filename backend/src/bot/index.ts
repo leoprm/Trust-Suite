@@ -27,6 +27,22 @@ import { routeToHermes, shouldAriRespond } from "./hermesBridge";
 import { parseDeadline } from "./deadlineParser";
 import { checkTodoReminders } from "./todoReminders";
 import { detectNaturalAddIntent } from "./todoNaturalAdd";
+import {
+  startWorkerOnboarding,
+  handleWorkerOnboardingResponse,
+  showWorkerProfile,
+  showAvailableTasks,
+  handleExternalClaim,
+  handleExternalDeliver,
+  handleWorkerDeliveryUpload,
+  handleWorkerCurrencyCallback,
+  handleWorkerConfirmCallback,
+  handleWorkerEditCallback,
+  handleWorkerEditResponse,
+  handleWorkerEditCurrencyCallback,
+  handleWorkerToggleCallback,
+  workerHelpMessage,
+} from "./worker";
 import { summarizeTodo } from "./formatters";
 import { checkMemberLimit, shouldRejectInvite, isTreeBlocked } from "./antiDdos";
 import { syncAllMembers } from "./telegramClient";
@@ -170,21 +186,24 @@ export async function createBot(prisma: PrismaClient): Promise<Bot<BotContext> |
   });
 
   bot.command("help", async (ctx) => {
-    await ctx.reply(
-      "Comandos disponibles:\n" +
-        "/start — Iniciar el bot\n" +
-        "/login — Vincular tu cuenta de Trust Maker\n" +
-        "/cuota — Ver tu cuota mensual\n" +
-        "/pagar — Ver pagos pendientes\n" +
-        "/help — Mostrar esta ayuda\n\n" +
-        "En grupos, menciona @TrustMakerBot:\n" +
-        "  @TrustMakerBot /info\n" +
-        "  @TrustMakerBot /lista necesidades\n" +
-        "  @TrustMakerBot /crea necesidad \"título\" — descripción\n" +
-        "  @TrustMakerBot /ideas para \"título\"\n" +
-        "  @TrustMakerBot /vota <id>\n\n" +
-        "También puedes conversar naturalmente mencionando al bot."
-    );
+      await ctx.reply(
+        "Comandos disponibles:\n" +
+          "/start — Iniciar el bot\n" +
+          "/login — Vincular tu cuenta de Trust Maker\n" +
+          "/cuota — Ver tu cuota mensual\n" +
+          "/pagar — Ver pagos pendientes\n" +
+          "/trabajar — Registrarte como trabajador\n" +
+          "/perfil — Editar tu perfil de trabajador\n" +
+          "/tareas — Ver tareas disponibles\n" +
+          "/help — Mostrar esta ayuda\n\n" +
+          "En grupos, menciona @TrustMakerBot:\n" +
+          "  @TrustMakerBot /info\n" +
+          "  @TrustMakerBot /lista necesidades\n" +
+          "  @TrustMakerBot /crea necesidad \"título\" — descripción\n" +
+          "  @TrustMakerBot /ideas para \"título\"\n" +
+          "  @TrustMakerBot /vota <id>\n\n" +
+          "También puedes conversar naturalmente mencionando al bot."
+      );
   });
 
   // ── /cuota: mostrar cuota mensual ──────────────────────────────────────
@@ -452,6 +471,24 @@ export async function createBot(prisma: PrismaClient): Promise<Bot<BotContext> |
     await ctx.reply("🌳 Selecciona tu árbol para DMs:", {
       reply_markup: { inline_keyboard: buttons },
     });
+  });
+
+  // ── Worker commands (DM only) ────────────────────────────────────────────
+  bot.command("trabajar", async (ctx) => {
+    await handleTrabajar(prisma, ctx as BotContext);
+  });
+
+  bot.command("perfil", async (ctx) => {
+    await handlePerfil(prisma, ctx as BotContext);
+  });
+
+  bot.command("tareas", async (ctx) => {
+    await handleTareas(prisma, ctx as BotContext);
+  });
+
+  bot.command("hilt", async (ctx) => {
+    const lng = ctx.from?.language_code === "en" ? "en" : "es";
+    await ctx.reply(workerHelpMessage(lng));
   });
 
   // ── Welcome / rejoin messages ─────────────────────────────────────────
@@ -1108,6 +1145,20 @@ export async function createBot(prisma: PrismaClient): Promise<Bot<BotContext> |
   bot.on("message:text", async (ctx, next) => {
     const chatType = ctx.chat?.type;
     if (chatType !== "private") return next();
+
+    // Worker flow continuation (text responses for /trabajar steps or /perfil edits)
+    const bctx = ctx as BotContext;
+    const text = ctx.message?.text?.trim();
+    if (text) {
+      // Worker text continuation (perfil edit flow: steps 100-102)
+      if (await handleWorkerTextContinuation(prisma, bctx)) return;
+      // Worker onboarding flow (trabajar steps: 1-5)
+      if (await handleTrabajar(prisma, bctx)) return;
+      // Worker profile command
+      if (await handlePerfil(prisma, bctx)) return;
+      // Worker tasks command
+      if (await handleTareas(prisma, bctx)) return;
+    }
 
     if (process.env.HERMES_BRIDGE_ENABLED === "true") {
       // ── Hermes Bridge: enrutar DM al agente ───────────────────────────
@@ -2869,6 +2920,12 @@ export async function createBot(prisma: PrismaClient): Promise<Bot<BotContext> |
         console.error("[attach:link_confirm] Error:", err.message);
         await ctx.answerCallbackQuery({ text: "⚠️ Error al vincular" });
       }
+      return;
+    }
+
+    // ── Worker callbacks (onboarding currency/confirm/edit/toggle/claim) ──
+    if (data.startsWith("worker_")) {
+      await handleWorkerCallback(prisma, ctx as BotContext);
       return;
     }
 

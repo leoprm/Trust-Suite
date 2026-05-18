@@ -338,9 +338,14 @@ export const rejectTask = async (req: Request, res: Response) => {
     const isMember = await requireTreeMembership(userId, task.treeId, res);
     if (!isMember) return;
 
+    const { reason } = req.body;
+
     const updated = await prisma.externalTask.update({
       where: { id: taskId },
-      data: { status: 'REJECTED' },
+      data: {
+        status: 'REJECTED',
+        ...(reason && { rejectReason: String(reason).slice(0, 2000) }),
+      },
     });
 
     res.json(updated);

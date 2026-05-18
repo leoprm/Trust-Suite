@@ -23,8 +23,16 @@ export interface BotSessionData {
   awaitingLinkFile: string | null;
   /** Tree ID for the file awaiting link (attach:link flow) */
   awaitingLinkTreeId: string | null;
-  /** Whether the user chose "subtree_yes" in onboarding step 2 (used for step 3→4/5 routing) */
+  /** Whether the user chose "subtree_yes" in onboarding step 2 (used for step 3->4/5 routing) */
   onboardingSubtree?: boolean;
+  /** Worker flow state: /trabajar onboarding or /perfil field edits */
+  workerFlow?: {
+    step: number;
+    skills: string | null;
+    hourlyRate: number | null;
+    currency: string | null;
+    location: string | null;
+  };
 }
 
 /**

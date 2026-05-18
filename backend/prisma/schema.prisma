@@ -1115,6 +1115,7 @@ model ExternalTask {
   status        ExternalTaskStatus  @default(OPEN)
   deliverableUrl String?
   approvedBy     String?
+  rejectReason   String?             @db.Text
   createdAt     DateTime            @default(now())
   updatedAt     DateTime            @updatedAt
 

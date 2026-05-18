@@ -1,5 +1,5 @@
 /**
- * DM Handler — menú personal en chat privado con Ari.
+ * DM Handler - menu personal en chat privado con Ari.
  *
  * Cuando un usuario habla directo al bot (DM, no grupo),
  * muestra su perfil personal: nivel, habilidades, tareas, costos.
@@ -11,13 +11,20 @@ import { t } from "./i18n";
 import { extractCommandText } from "./commands";
 import { findTreeByChat } from "./treeResolver";
 import { showLanguageSelector } from "./messages";
+import {
+  handleTrabajar,
+  handlePerfil as handleWorkerPerfil,
+  handleTareas,
+  handleWorkerCallback,
+  handleWorkerTextContinuation,
+} from "./worker";
 
-// ── Constantes ──────────────────────────────────────────────────────────
+// Constantes
 
 const CONCIERGE_URL = "http://localhost:3100/api/concierge";
 const CONCIERGE_TIMEOUT_MS = 900_000;
 
-// ── Helpers ─────────────────────────────────────────────────────────────
+// Helpers
 
 function getUserLanguage(ctx: BotContext): string {
   const code = ctx.from?.language_code;
@@ -25,7 +32,7 @@ function getUserLanguage(ctx: BotContext): string {
   return "es";
 }
 
-// ── User resolution ─────────────────────────────────────────────────────
+// User resolution
 
 async function resolveOrCreateDMUser(
   prisma: PrismaClient,
@@ -48,7 +55,7 @@ async function resolveOrCreateDMUser(
   });
   if (existing) return existing;
 
-  // Auto-register — language starts as null (forces onboarding selector)
+  // Auto-register - language starts as null (forces onboarding selector)
   try {
     return await (prisma as any).user.create({
       data: {
@@ -72,7 +79,7 @@ async function resolveOrCreateDMUser(
   }
 }
 
-// ── Main DM router ──────────────────────────────────────────────────────
+// Main DM router
 
 export async function handleDM(
   prisma: PrismaClient,
@@ -96,19 +103,56 @@ export async function handleDM(
     return;
   }
 
-  // ── Language selector: if user hasn't chosen a language yet ──
+  // Language selector: if user hasn't chosen a language yet
   if (!user.language) {
     await showLanguageSelector(ctx);
     return;
   }
 
-  // ── Comandos de perfil ──
-  if (text === "/start" || text === "/perfil" || text === "perfil") {
+  // --- Worker commands (DM-only, before other routing) ---
+
+  // /trabajar - Worker onboarding (multi-step)
+  if (text.startsWith("/trabajar")) {
+    const handled = await handleTrabajar(prisma, ctx);
+    if (handled) return;
+    // fall through if not fully handled
+  }
+
+  // Multi-step continuation for /trabajar (workerFlow in session)
+  // or /perfil edit prompts (step 100+)
+  if (ctx.session.workerFlow) {
+    // Check if it's a worker onboarding flow (step 1-5)
+    if (ctx.session.workerFlow.step <= 5) {
+      const handled = await handleTrabajar(prisma, ctx);
+      if (handled) return;
+    }
+    // Check if it's a /perfil edit continuation (step 100+)
+    const handled = await handleWorkerTextContinuation(prisma, ctx);
+    if (handled) return;
+  }
+
+  // /tareas - View available external tasks
+  if (text.startsWith("/tareas")) {
+    const handled = await handleTareas(prisma, ctx);
+    if (handled) return;
+  }
+
+  // /perfil - Worker profile editor (shows worker profile with edit buttons)
+  // Note: the worker /perfil is different from the old /perfil below
+  if (text === "/perfil") {
+    const handled = await handleWorkerPerfil(prisma, ctx);
+    if (handled) return;
+  }
+
+  // --- End worker commands ---
+
+  // Profile commands (legacy)
+  if (text === "/start" || text === "perfil") {
     await showProfile(ctx, user, prisma, lng);
     return;
   }
 
-  // ── /help en DM ──
+  // /help en DM
   if (text === "/help" || text === "help" || text === "ayuda") {
     await ctx.reply(
       t("dm:dm_help_title", lng) + "\n\n" +
@@ -120,7 +164,7 @@ export async function handleDM(
     return;
   }
 
-  // ── Mensaje natural → concierge con el primer árbol ──
+  // Mensaje natural -> concierge con el primer arbol
   const memberships = await (prisma as any).treeMember.findMany({
     where: { userId: user.id, status: "ACTIVE" },
     include: { tree: { select: { id: true, name: true, icono: true } } },
@@ -184,7 +228,7 @@ export async function handleDM(
   }
 }
 
-// ── Show profile ────────────────────────────────────────────────────────
+// Show profile
 
 async function showProfile(
   ctx: BotContext,
@@ -230,15 +274,15 @@ async function showProfile(
       ? Object.entries(skills)
           .sort(([, a], [, b]) => (b as number) - (a as number))
           .slice(0, 5)
-          .map(([name, xp]) => `• ${name}: ${xp} XP`)
+          .map(([name, xp]) => `  ${name}: ${xp} XP`)
       : [t("dm:profile_no_skills", lng)]),
     "",
     t("dm:profile_trees_title", lng, { count: memberships.length }),
-    ...memberships.map((m: any) => `• ${m.tree.icono} ${m.tree.name}`),
+    ...memberships.map((m: any) => `  ${m.tree.icono} ${m.tree.name}`),
     "",
     t("dm:profile_tasks_title", lng),
     ...(pendingTasks.length > 0
-      ? pendingTasks.map((t: any) => `• ${t.title} (${t.status})`)
+      ? pendingTasks.map((t: any) => `  ${t.title} (${t.status})`)
       : [t("dm:profile_no_tasks", lng)]),
     "",
     t("dm:profile_chat_hint", lng),
@@ -258,7 +302,7 @@ async function showProfile(
   });
 }
 
-// ── Inline button handlers ──────────────────────────────────────────────
+// Inline button handlers
 
 export async function handleProfileCallback(
   prisma: PrismaClient,
@@ -267,12 +311,17 @@ export async function handleProfileCallback(
   const data = ctx.callbackQuery?.data;
   if (!data) return false;
 
+  // --- Worker callbacks (delegate to worker.ts) ---
+  if (data.startsWith("worker_")) {
+    return await handleWorkerCallback(prisma, ctx);
+  }
+
   const tgUser = ctx.from;
   if (!tgUser) return false;
 
   const lng = getUserLanguage(ctx);
 
-  // ── profile_skills ──
+  // profile_skills
   if (data === "profile_skills") {
     const user = await resolveOrCreateDMUser(prisma, tgUser.id.toString());
     if (!user) {
@@ -306,7 +355,7 @@ export async function handleProfileCallback(
     return true;
   }
 
-  // ── profile_tasks ──
+  // profile_tasks
   if (data === "profile_tasks") {
     const user = await resolveOrCreateDMUser(prisma, tgUser.id.toString());
     if (!user) {
@@ -325,21 +374,21 @@ export async function handleProfileCallback(
       await ctx.reply(t("dm:tasks_empty", lng));
     } else {
       const statusEmoji: Record<string, string> = {
-        PENDING: "⏳",
-        ASSIGNED: "📌",
-        IN_PROGRESS: "🔧",
-        EVIDENCE_SUBMITTED: "📤",
-        VERIFIED: "✅",
-        PAID: "💰",
-        DISPUTED: "⚠️",
+        PENDING: "PENDING",
+        ASSIGNED: "ASSIGNED",
+        IN_PROGRESS: "IN_PROGRESS",
+        EVIDENCE_SUBMITTED: "EVIDENCE_SUBMITTED",
+        VERIFIED: "VERIFIED",
+        PAID: "PAID",
+        DISPUTED: "DISPUTED",
       };
 
       const taskLines = [t("dm:tasks_title", lng), ""];
       for (const t of tasks) {
-        const emoji = statusEmoji[t.status] ?? "❓";
-        const treeName = t.tree ? `${t.tree.icono} ${t.tree.name}` : "🌳";
+        const emoji = statusEmoji[t.status] ?? "?";
+        const treeName = t.tree ? `${t.tree.icono} ${t.tree.name}` : "";
         taskLines.push(
-          `${emoji} **${t.title}** — ${t.status}`,
+          `${emoji} **${t.title}** - ${t.status}`,
           `   ${treeName}${t.budget ? ` | ${t.budget} CLP` : ""}`,
           "",
         );
@@ -351,7 +400,7 @@ export async function handleProfileCallback(
     return true;
   }
 
-  // ── profile_costs ──
+  // profile_costs
   if (data === "profile_costs") {
     const userId = tgUser.id.toString();
     const costText = await getUserCosts(prisma, userId, lng);
@@ -360,7 +409,7 @@ export async function handleProfileCallback(
     return true;
   }
 
-  // ── lang:es / lang:en ──
+  // lang:es / lang:en
   if (data === "lang:es" || data === "lang:en") {
     const selectedLng = data === "lang:es" ? "es" : "en";
     const validLanguages = ["es", "en"];
@@ -390,7 +439,7 @@ export async function handleProfileCallback(
   return false;
 }
 
-// ── Cost query for DM ───────────────────────────────────────────────────
+// Cost query for DM
 
 async function getUserCosts(
   prisma: PrismaClient,
@@ -467,7 +516,7 @@ async function getUserCosts(
     lines.push(
       `${icono} **${treeName}** (${memberCount} miembros)`,
       `   APIs: $${apiCost.toFixed(2)} + Fijos: $${fixedPerTree.toFixed(2)} = $${treeTotal.toFixed(2)}`,
-      `   → **$${perPerson.toFixed(2)} por persona**`,
+      `   -> **$${perPerson.toFixed(2)} por persona**`,
       "",
     );
   }

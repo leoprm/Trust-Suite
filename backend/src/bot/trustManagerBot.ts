@@ -27,7 +27,7 @@ try {
   try {
     termsTemplate = readFileSync(join(process.cwd(), "src/bot/menus/terms.md"), "utf-8");
   } catch {
-    console.warn("[TrustManagerBot] No se pudo cargar terms.md");
+    console.warn("[TrustHelpDeskBot] No se pudo cargar terms.md");
   }
 }
 
@@ -103,18 +103,19 @@ function mainMenuKeyboard(): InlineKeyboard {
 }
 
 /**
- * Inicializa @AriTrustManagerBot — el bot público de descubrimiento de árboles.
- * Usa TRUST_MANAGER_BOT_TOKEN del .env (token distinto a @TrustMakerBot).
+ * Inicializa @TrustHelpDeskBot — el bot público de ayuda y descubrimiento de árboles.
+ * Usa TRUST_HELPDESK_BOT_TOKEN del .env (token distinto a @TrustMakerBot).
  * Convive con @TrustMakerBot sin conflicto: otra instancia de Bot, otro token.
+ * (antes @AriTrustManagerBot, renombrado 2026-05-18)
  */
 export async function initTrustManagerBot(
   prisma: PrismaClient
 ): Promise<Bot | null> {
-  const token = process.env.TRUST_MANAGER_BOT_TOKEN || "";
+  const token = process.env.TRUST_HELPDESK_BOT_TOKEN || "";
 
   if (!token) {
     console.warn(
-      "[TrustManagerBot] TRUST_MANAGER_BOT_TOKEN no configurado — el bot no se iniciará."
+      "[TrustHelpDeskBot] TRUST_HELPDESK_BOT_TOKEN no configurado — el bot no se iniciará."
     );
     return null;
   }
@@ -132,7 +133,7 @@ export async function initTrustManagerBot(
         "🌳 ¡Bienvenido a Trust Manager!\n\n" +
           "Soy el bot público de Trust Maker. Puedo ayudarte a descubrir " +
           "y unirte a árboles públicos.\n\n" +
-          "Si alguien te compartió un enlace como t.me/AriTrustManagerBot?start=ID_DEL_ARBOL, " +
+          "Si alguien te compartió un enlace como t.me/TrustHelpDeskBot?start=ID_DEL_ARBOL, " +
           "úsalo para que te guíe en el proceso de unirte.\n\n" +
           "Selecciona una opción:",
         { reply_markup: mainMenuKeyboard() }
@@ -172,7 +173,7 @@ export async function initTrustManagerBot(
         const alreadyMember = await isAlreadyMember(prisma, userId, treeId);
         if (alreadyMember) {
           await ctx.reply(
-            `🌳 Ya eres miembro de *${tree.name}*. Para manejar tu cuenta o cualquier duda, habla con @AriTrustManagerBot.`,
+            `🌳 Ya eres miembro de *${tree.name}*. Para manejar tu cuenta o cualquier duda, habla con @TrustHelpDeskBot.`,
             { parse_mode: "Markdown" }
           );
           return;
@@ -189,7 +190,7 @@ export async function initTrustManagerBot(
 
       await ctx.reply(termsText, { reply_markup: step1Keyboard });
     } catch (err: any) {
-      console.error("[TrustManagerBot] Error verificando árbol:", err.message);
+      console.error("[TrustHelpDeskBot] Error verificando árbol:", err.message);
       await ctx.reply(
         "⚠️ Error al verificar el árbol. Inténtalo más tarde."
       );
@@ -251,7 +252,7 @@ export async function initTrustManagerBot(
       if (memberships.length === 0) {
         await ctx.reply(
           "🌳 No eres miembro de ningún árbol aún.\n\n" +
-            "¡Únete a uno usando un enlace de invitación como t.me/AriTrustManagerBot?start=ID_DEL_ARBOL!"
+            "¡Únete a uno usando un enlace de invitación como t.me/TrustHelpDeskBot?start=ID_DEL_ARBOL!"
         );
         return;
       }
@@ -266,7 +267,7 @@ export async function initTrustManagerBot(
         { parse_mode: "MarkdownV2" }
       );
     } catch (err: any) {
-      console.error("[TrustManagerBot] Error listando árboles:", err.message);
+      console.error("[TrustHelpDeskBot] Error listando árboles:", err.message);
       await ctx.reply("⚠️ Error al consultar tus árboles. Inténtalo más tarde.");
     }
   });
@@ -292,7 +293,7 @@ export async function initTrustManagerBot(
       const faqContent = readFileSync(faqPath, "utf-8");
       await ctx.reply(faqContent);
     } catch (err: any) {
-      console.error("[TrustManagerBot] Error cargando FAQ:", err.message);
+      console.error("[TrustHelpDeskBot] Error cargando FAQ:", err.message);
       await ctx.reply("⚠️ Error al cargar las preguntas frecuentes. Inténtalo más tarde.");
     }
   });
@@ -408,7 +409,7 @@ export async function initTrustManagerBot(
       if (existing) {
         onboardingSessions.delete(tgUserId);
         await ctx.editMessageText(
-          `🌳 Ya eres miembro de *${treeName}*. Para manejar tu cuenta o cualquier duda, habla con @AriTrustManagerBot.`,
+          `🌳 Ya eres miembro de *${treeName}*. Para manejar tu cuenta o cualquier duda, habla con @TrustHelpDeskBot.`,
           { parse_mode: "Markdown" }
         );
         await ctx.answerCallbackQuery();
@@ -429,11 +430,11 @@ export async function initTrustManagerBot(
 
       await ctx.editMessageText(
         `✅ ¡Listo! Ya eres miembro de *${treeName}*.\n\n` +
-          `Para manejar tu cuenta o cualquier duda, habla con @AriTrustManagerBot.`,
+          `Para manejar tu cuenta o cualquier duda, habla con @TrustHelpDeskBot.`,
         { parse_mode: "Markdown" }
       );
     } catch (err: any) {
-      console.error("[TrustManagerBot] Error registrando miembro:", err.message);
+      console.error("[TrustHelpDeskBot] Error registrando miembro:", err.message);
       onboardingSessions.delete(tgUserId);
       await ctx.editMessageText(
         "⚠️ Error al registrar tu membresía. Inténtalo de nuevo con /start o contacta al administrador del árbol."
@@ -506,7 +507,7 @@ export async function initTrustManagerBot(
         await ctx.reply(response.text, { parse_mode: "Markdown" });
       }
     } catch (err: any) {
-      console.error("[TrustManagerBot] Error en supportMode:", err?.message || err);
+      console.error("[TrustHelpDeskBot] Error en supportMode:", err?.message || err);
       await ctx.reply(
         "⚠️ Ocurrió un error al procesar tu consulta. Por favor, inténtalo de nuevo."
       );
@@ -518,7 +519,7 @@ export async function initTrustManagerBot(
   // ── Iniciar polling ─────────────────────────────────────────────────────
   bot.start({
     onStart: () => {
-      console.log("[TrustManagerBot] Bot iniciado en modo polling ✅");
+      console.log("[TrustHelpDeskBot] Bot iniciado en modo polling ✅");
     },
   });
 

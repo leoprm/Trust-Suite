@@ -17,7 +17,7 @@ export async function initI18n(): Promise<void> {
     fallbackLng: 'es',
     supportedLngs: ['es', 'en'],
     preload: ['es', 'en'],
-    ns: ['common', 'onboarding', 'tree', 'needs', 'voting', 'errors', 'dm', 'kanban'],
+    ns: ['common', 'onboarding', 'tree', 'needs', 'voting', 'errors', 'dm', 'kanban', 'hilt'],
     defaultNS: 'common',
     backend: {
       loadPath: path.join(__dirname, '..', '..', 'locales', '{{lng}}', '{{ns}}.json'),
@@ -40,7 +40,7 @@ export async function initI18n(): Promise<void> {
  * @param lng  Language code ('es' | 'en').
  * @param vars Optional interpolation variables (e.g. { name: 'Ari' }).
  */
-const KNOWN_NS = new Set(['common', 'onboarding', 'tree', 'needs', 'voting', 'errors', 'dm', 'kanban']);
+const KNOWN_NS = new Set(['common', 'onboarding', 'tree', 'needs', 'voting', 'errors', 'dm', 'kanban', 'hilt']);
 
 export function t(key: string, lng?: string, vars?: Record<string, unknown>): string {
   if (!initialized) return key;
