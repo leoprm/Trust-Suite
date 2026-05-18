@@ -1119,6 +1119,27 @@ model Candidate {
   @@index([userId, taskId])
 }
 
+// ── CandidateAnnouncement (V2: 4h window + poll tracking) ────────────────────
+
+model CandidateAnnouncement {
+  id                String    @id @default(uuid())
+  taskId             String    // kanbanTaskId
+  treeId             String
+  telegramChatId     String
+  announcementMsgId  Int       // Telegram message_id of the original announcement
+  deadline           DateTime  // announcement_created_at + 4h
+  reminderSentAt     DateTime? // when the 3h40m reminder was sent
+  reminderMsgId      Int?      // Telegram message_id of the reminder
+  pollId             String?   // Telegram poll_id when poll is created
+  pollMessageId      Int?      // Telegram message_id of the poll
+  pollClosed         Boolean   @default(false)
+  createdAt          DateTime  @default(now())
+
+  @@index([taskId])
+  @@index([treeId])
+  @@index([deadline])
+}
+
 model CancelledPlan {
   id          String   @id @default(uuid())
   title       String

@@ -121,15 +121,16 @@ export const sendDocument = async (req: Request, res: Response) => {
 };
 
 // ── POST /api/bot/send-message ─────────────────────────────────────────────
-// Body: { treeId: string, text: string, inlineKeyboard?: [[{text, callback_data}]] }
+// Body: { treeId: string, text: string, inlineKeyboard?: [[{text, callback_data}]], kanbanTaskId?: string }
 // Sends a message to the tree's Telegram chat, optionally with inline keyboard buttons.
 // Used by Ari for tree-first task announcements with "Yo puedo" button.
+// When kanbanTaskId is provided, creates a CandidateAnnouncement with 4h deadline.
 // callback_data format for hiring: candidate:apply:<treeId>:<taskId>
 export const sendMessage = async (req: Request, res: Response) => {
   if (!checkApiKey(req, res)) return;
 
   try {
-    const { treeId, text, inlineKeyboard } = req.body;
+    const { treeId, text, inlineKeyboard, kanbanTaskId } = req.body;
 
     if (!treeId || typeof treeId !== "string") {
       return res.status(400).json({ error: "treeId is required (string)" });
@@ -171,10 +172,26 @@ export const sendMessage = async (req: Request, res: Response) => {
       parse_mode: "Markdown",
     });
 
+    // ── Track announcement for 4h window (V2) ──
+    let announcement = null;
+    if (kanbanTaskId && typeof kanbanTaskId === "string") {
+      const deadline = new Date(Date.now() + 4 * 60 * 60 * 1000); // 4h from now
+      announcement = await (prisma as any).candidateAnnouncement.create({
+        data: {
+          taskId: kanbanTaskId,
+          treeId,
+          telegramChatId: chatId,
+          announcementMsgId: sent.message_id,
+          deadline,
+        },
+      });
+    }
+
     res.json({
       success: true,
       messageId: sent.message_id,
       chatId,
+      announcementId: announcement?.id || null,
     });
   } catch (error: any) {
     console.error("[sendMessage] ERROR:", error?.message || error);

@@ -3062,10 +3062,24 @@ export async function createBot(prisma: PrismaClient): Promise<Bot<BotContext> |
           data: { userId: user.id, taskId, treeId },
         });
         await ctx.answerCallbackQuery({ text: "✅ ¡Postulación registrada! Ari te contactará." });
-        // Edit the message to show candidate count (optional feedback)
+
+        // Get updated candidate count
         const candidateCount = await (prisma as any).candidate.count({
           where: { taskId },
         });
+
+        // Group notification: "@user se postuló (N candidatos)"
+        const userMention = tgUser.first_name || tgUser.username || `tg${tgUser.id}`;
+        try {
+          await ctx.reply(
+            `💪 *${userMention}* se postuló para la tarea \\(${candidateCount} candidato${candidateCount !== 1 ? "s" : ""}\\)`,
+            { parse_mode: "MarkdownV2" },
+          );
+        } catch (notifyErr: any) {
+          console.error("[candidate:apply] Group notify error:", notifyErr.message);
+        }
+
+        // Edit the button to show updated candidate count
         try {
           await ctx.editMessageReplyMarkup({
             reply_markup: {
