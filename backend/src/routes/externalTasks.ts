@@ -2,6 +2,7 @@ import { Router } from 'express';
 import multer from 'multer';
 import {
   createExternalTask,
+  getExternalTaskById,
   getAvailableTasks,
   getMyTasks,
   claimTask,
@@ -27,6 +28,9 @@ router.get('/available', getAvailableTasks);
 
 // GET /api/external-tasks/my — tasks where workerId = authenticated user
 router.get('/my', authenticateJWT, getMyTasks);
+
+// GET /api/external-tasks/:id — task detail with dynamic price (public)
+router.get('/:id', getExternalTaskById);
 
 // POST /api/external-tasks/:id/claim — OPEN → CLAIMED
 router.post('/:id/claim', authenticateJWT, claimTask);

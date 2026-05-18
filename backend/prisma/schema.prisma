@@ -1214,6 +1214,7 @@ model ExternalTask {
   skills         Json                     @default("[]")
   location       String?                  @db.VarChar(255)
   locationType   ExternalTaskLocationType @default(REMOTE)
+  type           ExternalTaskType          @default(HUMAN)
   difficulty     Int?                     @default(5)
   quality        Float?
   budget         Int

@@ -1,3 +1,9 @@
+// ── LevelingService ──────────────────────────────────────────────────────────
+// Awards XP to workers based on task difficulty * quality.
+// Upserts WorkerSkill and creates WorkerLevelHistory entries.
+// Formula: baseXp = difficulty * quality * 10 (0–100 XP per task).
+// Also exports decay functions for the daily XP decay cron.
+
 import { prisma } from '../index';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -41,53 +47,60 @@ export function applyDecay(xp: number, level: number): { newXp: number; newLevel
 
 // ── Award XP (side-effecting, uses Prisma) ────────────────────────────────────
 
-interface AwardXpResult {
-  workerSkill: { userId: string; skill: string; xp: number; level: number };
-  leveledUp: boolean;
-  levelsGained: number;
-}
-
-/** Award XP to a user for a given skill. Upserts WorkerSkill, logs history, and detects level-ups. */
+/**
+ * Award XP to a worker for completing a task.
+ * XP is distributed evenly across all matching skills.
+ * Creates WorkerLevelHistory entries for tracking.
+ */
 export async function awardXp(
   userId: string,
-  skill: string,
-  xpDelta: number,
-  reason: 'TASK_COMPLETED' | 'XP_DECAY' | 'ADMIN_ADJUST',
-  taskId?: string,
-): Promise<AwardXpResult> {
-  // 1. Current state
-  const current = await prisma.workerSkill.findUnique({
-    where: { userId_skill: { userId, skill } },
-  });
+  skills: string[],
+  difficulty: number,
+  quality: number,
+  taskId: string,
+): Promise<{ totalXp: number; updatedSkills: string[] }> {
+  if (!skills.length || difficulty < 1 || quality <= 0) {
+    return { totalXp: 0, updatedSkills: [] };
+  }
 
-  const oldXp = current?.xp ?? 0;
-  const oldLevel = current?.level ?? 1;
-  const newXp = oldXp + xpDelta;
-  const newLevel = xpToLevel(newXp);
+  // Base XP per skill: difficulty * quality * 10, distributed across skills
+  const baseXp = Math.round(difficulty * quality * 10);
+  const xpPerSkill = Math.max(1, Math.round(baseXp / skills.length));
+  const updatedSkills: string[] = [];
 
-  // 2. Upsert WorkerSkill
-  const workerSkill = await prisma.workerSkill.upsert({
-    where: { userId_skill: { userId, skill } },
-    create: { userId, skill, xp: newXp, level: newLevel },
-    update: { xp: newXp, level: newLevel },
-  });
+  for (const skill of skills) {
+    try {
+      // Upsert WorkerSkill: increment XP, recompute level
+      const existing = await prisma.workerSkill.findUnique({
+        where: { userId_skill: { userId, skill } },
+        select: { xp: true, level: true },
+      });
 
-  // 3. Log history
-  await prisma.workerLevelHistory.create({
-    data: {
-      userId,
-      skill,
-      xpDelta,
-      reason,
-      taskId,
-    },
-  });
+      const totalXp = (existing?.xp ?? 0) + xpPerSkill;
+      const newLevel = xpToLevel(totalXp);
 
-  // 4. Return result
-  const leveledUp = newLevel > oldLevel;
-  return {
-    workerSkill,
-    leveledUp,
-    levelsGained: newLevel - oldLevel,
-  };
+      await prisma.workerSkill.upsert({
+        where: { userId_skill: { userId, skill } },
+        create: { userId, skill, xp: xpPerSkill, level: newLevel },
+        update: { xp: totalXp, level: newLevel },
+      });
+
+      // Record history
+      await prisma.workerLevelHistory.create({
+        data: {
+          userId,
+          skill,
+          xpDelta: xpPerSkill,
+          reason: 'TASK_COMPLETED',
+          taskId,
+        },
+      });
+
+      updatedSkills.push(skill);
+    } catch (err: any) {
+      console.error(`[levelingService] Failed to award XP for skill "${skill}":`, err.message);
+    }
+  }
+
+  return { totalXp: baseXp, updatedSkills };
 }

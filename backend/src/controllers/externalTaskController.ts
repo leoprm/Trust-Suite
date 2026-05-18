@@ -3,6 +3,7 @@ import fs from 'fs';
 import path from 'path';
 import { prisma } from '../index';
 import { notifyMatchingWorkers as notifyWorkers } from '../services/matchingService';
+import { evaluateDifficulty } from '../services/difficultyService';
 
 // ── Sandbox base for deliverable storage ──────────────────────────────────────
 const SANDBOX_BASE = process.env.SANDBOX_BASE_DIR || '/home/trustmaker/trees';
@@ -25,7 +26,7 @@ async function requireTreeMembership(userId: string, treeId: string, res: Respon
 // ═══════════════════════════════════════════════════════════════════════════════
 export const createExternalTask = async (req: Request, res: Response) => {
   try {
-    const { treeId, title, description, skills, location, locationType, budget, currency, kanbanTaskId, kanbanBoard } = req.body;
+    const { treeId, title, description, skills, location, locationType, type, budget, currency, kanbanTaskId, kanbanBoard } = req.body;
     const userId = req.user?.id;
 
     if (!userId) {
@@ -79,6 +80,13 @@ export const createExternalTask = async (req: Request, res: Response) => {
       return res.status(400).json({ error: `locationType must be one of: ${validLocationTypes.join(', ')}` });
     }
 
+    // Validate type if provided (defaults to HUMAN)
+    const validTypes = ['HUMAN', 'AGENT'];
+    const taskType = type || 'HUMAN';
+    if (!validTypes.includes(taskType)) {
+      return res.status(400).json({ error: `type must be one of: ${validTypes.join(', ')}` });
+    }
+
     // Normalize location: accept string or nullish
     const normalizedLocation = location && typeof location === 'string' && location.trim()
       ? location.trim()
@@ -93,6 +101,7 @@ export const createExternalTask = async (req: Request, res: Response) => {
         skills: skillsArr as any,
         location: normalizedLocation,
         locationType: locationType || 'REMOTE',
+        type: taskType,
         budget: Math.round(budget),
         currency: currency || 'CLP',
         status: 'OPEN',
@@ -105,23 +114,85 @@ export const createExternalTask = async (req: Request, res: Response) => {
     });
 
     // Notify workers with matching skills (async, fire-and-forget — don't block response)
-    notifyWorkers({
-      id: task.id,
-      treeId: task.treeId,
-      title: task.title,
-      skills: skillsArr,
-      location: normalizedLocation,
-      locationType: locationType || 'REMOTE',
-      budget: Math.round(budget),
-      currency: currency || 'CLP',
-    }).then((count: number) => {
-      if (count > 0) console.log(`[externalTask] Notified ${count} workers about task ${task.id}`);
+    // Only notify for HUMAN tasks (AGENT tasks are system-internal)
+    if (taskType === 'HUMAN') {
+      notifyWorkers({
+        id: task.id,
+        treeId: task.treeId,
+        title: task.title,
+        skills: skillsArr,
+        location: normalizedLocation,
+        locationType: locationType || 'REMOTE',
+        budget: Math.round(budget),
+        currency: currency || 'CLP',
+        difficulty: task.difficulty ?? 5,
+      }).then((count: number) => {
+        if (count > 0) console.log(`[externalTask] Notified ${count} workers about task ${task.id} (type=${taskType})`);
+      });
+    } else {
+      console.log(`[externalTask] Skipping worker notification — task ${task.id} is type=${taskType}`);
+    }
+
+    // ── Ari auto-evaluates difficulty (fire-and-forget) ─────────────────
+    evaluateDifficulty(task.title, task.description, treeId).then(difficulty => {
+      if (difficulty !== null && difficulty !== (task.difficulty ?? 5)) {
+        prisma.externalTask.update({
+          where: { id: task.id },
+          data: { difficulty },
+        }).then(() => {
+          console.log(`[externalTask] Ari evaluated difficulty=${difficulty} for task ${task.id}`);
+        }).catch(() => {});
+      }
     });
 
     res.status(201).json(task);
   } catch (error: any) {
     console.error('[externalTask] create error:', error.message || error);
     res.status(500).json({ error: 'Failed to create external task' });
+  }
+};
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// 1b. GET /api/external-tasks/:id — Get task detail with dynamic price
+// ═══════════════════════════════════════════════════════════════════════════════
+export const getExternalTaskById = async (req: Request, res: Response) => {
+  try {
+    const taskId = req.params.id as string;
+
+    const task = await prisma.externalTask.findUnique({
+      where: { id: taskId },
+      include: {
+        tree: { select: { id: true, name: true } },
+        creator: {
+          select: {
+            id: true,
+            availableForHire: true,
+            hourlyRate: true,
+            currency: true,
+            location: true,
+          },
+        },
+      },
+    });
+
+    if (!task) {
+      return res.status(404).json({ error: 'External task not found' });
+    }
+
+    // Precio dinámico: budget * (1 + (difficulty - 1) * 0.15)
+    const difficulty = task.difficulty ?? 5;
+    const multiplier = 1 + (difficulty - 1) * 0.15;
+    const effectiveRate = Math.round(task.budget * multiplier);
+
+    res.json({
+      ...task,
+      effectiveRate,
+      multiplier: parseFloat(multiplier.toFixed(2)),
+      difficulty,
+    });
+  } catch (error: any) {
+    console.error('[externalTask] getById error:', error.message || error);
+    res.status(500).json({ error: 'Failed to fetch external task' });
   }
 };
 
