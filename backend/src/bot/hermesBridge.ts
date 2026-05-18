@@ -20,7 +20,8 @@ import { incrementUsage } from "../lib/skillUsage";
 import { messageQueue } from "./messageQueue";
 
 const HERMES_API = "http://127.0.0.1:8644/v1/chat/completions";
-const LEO_HERMES_API = "http://127.0.0.1:8642/v1/chat/completions";
+const SUPPORT_HERMES_API_URL = process.env.SUPPORT_HERMES_API_URL || "http://127.0.0.1:8646/v1/chat/completions";
+const SUPPORT_HERMES_API_KEY = process.env.SUPPORT_HERMES_API_KEY || "";
 
 // ── ConversationWindow ───────────────────────────────────────────────────
 // In-memory per-tree window for proactive engagement. Each openWindow starts
@@ -1023,7 +1024,9 @@ export async function routeToHermes(
   }
 
   try {
-  const API_SERVER_KEY = process.env.HERMES_API_SERVER_KEY ?? "";
+  const API_SERVER_KEY = treeId
+    ? (process.env.HERMES_API_SERVER_KEY ?? "")
+    : SUPPORT_HERMES_API_KEY;
 
   // ── Build system prompt with tree context from DB ─────────────────────
   let systemPrompt: string;
@@ -1033,19 +1036,8 @@ export async function routeToHermes(
     const name = displayName || userId;
     systemPrompt = [
       "You are Trust Manager, the support assistant for Trust Maker.",
-      "",
-      "ABSOLUTE RULES (never break):",
-      "- Your name is Trust Manager. You are Leo's direct assistant for user support.",
-      "- Answer in Spanish by default. Be warm, helpful, and concise.",
-      "- You CAN look up the user's trees and memberships to give personalized answers.",
-      "- You CAN answer questions, give constructive feedback, and suggestions.",
-      "- You CANNOT modify anything on the server. No deploys, no config changes, no file writes.",
-      "- You CANNOT access other users' data beyond what's needed to answer the current user.",
-      "- If asked to do something you cannot do, explain why politely and suggest alternatives.",
-      "- NEVER execute terminal commands or modify the file system.",
-      "",
+      "Your identity and full instructions are in your SOUL.md.",
       `Current user: ${name}`,
-      "Address this user by their name. The user trusts you to be helpful and honest.",
     ].join("\n");
   }
 
@@ -1075,7 +1067,7 @@ export async function routeToHermes(
 
   let response: globalThis.Response;
   try {
-    response = await fetch(treeId ? HERMES_API : LEO_HERMES_API, {
+    response = await fetch(treeId ? HERMES_API : SUPPORT_HERMES_API_URL, {
       method: "POST",
       headers,
       body: JSON.stringify({
