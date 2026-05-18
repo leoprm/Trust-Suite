@@ -3005,6 +3005,79 @@ export async function createBot(prisma: PrismaClient): Promise<Bot<BotContext> |
       return;
     }
 
+    // ── Candidate: "Yo puedo" button (tree-first hiring) ─────────────────
+    if (data.startsWith("candidate:apply:")) {
+      const taskId = data.slice("candidate:apply:".length);
+      const tgUser = ctx.from;
+      if (!tgUser) {
+        await ctx.answerCallbackQuery({ text: "⚠️ No se pudo identificar tu usuario" });
+        return;
+      }
+
+      const user = await (prisma as any).user.findUnique({
+        where: { telegramUserId: BigInt(tgUser.id) },
+        select: { id: true, firstName: true },
+      });
+      if (!user) {
+        await ctx.answerCallbackQuery({ text: "⚠️ No tienes cuenta vinculada. Usa /start" });
+        return;
+      }
+
+      // Find which tree this task belongs to (via ExternalTask)
+      const extTask = await (prisma as any).externalTask.findFirst({
+        where: { kanbanTaskId: taskId },
+        select: { id: true, treeId: true, title: true },
+      });
+      if (!extTask) {
+        await ctx.answerCallbackQuery({ text: "⚠️ Tarea no encontrada" });
+        return;
+      }
+
+      // Verify user is active member of the tree
+      const member = await (prisma as any).treeMember.findUnique({
+        where: { userId_treeId: { userId: user.id, treeId: extTask.treeId } },
+        select: { status: true },
+      });
+      if (!member || member.status !== "ACTIVE") {
+        await ctx.answerCallbackQuery({ text: "⚠️ No eres miembro activo de este árbol" });
+        return;
+      }
+
+      // Check for duplicate application
+      const existing = await (prisma as any).candidate.findFirst({
+        where: { userId: user.id, taskId },
+      });
+      if (existing) {
+        await ctx.answerCallbackQuery({ text: "⚠️ Ya aplicaste a esta tarea" });
+        return;
+      }
+
+      // Register candidate
+      try {
+        await (prisma as any).candidate.create({
+          data: { userId: user.id, taskId, treeId: extTask.treeId },
+        });
+        await ctx.answerCallbackQuery({ text: "✅ ¡Postulación registrada! Ari te contactará." });
+        // Edit the message to show candidate count (optional feedback)
+        const candidateCount = await (prisma as any).candidate.count({
+          where: { taskId },
+        });
+        try {
+          await ctx.editMessageReplyMarkup({
+            reply_markup: {
+              inline_keyboard: [[
+                { text: `💪 Yo puedo (${candidateCount})`, callback_data: `candidate:apply:${taskId}` },
+              ]],
+            },
+          });
+        } catch { /* message may already be edited */ }
+      } catch (err: any) {
+        console.error("[candidate:apply] Error:", err.message);
+        await ctx.answerCallbackQuery({ text: "⚠️ Error al registrar. Intenta de nuevo." });
+      }
+      return;
+    }
+
     const handled = await handleProfileCallback(prisma, ctx as BotContext);
     if (!handled) {
       // Unknown callback — acknowledge silently

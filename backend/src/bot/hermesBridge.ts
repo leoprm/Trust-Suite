@@ -650,25 +650,47 @@ async function buildSystemPrompt(
     "If the user asks about membership, trees, or stats, the data above IS authoritative.",
   );
 
-  // ── ExternalTask Orchestration ─────────────────────────────────────────
+  // ── Tree-first Hiring Pipeline (V1) ────────────────────────────────────
   lines.push("");
-  lines.push("═══ ORQUESTACIÓN DE ExternalTasks ═══");
+  lines.push("═══ TREE-FIRST HIRING PIPELINE ═══");
   lines.push("");
-  lines.push("Eres el orquestador Human-in-the-Loop para ExternalTasks.");
-  lines.push("Cuando una ExternalTask llegue a estado DELIVERED:");
-  lines.push("1. Evalúas la evidencia entregada (archivo, texto, link)");
-  lines.push("2. Comparas contra la descripción de la tarea");
-  lines.push("3. Si cumple los requisitos → APRUEBAS");
-  lines.push("4. Si no cumple → RECHAZAS con feedback claro");
-  lines.push("5. Si tienes duda → NOTIFICAS al grupo del árbol para que miembros decidan");
+  lines.push("Cuando detectes (o te asignen) una tarea human-worker (ExternalTask):");
   lines.push("");
-  lines.push("Endpoints disponibles para orquestación:");
-  lines.push(`  POST http://localhost:3100/api/external-tasks/:id/approve`);
-  lines.push(`  POST http://localhost:3100/api/external-tasks/:id/reject  (Body: { "reason": "..." })`);
-  lines.push("  Authorization: Bearer HERMES_API_SERVER_KEY en ambas.");
+  lines.push("1. NO crees ExternalTask inmediatamente.");
   lines.push("");
-  lines.push("⚠️  Sé exigente: prefiere rechazar con feedback constructivo a aprobar trabajo incompleto.");
-  lines.push("⚠️  Si un miembro del árbol te pide revisar una entrega, evalúala usando el endpoint sandbox/read.");
+  lines.push("2. PRIMERO publica en el grupo del árbol un anuncio con:");
+  lines.push("   - Título de la tarea");
+  lines.push("   - Skills requeridas");
+  lines.push("   - Budget (CLP)");
+  lines.push("   - Deadline (si existe)");
+  lines.push('   - Botón "Yo puedo"');
+  lines.push("");
+  lines.push("   Para publicar, usa este endpoint:");
+  lines.push("   POST http://localhost:3100/api/bot/send-message");
+  lines.push(`   Body: { "treeId": "${treeId}", "text": "<mensaje en Markdown>", "inlineKeyboard": [[{"text": "💪 Yo puedo", "callback_data": "candidate:apply:TASK_ID"}]] }`);
+  lines.push("   Authorization: Bearer HERMES_API_SERVER_KEY");
+  lines.push("");
+  lines.push("3. Abre una ventana de 4 horas para candidatos internos del árbol.");
+  lines.push("   - Registra la fecha de apertura para referencia futura.");
+  lines.push("   - Puedes guardar esta info en el sandbox o en la DB.");
+  lines.push("");
+  lines.push("4. Cuando un miembro del árbol presiona \"Yo puedo\", el bot registra");
+  lines.push("   al candidato via POST /api/candidates y te notifica.");
+  lines.push("   - Puedes consultar los candidatos con:");
+  lines.push("     GET http://localhost:3100/api/candidates?taskId=<TASK_ID>");
+  lines.push("     Authorization: Bearer HERMES_API_SERVER_KEY");
+  lines.push("");
+  lines.push("5. Al cumplirse las 4 horas:");
+  lines.push("   - Si hay al menos 1 candidato: selecciona al más adecuado y asígnale la tarea.");
+  lines.push("   - Si NO hay candidatos: sugiere contratar externo (crea ExternalTask).");
+  lines.push("     Puedes crear ExternalTask via:");
+  lines.push("     POST http://localhost:3100/api/external-tasks");
+  lines.push(`     Body: { "treeId": "${treeId}", "title": "...", "description": "...", "skills": [...], "budget": N, "kanbanTaskId": "..." }`);
+  lines.push("     Authorization: Bearer HERMES_API_SERVER_KEY");
+  lines.push("");
+  lines.push("6. Si el plan no recibe candidatos y se cancela, registra el motivo:");
+  lines.push("   - Crea un CancelledPlan en la base de datos via Prisma o endpoint.");
+  lines.push("   - Notifica al grupo del árbol.");
 
   // ── Skills ─────────────────────────────────────────────────────────────
   const sandboxBase = process.env.SANDBOX_BASE_DIR || "/home/trustmaker/trees";

@@ -1098,6 +1098,40 @@ model Todo {
   @@index([messageId, chatId])
 }
 
+// ── Candidate (Tree-first hiring pipeline) ─────────────────────────────────
+
+enum CandidateStatus {
+  PENDING
+  ACCEPTED
+  REJECTED
+}
+
+model Candidate {
+  id        String          @id @default(uuid())
+  userId    String
+  taskId    String          // kanbanTaskId de la tarea human-worker
+  treeId    String
+  status    CandidateStatus @default(PENDING)
+  createdAt DateTime        @default(now())
+
+  @@index([taskId])
+  @@index([treeId])
+  @@index([userId, taskId])
+}
+
+model CancelledPlan {
+  id          String   @id @default(uuid())
+  title       String
+  description String   @db.Text
+  skills      Json     @default("[]")
+  budget      Int
+  motivo      String   @db.Text
+  treeId      String
+  createdAt   DateTime @default(now())
+
+  @@index([treeId])
+}
+
 // ── ExternalTask (Human-in-the-Loop) ──────────────────────────────────────
 
 model ExternalTask {

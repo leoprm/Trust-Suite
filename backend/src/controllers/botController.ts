@@ -119,3 +119,64 @@ export const sendDocument = async (req: Request, res: Response) => {
     res.status(500).json({ error: "Failed to send document", detail: error?.message });
   }
 };
+
+// ── POST /api/bot/send-message ─────────────────────────────────────────────
+// Body: { treeId: string, text: string, inlineKeyboard?: [[{text, callback_data}]] }
+// Sends a message to the tree's Telegram chat, optionally with inline keyboard buttons.
+// Used by Ari for tree-first task announcements with "Yo puedo" button.
+export const sendMessage = async (req: Request, res: Response) => {
+  if (!checkApiKey(req, res)) return;
+
+  try {
+    const { treeId, text, inlineKeyboard } = req.body;
+
+    if (!treeId || typeof treeId !== "string") {
+      return res.status(400).json({ error: "treeId is required (string)" });
+    }
+    if (!text || typeof text !== "string") {
+      return res.status(400).json({ error: "text is required (string)" });
+    }
+
+    // Resolve telegramChatId from tree
+    const { prisma } = await import("../index");
+    const tree = await (prisma as any).tree.findUnique({
+      where: { id: treeId },
+      select: { telegramChatId: true, name: true },
+    });
+
+    if (!tree) {
+      return res.status(404).json({ error: "Tree not found" });
+    }
+    if (!tree.telegramChatId) {
+      return res.status(400).json({ error: "Tree has no linked Telegram chat" });
+    }
+
+    // Get bot instance
+    const { telegramBot } = await import("../index");
+    if (!telegramBot) {
+      return res.status(503).json({ error: "Telegram bot not available" });
+    }
+
+    const chatId = tree.telegramChatId;
+
+    // Build reply_markup if inlineKeyboard provided
+    let replyMarkup;
+    if (inlineKeyboard && Array.isArray(inlineKeyboard) && inlineKeyboard.length > 0) {
+      replyMarkup = { inline_keyboard: inlineKeyboard };
+    }
+
+    const sent = await telegramBot.api.sendMessage(chatId, text, {
+      reply_markup: replyMarkup,
+      parse_mode: "Markdown",
+    });
+
+    res.json({
+      success: true,
+      messageId: sent.message_id,
+      chatId,
+    });
+  } catch (error: any) {
+    console.error("[sendMessage] ERROR:", error?.message || error);
+    res.status(500).json({ error: "Failed to send message", detail: error?.message });
+  }
+};

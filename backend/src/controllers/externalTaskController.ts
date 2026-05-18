@@ -49,9 +49,16 @@ export const createExternalTask = async (req: Request, res: Response) => {
       return res.status(404).json({ error: 'Tree not found' });
     }
 
-    // Verify user is member
-    const isMember = await requireTreeMembership(userId, treeId, res);
-    if (!isMember) return;
+    // Verify user is member (SYSTEM role bypasses — used by Kanban dispatcher)
+    let effectiveUserId = userId;
+    if (req.user?.role === 'SYSTEM') {
+      // System-created tasks (from Kanban dispatcher) use 'ari' as the
+      // effective userId since 'telegram-bot' is not a real User row.
+      effectiveUserId = 'ari';
+    } else {
+      const isMember = await requireTreeMembership(userId, treeId, res);
+      if (!isMember) return;
+    }
 
     // Normalize skills: accept string[], JSON string, or omit
     let skillsArr: string[] = [];
@@ -68,7 +75,7 @@ export const createExternalTask = async (req: Request, res: Response) => {
     const task = await prisma.externalTask.create({
       data: {
         treeId,
-        createdBy: userId,
+        createdBy: effectiveUserId,
         title: title.trim(),
         description: description.trim(),
         skills: skillsArr as any,
@@ -78,6 +85,14 @@ export const createExternalTask = async (req: Request, res: Response) => {
         ...(kanbanTaskId && { kanbanTaskId }),
         ...(kanbanBoard && { kanbanBoard }),
       },
+      include: {
+        tree: { select: { id: true, name: true } },
+      },
+    });
+
+    // Notify workers with matching skills (async, fire-and-forget — don't block response)
+    notifyMatchingWorkers(task).then((count: number) => {
+      if (count > 0) console.log(`[externalTask] Notified ${count} workers about task ${task.id}`);
     });
 
     res.status(201).json(task);
@@ -294,14 +309,65 @@ export const approveTask = async (req: Request, res: Response) => {
       return res.status(400).json({ error: `Cannot approve task with status '${task.status}'. Must be DELIVERED.` });
     }
 
-    // Verify user is member of the tree
-    const isMember = await requireTreeMembership(userId, task.treeId, res);
-    if (!isMember) return;
+    // Verify user is member of the tree (SYSTEM role bypasses)
+    if (req.user?.role !== 'SYSTEM') {
+      const isMember = await requireTreeMembership(userId, task.treeId, res);
+      if (!isMember) return;
+    }
 
     const updated = await prisma.externalTask.update({
       where: { id: taskId },
       data: { status: 'APPROVED', approvedBy: userId },
     });
+
+    // ── Escrow MVP: register payout in TransactionLedger ──────────────────────
+    if (task.workerId && task.budget > 0) {
+      try {
+        // Find TreeMember for the worker in this tree
+        const member = await prisma.treeMember.findUnique({
+          where: { userId_treeId: { userId: task.workerId, treeId: task.treeId } },
+          select: { id: true },
+        });
+
+        if (member) {
+          // Create ledger entry (credit to worker)
+          await (prisma as any).transactionLedger.create({
+            data: {
+              treeId: task.treeId,
+              memberId: member.id,
+              type: 'EXTERNAL_TASK_PAYOUT',
+              amount: task.budget, // positive = credit
+              description: `Pago por tarea: ${task.title}`,
+              metadataJson: JSON.stringify({
+                taskId,
+                externalTaskId: taskId,
+                approvedBy: userId,
+              }),
+            },
+          });
+
+          // Upsert MemberBalance
+          await (prisma as any).memberBalance.upsert({
+            where: { memberId: member.id },
+            create: {
+              memberId: member.id,
+              availableBalance: task.budget,
+              pendingBalance: 0,
+            },
+            update: {
+              availableBalance: { increment: task.budget },
+            },
+          });
+
+          console.log(`[externalTask] Escrow: credited ${task.budget} CLP to member ${member.id} for task ${taskId}`);
+        } else {
+          console.warn(`[externalTask] Escrow skipped: worker ${task.workerId} is not a member of tree ${task.treeId}`);
+        }
+      } catch (escrowErr: any) {
+        // Non-blocking: task is already APPROVED, escrow failure is logged but doesn't roll back
+        console.error(`[externalTask] Escrow error for task ${taskId}:`, escrowErr.message || escrowErr);
+      }
+    }
 
     res.json(updated);
   } catch (error: any) {
@@ -354,3 +420,116 @@ export const rejectTask = async (req: Request, res: Response) => {
     res.status(500).json({ error: 'Failed to reject task' });
   }
 };
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Worker Notification Service (inline — avoids circular deps with bot module)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || '';
+const TELEGRAM_API = 'https://api.telegram.org';
+
+interface MatchedWorker {
+  telegramUserId: bigint;
+  id: string;
+  username: string;
+  firstName: string | null;
+}
+
+interface TaskSummary {
+  id: string;
+  title: string;
+  budget: number;
+  currency: string;
+  treeName: string;
+  skills: string[];
+}
+
+async function sendTelegramMessage(
+  chatId: number,
+  text: string,
+  replyMarkup?: any,
+): Promise<boolean> {
+  if (!BOT_TOKEN) {
+    console.warn('[workerNotification] No TELEGRAM_BOT_TOKEN — skipping');
+    return false;
+  }
+  try {
+    const body: any = { chat_id: chatId, text, parse_mode: 'Markdown', disable_web_page_preview: true };
+    if (replyMarkup) body.reply_markup = JSON.stringify(replyMarkup);
+
+    const res = await fetch(`${TELEGRAM_API}/bot${BOT_TOKEN}/sendMessage`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+
+    if (!res.ok) {
+      const errText = await res.text();
+      console.error(`[workerNotification] Telegram API error ${res.status}: ${errText.slice(0, 200)}`);
+      return false;
+    }
+    return true;
+  } catch (err: any) {
+    console.error(`[workerNotification] sendMessage failed for ${chatId}:`, err.message);
+    return false;
+  }
+}
+
+/**
+ * Notify workers with matching skills about a new ExternalTask.
+ * Returns the number of workers notified.
+ */
+async function notifyMatchingWorkers(task: any): Promise<number> {
+  try {
+    const taskSkills: string[] = Array.isArray(task.skills) ? task.skills.map((s: any) => String(s).toLowerCase().trim()).filter(Boolean) : [];
+
+    const workers = await (prisma as any).user.findMany({
+      where: { availableForHire: true, telegramUserId: { not: null } },
+      select: { id: true, telegramUserId: true, username: true, firstName: true, skills: true },
+    });
+
+    if (workers.length === 0) return 0;
+
+    const matched = workers.filter((w: any) => {
+      if (taskSkills.length === 0) return true;
+      const wSkills: string[] = w.skills ? w.skills.split(',').map((s: string) => s.trim().toLowerCase()).filter(Boolean) : [];
+      if (wSkills.length === 0) return true;
+      return taskSkills.some((ts: string) => wSkills.includes(ts));
+    });
+
+    if (matched.length === 0) {
+      console.log(`[workerNotification] 0 workers matched skills [${taskSkills.join(',')}] for "${task.title}"`);
+      return 0;
+    }
+
+    const budgetStr = task.budget > 0 ? `${(task.budget).toLocaleString('es-CL')} ${task.currency}` : 'Presupuesto no especificado';
+    const skillsStr = taskSkills.length > 0 ? `\n*Skills:* ${taskSkills.join(', ')}` : '';
+    const treeName = (task as any).tree?.name || 'Árbol';
+
+    const text = [
+      `🔔 *Nueva tarea disponible*`,
+      '',
+      `*${task.title}*`,
+      `_${treeName}_`,
+      '',
+      `💰 ${budgetStr}${skillsStr}`,
+    ].join('\n');
+
+    const webAppUrl = process.env.TRUSTMAKER_WEB_URL || 'https://trustmaker.app';
+    const inlineKeyboard = {
+      inline_keyboard: [[{ text: '👀 Ver tarea', url: `${webAppUrl}/tasks/${task.id}` }]],
+    };
+
+    let sent = 0;
+    for (const w of matched) {
+      const ok = await sendTelegramMessage(Number(w.telegramUserId), text, inlineKeyboard);
+      if (ok) sent++;
+    }
+
+    console.log(`[workerNotification] Notified ${sent}/${matched.length} workers for "${task.title}"`);
+    return sent;
+  } catch (err: any) {
+    console.error('[workerNotification] Error:', err.message || err);
+    return 0;
+  }
+}
