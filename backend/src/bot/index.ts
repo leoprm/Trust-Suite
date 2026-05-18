@@ -1067,17 +1067,12 @@ export async function createBot(prisma: PrismaClient): Promise<Bot<BotContext> |
     }
   });
 
-  // ── Rate limiter: enforce per-user message quota ──────────────────────
-  // Runs before all other message/text handlers.
+  // ── Rate limiter: DISABLED ────────────────────────────────────────────
   bot.on("message:text", async (ctx, next) => {
     const tgUser = ctx.from;
     if (!tgUser) return next();
 
-    const { allowed, message } = checkRateLimit(tgUser.id);
-    if (!allowed) {
-      await ctx.reply(message ?? "⏳ Estás enviando muchos mensajes. Espera 5 minutos.");
-      return; // drop — don't process further
-    }
+    // Rate limiter disabled — always allow
 
     // Keep firstName in sync (fire-and-forget)
     if (tgUser.first_name) {

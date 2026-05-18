@@ -709,7 +709,7 @@ export async function shouldAriRespond(
 
   // ── Call Hermes Agent API (non-streaming — decision is short) ────────
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 30_000); // 30s is plenty for a decision
+const timeoutId = setTimeout(() => controller.abort(), 300_000); // 5 min — complex tasks need time
 
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
