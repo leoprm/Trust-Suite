@@ -3,7 +3,8 @@ import fs from 'fs';
 import path from 'path';
 import { prisma } from '../index';
 import { notifyMatchingWorkers as notifyWorkers } from '../services/matchingService';
-import { evaluateDifficulty } from '../services/difficultyService';
+import { evaluateDifficulty, evaluateQuality } from '../services/difficultyService';
+import { awardXp } from '../services/levelingService';
 
 // ── Sandbox base for deliverable storage ──────────────────────────────────────
 const SANDBOX_BASE = process.env.SANDBOX_BASE_DIR || '/home/trustmaker/trees';
@@ -371,6 +372,29 @@ export const deliverTask = async (req: Request, res: Response) => {
         deliverableUrl,
       },
     });
+
+    // ── Ari auto-evaluates quality + awards XP (fire-and-forget) ──────
+    const _task = updated;
+    const _destPath = destPath;
+    if (_task.workerId && _task.skills && Array.isArray(_task.skills) && (_task.skills as any[]).length > 0) {
+      evaluateQuality(_task.title, _task.description, _destPath, _task.treeId).then(quality => {
+        if (quality !== null) {
+          prisma.externalTask.update({
+            where: { id: _task.id },
+            data: { quality },
+          }).then(() => {
+            console.log(`[externalTask] Ari evaluated quality=${quality} for task ${_task.id}`);
+            // Award XP using difficulty (already evaluated, default 5) and quality
+            const diff = _task.difficulty ?? 5;
+            return awardXp(_task.workerId!, _task.skills as string[], diff, quality, _task.id);
+          }).then(result => {
+            if (result && result.totalXp > 0) {
+              console.log(`[externalTask] Awarded ${result.totalXp} XP across ${result.updatedSkills.length} skills for task ${_task.id}`);
+            }
+          }).catch(() => {});
+        }
+      });
+    }
 
     res.json(updated);
   } catch (error: any) {
