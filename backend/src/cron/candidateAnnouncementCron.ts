@@ -1,5 +1,5 @@
 /**
- * CandidateAnnouncement Cron — V2 hiring pipeline automation.
+ * CandidateAnnouncement Cron — V4 hiring pipeline automation.
  *
  * Runs every 60 seconds. Handles:
  *   1. 3h40m reminder: send group notification "Quedan 20 min. Nadie mas?"
@@ -8,14 +8,29 @@
  *
  * Poll options: candidate names + "Contratar externo (~$X)" + "Cancelar tarea"
  * Poll is anonymous (is_anonymous: true), type: regular.
+ *
+ * V4: i18n-aware — uses tree language for all user-facing messages.
  */
 
 import { PrismaClient } from "@prisma/client";
 import type { Bot } from "grammy";
 import type { BotContext } from "../bot/types";
+import { t } from "../bot/i18n";
 
 const REMINDER_BEFORE_MS = 20 * 60 * 1000;
 const POLL_DURATION_MS = 24 * 60 * 60 * 1000;
+
+async function resolveTreeLanguage(prisma: PrismaClient, treeId: string): Promise<string> {
+  try {
+    const tree = await (prisma as any).tree.findUnique({
+      where: { id: treeId },
+      select: { language: true },
+    });
+    return tree?.language || "es";
+  } catch {
+    return "es";
+  }
+}
 
 export async function runCandidateAnnouncementCron(
   prisma: PrismaClient,
@@ -35,13 +50,14 @@ export async function runCandidateAnnouncementCron(
   for (const ann of announcements) {
     const deadline = new Date(ann.deadline);
     const msUntilDeadline = deadline.getTime() - now.getTime();
+    const lng = await resolveTreeLanguage(prisma, ann.treeId);
 
     // 1. Reminder at 3h40m
     if (!ann.reminderSentAt && msUntilDeadline <= REMINDER_BEFORE_MS && msUntilDeadline > -60_000) {
       try {
         const reminder = await bot.api.sendMessage(
           ann.telegramChatId,
-          "\u23f0 *Quedan 20 minutos* para postularse a la tarea\\. \u00bfNadie m\u00e1s?",
+          t("v1.reminder", lng),
           { parse_mode: "MarkdownV2" },
         );
         await (prisma as any).candidateAnnouncement.update({
@@ -79,13 +95,17 @@ export async function runCandidateAnnouncementCron(
           pollOptions.push(name);
         }
 
-        let externoLabel = "Contratar externo";
-        if (budget > 0) externoLabel += ` (~$${budget} ${currency})`;
-        pollOptions.push(externoLabel);
-        pollOptions.push("Cancelar tarea");
+        if (budget > 0) {
+          pollOptions.push(
+            t("v1.poll_option_external_budget", lng, { budget, currency }),
+          );
+        } else {
+          pollOptions.push(t("v1.poll_option_external", lng));
+        }
+        pollOptions.push(t("v1.poll_option_cancel", lng));
 
         const taskTitle = extTask?.title || ann.taskId.slice(0, 12);
-        const question = `Quien deberia hacer esta tarea?\n"${taskTitle}"`;
+        const question = t("v1.poll_question", lng, { title: taskTitle });
 
         const poll = await bot.api.sendPoll(ann.telegramChatId, question, pollOptions, {
           is_anonymous: true,
@@ -127,6 +147,15 @@ export async function runCandidateAnnouncementCron(
               winnerVotes = options[i].voter_count;
               winnerOption = options[i].text;
             }
+          }
+
+          if (winnerVotes === 0 && winnerOption) {
+            try {
+              await bot.api.sendMessage(
+                ann.telegramChatId,
+                t("v1.poll_closed_no_votes", lng),
+              );
+            } catch { /* best effort */ }
           }
 
           await (prisma as any).candidateAnnouncement.update({

@@ -3005,35 +3005,37 @@ export async function createBot(prisma: PrismaClient): Promise<Bot<BotContext> |
       return;
     }
 
-    // ── Candidate: "Yo puedo" button (tree-first hiring) ─────────────────
+    // ── Candidate: "Yo puedo" button (tree-first hiring, V4 i18n) ────────────
     // Callback format: candidate:apply:<treeId>:<taskId>
     if (data.startsWith("candidate:apply:")) {
       const rest = data.slice("candidate:apply:".length);
       const colonIdx = rest.indexOf(":");
       if (colonIdx === -1) {
-        await ctx.answerCallbackQuery({ text: "⚠️ Formato de callback inválido" });
+        await ctx.answerCallbackQuery({ text: t("v1_candidate.callback_invalid", "es") });
         return;
       }
       const treeId = rest.slice(0, colonIdx);
       const taskId = rest.slice(colonIdx + 1);
 
       if (!treeId || !taskId) {
-        await ctx.answerCallbackQuery({ text: "⚠️ Datos incompletos en el callback" });
+        await ctx.answerCallbackQuery({ text: t("v1_candidate.callback_incomplete", "es") });
         return;
       }
 
       const tgUser = ctx.from;
       if (!tgUser) {
-        await ctx.answerCallbackQuery({ text: "⚠️ No se pudo identificar tu usuario" });
+        await ctx.answerCallbackQuery({ text: t("v1_candidate.callback_no_user", "es") });
         return;
       }
+
+      const lng = await resolveUserLanguage(prisma, ctx) ?? tgUser.language_code ?? "es";
 
       const user = await (prisma as any).user.findUnique({
         where: { telegramUserId: BigInt(tgUser.id) },
         select: { id: true, firstName: true },
       });
       if (!user) {
-        await ctx.answerCallbackQuery({ text: "⚠️ No tienes cuenta vinculada. Usa /start" });
+        await ctx.answerCallbackQuery({ text: t("v1_candidate.callback_no_account", lng) });
         return;
       }
 
@@ -3043,7 +3045,7 @@ export async function createBot(prisma: PrismaClient): Promise<Bot<BotContext> |
         select: { status: true },
       });
       if (!member || member.status !== "ACTIVE") {
-        await ctx.answerCallbackQuery({ text: "⚠️ No eres miembro activo de este árbol" });
+        await ctx.answerCallbackQuery({ text: t("v1_candidate.callback_not_member", lng) });
         return;
       }
 
@@ -3052,7 +3054,7 @@ export async function createBot(prisma: PrismaClient): Promise<Bot<BotContext> |
         where: { userId: user.id, taskId },
       });
       if (existing) {
-        await ctx.answerCallbackQuery({ text: "⚠️ Ya aplicaste a esta tarea" });
+        await ctx.answerCallbackQuery({ text: t("v1_candidate.callback_already_applied", lng) });
         return;
       }
 
@@ -3061,18 +3063,19 @@ export async function createBot(prisma: PrismaClient): Promise<Bot<BotContext> |
         await (prisma as any).candidate.create({
           data: { userId: user.id, taskId, treeId },
         });
-        await ctx.answerCallbackQuery({ text: "✅ ¡Postulación registrada! Ari te contactará." });
+        await ctx.answerCallbackQuery({ text: t("v1_candidate.applied_ok", lng) });
 
         // Get updated candidate count
         const candidateCount = await (prisma as any).candidate.count({
           where: { taskId },
         });
 
-        // Group notification: "@user se postuló (N candidatos)"
+        // Group notification: "@user se postulo (N candidatos)"
         const userMention = tgUser.first_name || tgUser.username || `tg${tgUser.id}`;
+        const plural = candidateCount !== 1 ? "s" : "";
         try {
           await ctx.reply(
-            `💪 *${userMention}* se postuló para la tarea \\(${candidateCount} candidato${candidateCount !== 1 ? "s" : ""}\\)`,
+            t("v1_candidate.group_notify", lng, { name: userMention, count: candidateCount, plural }),
             { parse_mode: "MarkdownV2" },
           );
         } catch (notifyErr: any) {
@@ -3081,17 +3084,18 @@ export async function createBot(prisma: PrismaClient): Promise<Bot<BotContext> |
 
         // Edit the button to show updated candidate count
         try {
+          const buttonLabel = t("v1.button_apply_count", lng, { count: candidateCount });
           await ctx.editMessageReplyMarkup({
             reply_markup: {
               inline_keyboard: [[
-                { text: `💪 Yo puedo (${candidateCount})`, callback_data: `candidate:apply:${treeId}:${taskId}` },
+                { text: buttonLabel, callback_data: `candidate:apply:${treeId}:${taskId}` },
               ]],
             },
           });
         } catch { /* message may already be edited */ }
       } catch (err: any) {
         console.error("[candidate:apply] Error:", err.message);
-        await ctx.answerCallbackQuery({ text: "⚠️ Error al registrar. Intenta de nuevo." });
+        await ctx.answerCallbackQuery({ text: t("v1_candidate.callback_error", lng) });
       }
       return;
     }

@@ -1,0 +1,8 @@
+{
+  "results_title": "📊 *Resultados de la votación:*",
+  "results_winner_internal": "✅ *{{name}}* fue elegido para la tarea \"{{title}}\"\n\n{{name}} será contactado por DM para coordinar.",
+  "results_winner_external": "🌐 La tarea \"{{title}}\" será contratada externamente.\n\nEl presupuesto es de ${{budget}} {{currency}}.",
+  "results_winner_cancel": "🚫 La tarea \"{{title}}\" fue cancelada.\n\nMotivo: {{motivo}}",
+  "results_alternatives": "\n\n💡 *Alternativas propuestas:*\n{{alternatives}}",
+  "results_tie": "⚠️ Hubo un empate en la votación. Se requiere decisión manual."
+}

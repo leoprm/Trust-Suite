@@ -1,0 +1,14 @@
+{
+  "announce_title": "📋 *Nueva tarea disponible*",
+  "announce_skill": "🛠️ Skills: {{skills}}",
+  "announce_budget": "💰 Presupuesto: ${{budget}} {{currency}}",
+  "announce_deadline": "⏳ Postulaciones abiertas por 4 horas",
+  "button_apply": "💪 Yo puedo",
+  "button_apply_count": "💪 Yo puedo ({{count}})",
+  "reminder": "⏰ *Quedan 20 minutos* para postularse a la tarea\\. ¿Nadie más?",
+  "poll_question": "¿Quién debería hacer esta tarea?\n\"{{title}}\"",
+  "poll_option_external": "Contratar externo",
+  "poll_option_external_budget": "Contratar externo (~${{budget}} {{currency}})",
+  "poll_option_cancel": "Cancelar tarea",
+  "poll_closed_no_votes": "⚠️ La encuesta no recibió votos. La tarea queda pendiente."
+}

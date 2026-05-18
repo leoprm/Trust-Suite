@@ -1,0 +1,11 @@
+{
+  "callback_invalid": "⚠️ Invalid callback format",
+  "callback_incomplete": "⚠️ Incomplete callback data",
+  "callback_no_user": "⚠️ Could not identify your user",
+  "callback_no_account": "⚠️ No linked account. Use /start",
+  "callback_not_member": "⚠️ You are not an active member of this tree",
+  "callback_already_applied": "⚠️ You already applied for this task",
+  "callback_error": "⚠️ Error registering. Try again.",
+  "applied_ok": "✅ Application registered! Ari will contact you.",
+  "group_notify": "💪 *{{name}}* applied for the task ({{count}} candidate{{plural}})"
+}

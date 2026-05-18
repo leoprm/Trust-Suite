@@ -1,0 +1,11 @@
+{
+  "callback_invalid": "⚠️ Formato de callback inválido",
+  "callback_incomplete": "⚠️ Datos incompletos en el callback",
+  "callback_no_user": "⚠️ No se pudo identificar tu usuario",
+  "callback_no_account": "⚠️ No tienes cuenta vinculada. Usa /start",
+  "callback_not_member": "⚠️ No eres miembro activo de este árbol",
+  "callback_already_applied": "⚠️ Ya aplicaste a esta tarea",
+  "callback_error": "⚠️ Error al registrar. Intenta de nuevo.",
+  "applied_ok": "✅ ¡Postulación registrada! Ari te contactará.",
+  "group_notify": "💪 *{{name}}* se postuló para la tarea ({{count}} candidato{{plural}})"
+}

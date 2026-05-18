@@ -1,0 +1,14 @@
+{
+  "announce_title": "📋 *New task available*",
+  "announce_skill": "🛠️ Skills: {{skills}}",
+  "announce_budget": "💰 Budget: ${{budget}} {{currency}}",
+  "announce_deadline": "⏳ Applications open for 4 hours",
+  "button_apply": "💪 I can do it",
+  "button_apply_count": "💪 I can do it ({{count}})",
+  "reminder": "⏰ *20 minutes left* to apply for this task\\. Anyone else?",
+  "poll_question": "Who should do this task?\n\"{{title}}\"",
+  "poll_option_external": "Hire externally",
+  "poll_option_external_budget": "Hire externally (~${{budget}} {{currency}})",
+  "poll_option_cancel": "Cancel task",
+  "poll_closed_no_votes": "⚠️ The poll received no votes. The task remains pending."
+}
