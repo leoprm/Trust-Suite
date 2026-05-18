@@ -35,6 +35,11 @@
   "whatsapp_placeholder": "ID del grupo de WhatsApp...",
   "whatsapp_saved": "✅ Grupo de WhatsApp vinculado.",
   "whatsapp_skipped": "⏭️ Grupo de WhatsApp omitido.",
+  "payment_mode_question": "💳 ¿Cómo se pagará este árbol?",
+  "payment_mode_centralized": "🏦 Centralizado — una persona paga por todos",
+  "payment_mode_individual": "👥 Individual — cada miembro paga su parte",
+  "payment_mode_centralized_selected": "✅ Modo centralizado. El creador del grupo configurará el método de pago.",
+  "payment_mode_individual_selected": "✅ Modo individual. Cada miembro recibirá su factura al unirse.",
   "onboarding_complete": "🌳 **¡Árbol completamente configurado!**\n\nA partir de ahora, adaptaré mis respuestas al perfil de tu organización. Si necesitas cambiar algo, un admin puede usar /objetivos.",
   "welcome_group": "🏕️ **¡Hola! Soy Ari, el asistente de Trust Maker.**\n\n*Estamos en fase beta con acceso limitado — máximo 15 grupos en total, 2 por persona.*\n\nEstoy aquí para ayudar a tu comunidad a identificar necesidades, priorizarlas y resolverlas con inteligencia artificial.\n\n**🧠 ¿Qué puedo hacer?**\n• Registrar necesidades del grupo\n• Priorizarlas con votación anónima (encuesta nativa de Telegram)\n• Asignar las mejores IAs para resolver cada necesidad\n• Evaluar resultados y aprender de la comunidad\n\n**🗳️ Sistema de votación (anónimo):**\n• 👍 *Baja* — 1 punto — la necesidad es poco urgente\n• ❤️ *Media* — 2 puntos — importante, pero no crítica\n• ⭐ *Alta* — 3 puntos — urgente, necesita atención inmediata\n\nLas necesidades con más puntos suben al podio y son resueltas primero.\n\n**💰 Costo transparente:**\nEl costo del árbol (grupo) se divide en partes iguales entre todos los miembros activos.\nLos primeros 2 meses son gratis para nuevos usuarios.\nPregúntame \"¿cuánto cuesta?\" para ver el desglose completo.\n\n**🚀 Para empezar:**\nEnvía un mensaje mencionándome (@TrustMakerBot) con tu necesidad o idea.\nEjemplo: *\"@TrustMakerBot necesito que alguien rediseñe el logo del grupo\"*\n\n¡Estoy aquí para servirles! 🌟"
 }
