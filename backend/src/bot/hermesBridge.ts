@@ -971,7 +971,7 @@ const timeoutId = setTimeout(() => controller.abort(), 420_000); // 7 min — co
  */
 export async function routeToHermes(
   message: string,
-  treeId: string,
+  treeId: string | null,
   userId: string,
   chatHistory?: ChatMessage[],
   displayName?: string,
@@ -1025,7 +1025,27 @@ export async function routeToHermes(
   const API_SERVER_KEY = process.env.HERMES_API_SERVER_KEY ?? "";
 
   // ── Build system prompt with tree context from DB ─────────────────────
-  const systemPrompt = await buildSystemPrompt(prisma, treeId, userId, displayName);
+  let systemPrompt: string;
+  if (treeId) {
+    systemPrompt = await buildSystemPrompt(prisma, treeId, userId, displayName);
+  } else {
+    const name = displayName || userId;
+    systemPrompt = [
+      "You are Ari, the assistant of Trust Maker — currently in support mode.",
+      "",
+      "ABSOLUTE IDENTITY RULES (never break these):",
+      "- Your name is Ari. You are the AI assistant for Trust Maker.",
+      "- NEVER say you are Hermes Agent, Claude, GPT, or any other AI name.",
+      "- If asked who you are, say: I am Ari, the assistant of Trust Maker.",
+      "- You speak Spanish by default. Respond in Spanish unless asked otherwise.",
+      "- You are helpful, warm, and community-oriented.",
+      "- You are answering a direct support question from a Trust Maker user.",
+      "- You cannot execute commands or access sandboxes — answer from your knowledge.",
+      "",
+      `Current user: ${name}`,
+      "Address this user by their name when responding. Never use internal IDs.",
+    ].join("\n");
+  }
 
   // ── Build messages array ──────────────────────────────────────────────
   const messages: ChatMessage[] = [
@@ -1045,7 +1065,7 @@ export async function routeToHermes(
 
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
-    "X-Hermes-Session-Key": `tree-agent-${treeId}`,
+    "X-Hermes-Session-Key": treeId ? `tree-agent-${treeId}` : `tree-agent-support-${userId}`,
   };
   if (API_SERVER_KEY) {
     headers["Authorization"] = `Bearer ${API_SERVER_KEY}`;
@@ -1148,14 +1168,14 @@ export async function routeToHermes(
 
     console.log(`[hermesBridge] Response: ${accumulatedContent.length} chars`);
     // Increment task counter for skill auto-evaluation
-    taskCounters.set(treeId, (taskCounters.get(treeId) ?? 0) + 1);
+    if (treeId) taskCounters.set(treeId, (taskCounters.get(treeId) ?? 0) + 1);
     return { text: accumulatedContent };
   } catch (err) {
     clearTimeout(timeoutId);
     // If we accumulated partial content before the error, return it
     if (accumulatedContent) {
       console.warn(`[hermesBridge] Stream interrupted, returning ${accumulatedContent.length} partial chars`);
-      taskCounters.set(treeId, (taskCounters.get(treeId) ?? 0) + 1);
+      if (treeId) taskCounters.set(treeId, (taskCounters.get(treeId) ?? 0) + 1);
       return { text: accumulatedContent };
     }
     if (err instanceof Error && err.name === "AbortError") {

@@ -2,6 +2,8 @@ import { Bot, InlineKeyboard } from "grammy";
 import { PrismaClient } from "@prisma/client";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import { routeToHermes } from "./hermesBridge";
+import { useTurn } from "../services/supportSessionService";
 
 // ── Onboarding session state ──────────────────────────────────────────────
 
@@ -448,14 +450,69 @@ export async function initTrustManagerBot(
 
     if (!supportModeUsers.has(uid)) return;
 
-    await ctx.reply(
-      "📞 *Tu mensaje ha sido recibido*\n\n" +
-        "Gracias por escribirnos. Actualmente el modo conversacional " +
-        "está en fase de activación y pronto podremos responder tus consultas " +
-        "en tiempo real.\n\n" +
-        "Para salir del modo conversacional, usa /salir.",
-      { parse_mode: "Markdown" }
-    );
+    // ── Consumir turno ──────────────────────────────────────────────────
+    const remaining = useTurn(uid);
+    if (remaining <= 0) {
+      await ctx.reply(
+        "⏳ Has alcanzado el límite de 30 turnos este mes. " +
+          "Tu límite se renovará el primer día del mes siguiente.",
+        { parse_mode: "Markdown" }
+      );
+      return;
+    }
+
+    // ── Mostrar indicador de escritura ──────────────────────────────────
+    const typingInterval = setInterval(() => {
+      ctx.replyWithChatAction("typing").catch(() => {});
+    }, 4000);
+    ctx.replyWithChatAction("typing").catch(() => {});
+
+    try {
+      const displayName =
+        tgUser.first_name || tgUser.username || uid;
+
+      // treeId=null: support mode no está ligado a un árbol específico
+      const response = await routeToHermes(
+        ctx.message.text,
+        null,             // treeId
+        uid,
+        undefined,        // chatHistory
+        displayName,
+        // NO chatId ni messageId (no es conversación de grupo)
+      );
+
+      if (!response) {
+        await ctx.reply(
+          "⚠️ El agente no está disponible en este momento. Intenta de nuevo más tarde.",
+          { parse_mode: "Markdown" }
+        );
+        return;
+      }
+
+      if (response.saturationMessage) {
+        await ctx.reply(response.saturationMessage, { parse_mode: "Markdown" });
+        return;
+      }
+
+      if (response.queued) {
+        await ctx.reply(
+          `🔄 TrustManager está procesando otro mensaje. Estás en la posición ${response.queuePosition} de la cola.`,
+          { parse_mode: "Markdown" }
+        );
+        return;
+      }
+
+      if (response.text) {
+        await ctx.reply(response.text, { parse_mode: "Markdown" });
+      }
+    } catch (err: any) {
+      console.error("[TrustManagerBot] Error en supportMode:", err?.message || err);
+      await ctx.reply(
+        "⚠️ Ocurrió un error al procesar tu consulta. Por favor, inténtalo de nuevo."
+      );
+    } finally {
+      clearInterval(typingInterval);
+    }
   });
 
   // ── Iniciar polling ─────────────────────────────────────────────────────

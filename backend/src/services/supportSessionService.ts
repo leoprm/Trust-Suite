@@ -15,7 +15,7 @@ interface SessionStore {
 
 // ── Config ──────────────────────────────────────────────────────────────────
 
-const MAX_TURNS_PER_MONTH = 20;
+const MAX_TURNS_PER_MONTH = 30;
 const DATA_DIR = path.resolve(__dirname, "../../data");
 const DATA_FILE = path.join(DATA_DIR, "supportSessions.json");
 
