@@ -30,6 +30,7 @@ import { detectNaturalAddIntent } from "./todoNaturalAdd";
 import { summarizeTodo } from "./formatters";
 import { checkMemberLimit, shouldRejectInvite, isTreeBlocked } from "./antiDdos";
 import { syncAllMembers } from "./telegramClient";
+import { appendToDailyLog } from "../lib/dailyLog";
 
 // ── IPv4 fetch wrapper: undici (Node fetch) no respeta dns.setDefaultResultOrder ──
 // para api.telegram.org. Usamos https.get con family:4 como fallback.
@@ -1912,6 +1913,21 @@ export async function createBot(prisma: PrismaClient): Promise<Bot<BotContext> |
         // TTS: only for voice messages (text → no audio)
       }
     }
+
+    // ── Daily conversation log ───────────────────────────────────────
+    if (chatId && chatType !== "private") {
+      try {
+        const logTree = await findTreeByChat(prisma, chatId);
+        if (logTree) {
+          appendToDailyLog(
+            logTree.id,
+            new Date(msg.date * 1000),
+            ctx.from?.first_name || "Unknown",
+            msg.text,
+          );
+        }
+      } catch { /* silent — dailyLog is best-effort */ }
+    }
   });
 
   // ── Mensajes de voz: transcribir + detectar interpelación ──────────────
@@ -1995,6 +2011,22 @@ export async function createBot(prisma: PrismaClient): Promise<Bot<BotContext> |
       const data = (await transcribeResp.json()) as any;
       const transcribedText: string = data?.text ?? "";
       if (!transcribedText.trim()) return;
+
+      // ── Daily conversation log (audio) ──────────────────────────
+      if (chatId) {
+        try {
+          const logVoiceTree = await findTreeByChat(prisma, chatId);
+          if (logVoiceTree) {
+            appendToDailyLog(
+              logVoiceTree.id,
+              new Date(msg.date * 1000),
+              ctx.from?.first_name || "Unknown",
+              transcribedText.trim(),
+              true,
+            );
+          }
+        } catch { /* silent — dailyLog is best-effort */ }
+      }
 
       // 3. Solo responder si el audio menciona a Ari.
       //    "Ari" es corto y la transcripción lo captura bien con variaciones mínimas.
