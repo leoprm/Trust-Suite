@@ -94,6 +94,7 @@ import structureRoutes from './routes/structureRoutes';
 import investmentRoutes from './routes/investmentRoutes';
 // Note: roleRoutes is registered inline below to avoid circular dependency with eventLogService
 import { createBot } from './bot/index';
+import { initTrustManagerBot } from './bot/trustManagerBot';
 import { startScheduler } from './bot/scheduler';
 import { initDisputeService } from './services/telegramBotService';
 import { stripeWebhook, paddleWebhook, createCheckout, cancelSubscription, currentCost, mySubscription } from './controllers/billingController';
@@ -111,9 +112,11 @@ export const prisma = new PrismaClient();
 // Returns null gracefully when TELEGRAM_BOT_TOKEN is not configured.
 let telegramBot: ReturnType<typeof createBot> extends Promise<infer T> ? T : never = null as any;
 export { telegramBot }; // exported for satisfaction poll trigger
+let trustManagerBot: any = null;
 
 (async () => {
   telegramBot = await createBot(prisma);
+  trustManagerBot = await initTrustManagerBot(prisma);
 
   // ── Initialize dispute broadcast service ──────────────────────────────────────
   initDisputeService(prisma, telegramBot);
