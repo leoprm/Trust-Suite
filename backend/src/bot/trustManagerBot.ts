@@ -101,7 +101,7 @@ function mainMenuKeyboard(): InlineKeyboard {
 }
 
 /**
- * Inicializa @TrustManagerBot — el bot público de descubrimiento de árboles.
+ * Inicializa @AriTrustManagerBot — el bot público de descubrimiento de árboles.
  * Usa TRUST_MANAGER_BOT_TOKEN del .env (token distinto a @TrustMakerBot).
  * Convive con @TrustMakerBot sin conflicto: otra instancia de Bot, otro token.
  */
@@ -130,7 +130,7 @@ export async function initTrustManagerBot(
         "🌳 ¡Bienvenido a Trust Manager!\n\n" +
           "Soy el bot público de Trust Maker. Puedo ayudarte a descubrir " +
           "y unirte a árboles públicos.\n\n" +
-          "Si alguien te compartió un enlace como t.me/TrustManagerBot?start=ID_DEL_ARBOL, " +
+          "Si alguien te compartió un enlace como t.me/AriTrustManagerBot?start=ID_DEL_ARBOL, " +
           "úsalo para que te guíe en el proceso de unirte.\n\n" +
           "Selecciona una opción:",
         { reply_markup: mainMenuKeyboard() }
@@ -170,7 +170,7 @@ export async function initTrustManagerBot(
         const alreadyMember = await isAlreadyMember(prisma, userId, treeId);
         if (alreadyMember) {
           await ctx.reply(
-            `🌳 Ya eres miembro de *${tree.name}*. Para manejar tu cuenta o cualquier duda, habla con @TrustManagerBot.`,
+            `🌳 Ya eres miembro de *${tree.name}*. Para manejar tu cuenta o cualquier duda, habla con @AriTrustManagerBot.`,
             { parse_mode: "Markdown" }
           );
           return;
@@ -249,7 +249,7 @@ export async function initTrustManagerBot(
       if (memberships.length === 0) {
         await ctx.reply(
           "🌳 No eres miembro de ningún árbol aún.\n\n" +
-            "¡Únete a uno usando un enlace de invitación como t.me/TrustManagerBot?start=ID_DEL_ARBOL!"
+            "¡Únete a uno usando un enlace de invitación como t.me/AriTrustManagerBot?start=ID_DEL_ARBOL!"
         );
         return;
       }
@@ -406,7 +406,7 @@ export async function initTrustManagerBot(
       if (existing) {
         onboardingSessions.delete(tgUserId);
         await ctx.editMessageText(
-          `🌳 Ya eres miembro de *${treeName}*. Para manejar tu cuenta o cualquier duda, habla con @TrustManagerBot.`,
+          `🌳 Ya eres miembro de *${treeName}*. Para manejar tu cuenta o cualquier duda, habla con @AriTrustManagerBot.`,
           { parse_mode: "Markdown" }
         );
         await ctx.answerCallbackQuery();
@@ -427,7 +427,7 @@ export async function initTrustManagerBot(
 
       await ctx.editMessageText(
         `✅ ¡Listo! Ya eres miembro de *${treeName}*.\n\n` +
-          `Para manejar tu cuenta o cualquier duda, habla con @TrustManagerBot.`,
+          `Para manejar tu cuenta o cualquier duda, habla con @AriTrustManagerBot.`,
         { parse_mode: "Markdown" }
       );
     } catch (err: any) {

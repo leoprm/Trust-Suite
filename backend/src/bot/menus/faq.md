@@ -1,13 +1,13 @@
 # Preguntas Frecuentes — Trust Maker
 
 ### ¿Cómo cambio mi método de pago?
-Escribe a @TrustManagerBot y selecciona "Gestionar método de pago".
+Escribe a @AriTrustManagerBot y selecciona "Gestionar método de pago".
 
 ### ¿Cómo invito a alguien a mi árbol?
 Comparte el enlace de invitación: pide a Ari en el grupo que lo genere.
 
 ### ¿Cómo reporto un problema?
-Selecciona "Hablar con TrustManager" en @TrustManagerBot.
+Selecciona "Hablar con TrustManager" en @AriTrustManagerBot.
 
 ### ¿Cuánto cuesta Trust Maker?
 Por ahora es gratuito. En el futuro habrá planes de suscripción opcionales.
