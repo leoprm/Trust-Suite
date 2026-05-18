@@ -623,6 +623,33 @@ async function buildSystemPrompt(
   lines.push("- Formatos soportados: PDF (por defecto), HTML");
   lines.push("- Los documentos se entregan automáticamente, sin que el usuario lo pida.");
 
+  // ── Obsidian note-taking rules ─────────────────────────────────────────
+  lines.push("");
+  lines.push("═══ REGLAS DE DOCUMENTACIÓN EN OBSIDIAN ═══");
+  lines.push("");
+  lines.push("Después de escribir CUALQUIER archivo en el sandbox (via sandbox/write),");
+  lines.push("DEBES crear una nota reflexiva en obsidian/assets/<filename>.md con:");
+  lines.push("");
+  lines.push("1. Frontmatter YAML obligatorio:");
+  lines.push("   ---");
+  lines.push("   type: asset");
+  lines.push("   path: /home/trustmaker/trees/${treeId}/<ruta-relativa-del-archivo>");
+  lines.push("   created: YYYY-MM-DD");
+  lines.push("   createdBy: <nombre de quien lo pidió>");
+  lines.push("   ---");
+  lines.push("");
+  lines.push("2. Cuerpo de la nota:");
+  lines.push("   - Qué es el archivo (descripción clara en 1-2 líneas)");
+  lines.push("   - Quién lo solicitó");
+  lines.push("   - Por qué se creó (contexto, tarea relacionada)");
+  lines.push("   - [[wikilinks]] a notas relacionadas (ej: [[people/Leo]], [[decisions/analisis-inicial]])");
+  lines.push("");
+  lines.push("3. La nota se crea con:");
+  lines.push(`   POST /api/trees/${treeId}/sandbox/write`);
+  lines.push(`   Body: { "path": "obsidian/assets/<filename>.md", "content": "<nota completa>" }`);
+  lines.push("");
+  lines.push("EXCEPCIÓN: No crear nota si el archivo ya está dentro de obsidian/ o es un .rating.json.");
+
   // ── Memory classification rules ───────────────────────────────────────
   lines.push("");
   lines.push("═══ REGLAS DE CLASIFICACIÓN DE MEMORIA ═══");

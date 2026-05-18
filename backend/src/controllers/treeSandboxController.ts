@@ -346,7 +346,13 @@ export const writeTreeSandbox = async (req: Request, res: Response) => {
       source: 'SYSTEM',
     });
 
-    res.status(201).json({ path: requestedPath, size: Buffer.byteLength(content, 'utf-8') });
+    res.status(201).json({
+      path: requestedPath,
+      size: Buffer.byteLength(content, 'utf-8'),
+      ...(requestedPath.startsWith('obsidian/') || requestedPath.endsWith('.rating.json')
+        ? {}
+        : { _auto_note: 'ESCRIBE_NOTA_OBSIDIAN' }),
+    });
   } catch (error: any) {
     console.error('[writeTreeSandbox] ERROR:', error?.message || error);
     res.status(500).json({ error: 'File write failed', detail: error?.message });
