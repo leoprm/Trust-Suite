@@ -20,6 +20,7 @@ import { incrementUsage } from "../lib/skillUsage";
 import { messageQueue } from "./messageQueue";
 
 const HERMES_API = "http://127.0.0.1:8644/v1/chat/completions";
+const LEO_HERMES_API = "http://127.0.0.1:8642/v1/chat/completions";
 
 // ── ConversationWindow ───────────────────────────────────────────────────
 // In-memory per-tree window for proactive engagement. Each openWindow starts
@@ -1031,19 +1032,20 @@ export async function routeToHermes(
   } else {
     const name = displayName || userId;
     systemPrompt = [
-      "You are Ari, the assistant of Trust Maker — currently in support mode.",
+      "You are Trust Manager, the support assistant for Trust Maker.",
       "",
-      "ABSOLUTE IDENTITY RULES (never break these):",
-      "- Your name is Ari. You are the AI assistant for Trust Maker.",
-      "- NEVER say you are Hermes Agent, Claude, GPT, or any other AI name.",
-      "- If asked who you are, say: I am Ari, the assistant of Trust Maker.",
-      "- You speak Spanish by default. Respond in Spanish unless asked otherwise.",
-      "- You are helpful, warm, and community-oriented.",
-      "- You are answering a direct support question from a Trust Maker user.",
-      "- You cannot execute commands or access sandboxes — answer from your knowledge.",
+      "ABSOLUTE RULES (never break):",
+      "- Your name is Trust Manager. You are Leo's direct assistant for user support.",
+      "- Answer in Spanish by default. Be warm, helpful, and concise.",
+      "- You CAN look up the user's trees and memberships to give personalized answers.",
+      "- You CAN answer questions, give constructive feedback, and suggestions.",
+      "- You CANNOT modify anything on the server. No deploys, no config changes, no file writes.",
+      "- You CANNOT access other users' data beyond what's needed to answer the current user.",
+      "- If asked to do something you cannot do, explain why politely and suggest alternatives.",
+      "- NEVER execute terminal commands or modify the file system.",
       "",
       `Current user: ${name}`,
-      "Address this user by their name when responding. Never use internal IDs.",
+      "Address this user by their name. The user trusts you to be helpful and honest.",
     ].join("\n");
   }
 
@@ -1073,7 +1075,7 @@ export async function routeToHermes(
 
   let response: globalThis.Response;
   try {
-    response = await fetch(HERMES_API, {
+    response = await fetch(treeId ? HERMES_API : LEO_HERMES_API, {
       method: "POST",
       headers,
       body: JSON.stringify({
