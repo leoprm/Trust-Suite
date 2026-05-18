@@ -43,17 +43,37 @@ let memberUserId: string;
 let member2UserId: string;
 const taskId = `t_e2e_v4_${Date.now()}`;
 
-async function discoverTreeAndMembers(sysAuth: Record<string, string>) {
-  const trees = await fetchJSON(`${BASE}/api/trees`, { headers: sysAuth });
-  if (!trees?.length) throw new Error('No trees found — is the backend running on :3100?');
-  const tree = trees[0];
-  treeId = tree.id;
-  console.log(`   Tree: ${tree.id} (${tree.name})`);
+async function createTestTreeAndMembers(sysAuth: Record<string, string>) {
+  const inviteUserIds = [
+    '08e75fbf-4a4b-4b80-8362-b96c60bacad7', // Hermes-Nestor
+    '09667281-c65a-464c-b895-6e21116964bb', // biginttester
+  ];
 
-  const members = await fetchJSON(`${BASE}/api/trees/${tree.id}/members`, { headers: sysAuth });
-  if (!members?.length) throw new Error(`Tree ${tree.id} has no members`);
-  memberUserId = members[0].user?.id || members[0].userId;
-  member2UserId = members.length > 1 ? (members[1].user?.id || members[1].userId) : memberUserId;
+  console.log('   Creating test tree with 2 invited members...');
+  const response = await fetchJSON(`${BASE}/api/trees`, {
+    method: 'POST',
+    headers: sysAuth,
+    body: JSON.stringify({
+      name: `E2E Test ${Date.now()}`,
+      inviteUserIds,
+    }),
+  });
+
+  const createdTree = response.tree || response;
+  treeId = createdTree.id;
+  console.log(`   Tree: ${treeId} (${createdTree.name})`);
+
+  const members = await fetchJSON(`${BASE}/api/trees/${treeId}/members`, { headers: sysAuth });
+  if (!members?.length) throw new Error(`Tree ${treeId} has no members`);
+
+  // Skip the creator (ari), pick the 2 invited members
+  const nonCreator = members.filter((m: any) => {
+    const uid = m.user?.id || m.userId;
+    return uid !== 'ari';
+  });
+  if (nonCreator.length < 2) throw new Error(`Expected 2 invited members, got ${nonCreator.length}`);
+  memberUserId = nonCreator[0].user?.id || nonCreator[0].userId;
+  member2UserId = nonCreator[1].user?.id || nonCreator[1].userId;
   console.log(`   Member1: ${memberUserId} | Member2: ${member2UserId}`);
 }
 
@@ -67,9 +87,9 @@ async function main() {
   const sysAuth = { Authorization: `Bearer ${systemToken}` };
   const apiKeyAuth = { Authorization: `Bearer ${API_KEY}` };
 
-  // 0. Discover
-  console.log('0. Discovering tree + members...');
-  await discoverTreeAndMembers(sysAuth);
+  // 0. Create test tree + members
+  console.log('0. Creating test tree + members...');
+  await createTestTreeAndMembers(sysAuth);
   console.log('');
 
   // ── Scenario A: Register candidates ─────────────────────────────────────────
@@ -229,6 +249,14 @@ async function main() {
   const enPollExt = t('v1.poll_option_external_budget', 'en', { budget: 5000, currency: 'CLP' });
   console.log(`   v1.poll_option_external_budget [en]: "${enPollExt}"`);
   if (!enPollExt.includes('$5000')) throw new Error('v1.poll_option_external_budget en missing interpolation');
+
+  // ── Cleanup ──────────────────────────────────────────────────────────────────
+  console.log('\n🧹 Cleaning up...');
+  await fetchJSON(`${BASE}/api/trees/${treeId}`, {
+    method: 'DELETE',
+    headers: sysAuth,
+  });
+  console.log(`   ✓ Tree ${treeId} deleted`);
 
   console.log('\n═══ ALL TESTS PASSED ═══');
 }
