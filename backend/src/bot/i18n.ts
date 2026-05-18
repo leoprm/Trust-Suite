@@ -2,13 +2,13 @@ import path from 'path';
 import i18next from 'i18next';
 import Backend from 'i18next-fs-backend';
 
-// ── Module-level singleton ──────────────────────────────────────────────
+// Module-level singleton
 let initialized = false;
 
 /**
  * Initialize i18next with filesystem backend.
  * Must be called once before any t() calls.
- * Idempotent — subsequent calls are no-ops.
+ * Idempotent - subsequent calls are no-ops.
  */
 export async function initI18n(): Promise<void> {
   if (initialized) return;
@@ -45,7 +45,7 @@ const KNOWN_NS = new Set(['common', 'onboarding', 'tree', 'needs', 'voting', 'er
 export function t(key: string, lng?: string, vars?: Record<string, unknown>): string {
   if (!initialized) return key;
 
-  // Split "namespace:key" or "namespace.key" → resolve ns + real key
+  // Split "namespace:key" or "namespace.key" -> resolve ns + real key
   const sep = key.includes(':') ? ':' : '.';
   const sepIdx = key.indexOf(sep);
   const [ns, realKey] =
@@ -65,7 +65,7 @@ export function t(key: string, lng?: string, vars?: Record<string, unknown>): st
  */
 export function getSupportedLanguages(): Array<{ code: string; name: string; flag: string }> {
   return [
-    { code: 'es', name: 'Español',   flag: '\ud83c\uddf2\ud83c\uddfd' },  // 🇲🇽
-    { code: 'en', name: 'English',    flag: '\ud83c\uddfa\ud83c\uddf8' },  // 🇺🇸
+    { code: 'es', name: 'Espanol', flag: '\ud83c\uddf2\ud83c\uddfd' },
+    { code: 'en', name: 'English', flag: '\ud83c\uddfa\ud83c\uddf8' },
   ];
 }

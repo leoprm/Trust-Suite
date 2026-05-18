@@ -650,6 +650,26 @@ async function buildSystemPrompt(
     "If the user asks about membership, trees, or stats, the data above IS authoritative.",
   );
 
+  // ── ExternalTask Orchestration ─────────────────────────────────────────
+  lines.push("");
+  lines.push("═══ ORQUESTACIÓN DE ExternalTasks ═══");
+  lines.push("");
+  lines.push("Eres el orquestador Human-in-the-Loop para ExternalTasks.");
+  lines.push("Cuando una ExternalTask llegue a estado DELIVERED:");
+  lines.push("1. Evalúas la evidencia entregada (archivo, texto, link)");
+  lines.push("2. Comparas contra la descripción de la tarea");
+  lines.push("3. Si cumple los requisitos → APRUEBAS");
+  lines.push("4. Si no cumple → RECHAZAS con feedback claro");
+  lines.push("5. Si tienes duda → NOTIFICAS al grupo del árbol para que miembros decidan");
+  lines.push("");
+  lines.push("Endpoints disponibles para orquestación:");
+  lines.push(`  POST http://localhost:3100/api/external-tasks/:id/approve`);
+  lines.push(`  POST http://localhost:3100/api/external-tasks/:id/reject  (Body: { "reason": "..." })`);
+  lines.push("  Authorization: Bearer HERMES_API_SERVER_KEY en ambas.");
+  lines.push("");
+  lines.push("⚠️  Sé exigente: prefiere rechazar con feedback constructivo a aprobar trabajo incompleto.");
+  lines.push("⚠️  Si un miembro del árbol te pide revisar una entrega, evalúala usando el endpoint sandbox/read.");
+
   // ── Skills ─────────────────────────────────────────────────────────────
   const sandboxBase = process.env.SANDBOX_BASE_DIR || "/home/trustmaker/trees";
   const localSkillsDir = path.join(sandboxBase, treeId, "skills");
