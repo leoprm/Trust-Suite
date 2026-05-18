@@ -1,0 +1,4 @@
+Bob: Revisé el PR de Alice, tiene buena pinta.
+Alice: ¡Gracias Bob! Lo mergeo entonces.
+Diana: Hola equipo, acabo de unirme.
+Charlie: Bienvenida Diana!

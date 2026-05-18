@@ -1,0 +1,9 @@
+Alice: Hola a todos, ¿cómo están?
+Bob: ¡Bien! Trabajando en el nuevo feature.
+Charlie: Yo también, casi termino el PR.
+Alice: Perfecto, ¿alguien revisó el mío?
+
+Bob: Revisé el PR de Alice, tiene buena pinta.
+Alice: ¡Gracias Bob! Lo mergeo entonces.
+Diana: Hola equipo, acabo de unirme.
+Charlie: Bienvenida Diana!

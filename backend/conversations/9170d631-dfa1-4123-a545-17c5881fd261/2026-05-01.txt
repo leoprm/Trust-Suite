@@ -1,0 +1,4 @@
+Alice: Hola a todos, ¿cómo están?
+Bob: ¡Bien! Trabajando en el nuevo feature.
+Charlie: Yo también, casi termino el PR.
+Alice: Perfecto, ¿alguien revisó el mío?

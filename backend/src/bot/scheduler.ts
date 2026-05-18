@@ -5,6 +5,8 @@
  * También expone triggerDailyClose() para testing manual.
  */
 
+import fs from "fs";
+import path from "path";
 import cron from "node-cron";
 import type { ScheduledTask } from "node-cron";
 import { PrismaClient } from "@prisma/client";
@@ -61,6 +63,34 @@ async function findCurrentAgent(
   });
 }
 
+/**
+ * Elimina archivos .txt en conversations/<treeId>/ con más de 90 días.
+ */
+async function cleanupOldConversations(): Promise<void> {
+  const conversationsDir = path.join(process.cwd(), "conversations");
+  if (!fs.existsSync(conversationsDir)) return;
+
+  const now = Date.now();
+  const MAX_AGE = 90 * 24 * 60 * 60 * 1000; // 90 días en ms
+
+  const treeDirs = fs.readdirSync(conversationsDir);
+  for (const treeId of treeDirs) {
+    const treeDir = path.join(conversationsDir, treeId);
+    if (!fs.statSync(treeDir).isDirectory()) continue;
+
+    const files = fs.readdirSync(treeDir);
+    for (const file of files) {
+      if (!file.endsWith(".txt")) continue;
+      const filePath = path.join(treeDir, file);
+      const stat = fs.statSync(filePath);
+      if (now - stat.mtimeMs > MAX_AGE) {
+        fs.unlinkSync(filePath);
+        console.log(`[Cleanup] Deleted old conversation: ${filePath}`);
+      }
+    }
+  }
+}
+
 // ── Tareas programadas ─────────────────────────────────────────────────────────
 
 let midnightTask: ScheduledTask | null = null;
@@ -73,6 +103,7 @@ let skillPricingTask: ScheduledTask | null = null;
 let talentMigrationTask: ScheduledTask | null = null;
 let healthCheckTask: ScheduledTask | null = null;
 let proposalResolverTask: ScheduledTask | null = null;
+let cleanupConversationsTask: ScheduledTask | null = null;
 let kanbanWatchdogInterval: NodeJS.Timeout | null = null;
 
 /**
@@ -194,6 +225,17 @@ export function startScheduler(
   });
   console.log("[Scheduler] 🔍 SSH Health Check programado cada 15 minutos");
 
+  // ── Cron: 0 4 * * * (4 AM diario) — Limpieza de conversaciones >90 días ──
+  cleanupConversationsTask = cron.schedule("0 4 * * *", async () => {
+    console.log("[Scheduler] 🧹 Limpieza de conversaciones antiguas iniciada…");
+    try {
+      await cleanupOldConversations();
+    } catch (err) {
+      console.error("[Scheduler] Error en limpieza de conversaciones:", err);
+    }
+  });
+  console.log("[Scheduler] 🧹 Limpieza de conversaciones programada a las 04:00 (diario)");
+
   // DISABLED: modelo proposal eliminado en simplificación v4.
   // proposalResolverTask = cron.schedule("*/2 * * * *", async () => {
   //   try {
@@ -236,7 +278,7 @@ export async function triggerDailyClose(
  */
 export function stopScheduler(): void {
   let stopped = false;
-  for (const task of [midnightTask, decayTask, rotationTask, autoScaleTask, monthlyFeeTask, disputeResolutionTask, skillPricingTask, talentMigrationTask, healthCheckTask, proposalResolverTask]) {
+  for (const task of [midnightTask, decayTask, rotationTask, autoScaleTask, monthlyFeeTask, disputeResolutionTask, skillPricingTask, talentMigrationTask, healthCheckTask, proposalResolverTask, cleanupConversationsTask]) {
     if (task) {
       task.stop();
       stopped = true;
@@ -253,6 +295,7 @@ export function stopScheduler(): void {
   talentMigrationTask = null;
   healthCheckTask = null;
   proposalResolverTask = null;
+  cleanupConversationsTask = null;
   kanbanWatchdogInterval = null;
   if (stopped) {
     console.log("[Scheduler] ⏹️ Todos los schedulers detenidos.");
