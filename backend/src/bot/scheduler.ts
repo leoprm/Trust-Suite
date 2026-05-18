@@ -68,21 +68,22 @@ async function findCurrentAgent(
  * Elimina archivos .txt en conversations/<treeId>/ con más de 90 días.
  */
 async function cleanupOldConversations(): Promise<void> {
-  const conversationsDir = path.join(process.cwd(), "conversations");
-  if (!fs.existsSync(conversationsDir)) return;
+  const sandboxBase = process.env.SANDBOX_BASE_DIR || "/home/trustmaker/trees";
+  if (!fs.existsSync(sandboxBase)) return;
 
   const now = Date.now();
   const MAX_AGE = 90 * 24 * 60 * 60 * 1000; // 90 días en ms
 
-  const treeDirs = fs.readdirSync(conversationsDir);
+  const treeDirs = fs.readdirSync(sandboxBase);
   for (const treeId of treeDirs) {
-    const treeDir = path.join(conversationsDir, treeId);
-    if (!fs.statSync(treeDir).isDirectory()) continue;
+    const conversationsDir = path.join(sandboxBase, treeId, "conversations");
+    if (!fs.existsSync(conversationsDir)) continue;
+    if (!fs.statSync(conversationsDir).isDirectory()) continue;
 
-    const files = fs.readdirSync(treeDir);
+    const files = fs.readdirSync(conversationsDir);
     for (const file of files) {
       if (!file.endsWith(".txt")) continue;
-      const filePath = path.join(treeDir, file);
+      const filePath = path.join(conversationsDir, file);
       const stat = fs.statSync(filePath);
       if (now - stat.mtimeMs > MAX_AGE) {
         fs.unlinkSync(filePath);

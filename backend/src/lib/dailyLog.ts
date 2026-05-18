@@ -10,7 +10,8 @@ export function appendToDailyLog(
 ): void {
   const dateStr = timestamp.toISOString().slice(0, 10); // YYYY-MM-DD
   const timeStr = timestamp.toTimeString().slice(0, 5); // HH:MM
-  const dir = path.join("conversations", treeId);
+  const sandboxBase = process.env.SANDBOX_BASE_DIR || "/home/trustmaker/trees";
+  const dir = path.join(sandboxBase, treeId, "conversations");
   fs.mkdirSync(dir, { recursive: true });
   const filePath = path.join(dir, `${dateStr}.txt`);
   const prefix = isAudio ? "[🎤 audio]" : "";

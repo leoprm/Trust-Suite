@@ -159,7 +159,7 @@ async function processTree(
   }
 
   // ── 2. Read the concatenated file ─────────────────────────────────────────
-  const fullPath = path.resolve(process.cwd(), concat.path);
+  const fullPath = concat.path; // absolute path from sandbox
   let conversationText: string;
   try {
     conversationText = fs.readFileSync(fullPath, "utf-8");

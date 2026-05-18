@@ -42,9 +42,11 @@ def _extract_users(content: str) -> list[str]:
     return sorted(users) if users else ["unknown"]
 
 
+SANDBOX_BASE = os.environ.get("SANDBOX_BASE_DIR", "/home/trustmaker/trees")
+
+
 def concat_month(tree_id: str, year_month: str) -> dict[str, Any]:
-    root = _resolve_root()
-    conv_dir = root / "conversations" / tree_id
+    conv_dir = Path(SANDBOX_BASE) / tree_id / "conversations"
 
     # -- Validate tree directory -------------------------------------------
     if not conv_dir.is_dir():
@@ -84,10 +86,8 @@ def concat_month(tree_id: str, year_month: str) -> dict[str, Any]:
     out_path = monthly_dir / f"{year_month}.txt"
     out_path.write_text(combined, encoding="utf-8")
 
-    relative_out = str(out_path.relative_to(root))
-
     return {
-        "path": relative_out,
+        "path": str(out_path),
         "total_messages": total_messages,
         "total_chars": total_chars,
         "unique_users": unique_users,
