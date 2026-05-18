@@ -26,6 +26,7 @@ import { updateSkillPricing } from "../cron/skillPricingCron";
 import { runTalentMigration } from "../cron/talentMigrationCron";
 import { runHealthCheck } from "../cron/healthCheckCron";
 import { runProposalResolver } from "../cron/proposalResolverCron";
+import { runExternalTaskOrchestrator } from "../cron/externalTaskOrchestratorCron";
 import { nightlyScan } from "../services/skillEvolution";
 import { prisma } from "../index";
 
@@ -117,6 +118,7 @@ let cleanupConversationsTask: ScheduledTask | null = null;
 let monthlyRetroTask: ScheduledTask | null = null;
 let monthlyRetroLastDayTask: ScheduledTask | null = null;
 let skillEvolutionTask: ScheduledTask | null = null;
+let externalTaskOrchestratorTask: ScheduledTask | null = null;
 let kanbanWatchdogInterval: NodeJS.Timeout | null = null;
 
 /**
@@ -261,6 +263,17 @@ export function startScheduler(
   });
   console.log("[Scheduler] 🧹 Limpieza de conversaciones programada a las 04:00 (diario)");
 
+  // ── Cron: */5 * * * * (cada 5 min) — ExternalTask Orchestrator ──
+  externalTaskOrchestratorTask = cron.schedule("*/5 * * * *", async () => {
+    try {
+      const result = await runExternalTaskOrchestrator(prismaClient, bot);
+      // Only log when there's actual work done (silent otherwise)
+    } catch (err) {
+      console.error("[Scheduler] Error en ExternalTask Orchestrator:", err);
+    }
+  });
+  console.log("[Scheduler] 📋 ExternalTask Orchestrator programado cada 5 minutos");
+
   // ── Cron: 0 1 1 * * (día 1 de cada mes a la 01:00) — Retrospectiva mensual con Ari ──
   monthlyRetroTask = cron.schedule("0 1 1 * *", async () => {
     console.log("[Scheduler] 📊 Día 1 del mes — ejecutando retrospectiva mensual…");
@@ -335,7 +348,7 @@ export async function triggerDailyClose(
  */
 export function stopScheduler(): void {
   let stopped = false;
-  for (const task of [midnightTask, decayTask, rotationTask, autoScaleTask, monthlyFeeTask, disputeResolutionTask, skillPricingTask, talentMigrationTask, healthCheckTask, proposalResolverTask, cleanupConversationsTask, monthlyRetroTask, monthlyRetroLastDayTask, skillEvolutionTask]) {
+  for (const task of [midnightTask, decayTask, rotationTask, autoScaleTask, monthlyFeeTask, disputeResolutionTask, skillPricingTask, talentMigrationTask, healthCheckTask, proposalResolverTask, cleanupConversationsTask, monthlyRetroTask, monthlyRetroLastDayTask, skillEvolutionTask, externalTaskOrchestratorTask]) {
     if (task) {
       task.stop();
       stopped = true;
@@ -356,6 +369,7 @@ export function stopScheduler(): void {
   monthlyRetroTask = null;
   monthlyRetroLastDayTask = null;
   skillEvolutionTask = null;
+  externalTaskOrchestratorTask = null;
   kanbanWatchdogInterval = null;
   if (stopped) {
     console.log("[Scheduler] ⏹️ Todos los schedulers detenidos.");
