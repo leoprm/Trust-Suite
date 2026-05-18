@@ -667,7 +667,7 @@ async function buildSystemPrompt(
   lines.push("");
   lines.push("   Para publicar, usa este endpoint:");
   lines.push("   POST http://localhost:3100/api/bot/send-message");
-  lines.push(`   Body: { "treeId": "${treeId}", "text": "<mensaje en Markdown>", "inlineKeyboard": [[{"text": "💪 Yo puedo", "callback_data": "candidate:apply:TASK_ID"}]] }`);
+  lines.push(`   Body: { "treeId": "${treeId}", "text": "<mensaje en Markdown>", "inlineKeyboard": [[{"text": "💪 Yo puedo", "callback_data": "candidate:apply:${treeId}:TASK_ID"}]] }`);
   lines.push("   Authorization: Bearer HERMES_API_SERVER_KEY");
   lines.push("");
   lines.push("3. Abre una ventana de 4 horas para candidatos internos del árbol.");

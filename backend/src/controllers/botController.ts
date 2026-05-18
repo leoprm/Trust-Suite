@@ -124,6 +124,7 @@ export const sendDocument = async (req: Request, res: Response) => {
 // Body: { treeId: string, text: string, inlineKeyboard?: [[{text, callback_data}]] }
 // Sends a message to the tree's Telegram chat, optionally with inline keyboard buttons.
 // Used by Ari for tree-first task announcements with "Yo puedo" button.
+// callback_data format for hiring: candidate:apply:<treeId>:<taskId>
 export const sendMessage = async (req: Request, res: Response) => {
   if (!checkApiKey(req, res)) return;
 

@@ -3006,8 +3006,22 @@ export async function createBot(prisma: PrismaClient): Promise<Bot<BotContext> |
     }
 
     // ── Candidate: "Yo puedo" button (tree-first hiring) ─────────────────
+    // Callback format: candidate:apply:<treeId>:<taskId>
     if (data.startsWith("candidate:apply:")) {
-      const taskId = data.slice("candidate:apply:".length);
+      const rest = data.slice("candidate:apply:".length);
+      const colonIdx = rest.indexOf(":");
+      if (colonIdx === -1) {
+        await ctx.answerCallbackQuery({ text: "⚠️ Formato de callback inválido" });
+        return;
+      }
+      const treeId = rest.slice(0, colonIdx);
+      const taskId = rest.slice(colonIdx + 1);
+
+      if (!treeId || !taskId) {
+        await ctx.answerCallbackQuery({ text: "⚠️ Datos incompletos en el callback" });
+        return;
+      }
+
       const tgUser = ctx.from;
       if (!tgUser) {
         await ctx.answerCallbackQuery({ text: "⚠️ No se pudo identificar tu usuario" });
@@ -3023,19 +3037,9 @@ export async function createBot(prisma: PrismaClient): Promise<Bot<BotContext> |
         return;
       }
 
-      // Find which tree this task belongs to (via ExternalTask)
-      const extTask = await (prisma as any).externalTask.findFirst({
-        where: { kanbanTaskId: taskId },
-        select: { id: true, treeId: true, title: true },
-      });
-      if (!extTask) {
-        await ctx.answerCallbackQuery({ text: "⚠️ Tarea no encontrada" });
-        return;
-      }
-
-      // Verify user is active member of the tree
+      // Verify user is active member of the tree (treeId from callback, no ExternalTask needed)
       const member = await (prisma as any).treeMember.findUnique({
-        where: { userId_treeId: { userId: user.id, treeId: extTask.treeId } },
+        where: { userId_treeId: { userId: user.id, treeId } },
         select: { status: true },
       });
       if (!member || member.status !== "ACTIVE") {
@@ -3055,7 +3059,7 @@ export async function createBot(prisma: PrismaClient): Promise<Bot<BotContext> |
       // Register candidate
       try {
         await (prisma as any).candidate.create({
-          data: { userId: user.id, taskId, treeId: extTask.treeId },
+          data: { userId: user.id, taskId, treeId },
         });
         await ctx.answerCallbackQuery({ text: "✅ ¡Postulación registrada! Ari te contactará." });
         // Edit the message to show candidate count (optional feedback)
@@ -3066,7 +3070,7 @@ export async function createBot(prisma: PrismaClient): Promise<Bot<BotContext> |
           await ctx.editMessageReplyMarkup({
             reply_markup: {
               inline_keyboard: [[
-                { text: `💪 Yo puedo (${candidateCount})`, callback_data: `candidate:apply:${taskId}` },
+                { text: `💪 Yo puedo (${candidateCount})`, callback_data: `candidate:apply:${treeId}:${taskId}` },
               ]],
             },
           });
