@@ -2225,7 +2225,8 @@ export async function createBot(prisma: PrismaClient): Promise<Bot<BotContext> |
   function spawnClipIndex(treeId: string): void {
     try {
       const scriptPath = require("path").join(__dirname, "..", "..", "lib", "clip_index.py");
-      const child = spawn("python3", [scriptPath, "index", treeId], {
+      const sandboxDir = process.env.SANDBOX_BASE_DIR || "/home/leo/trees";
+      const child = spawn("python3", [scriptPath, "index", treeId, "--media-root", sandboxDir], {
         detached: true,
         stdio: "ignore",
       });

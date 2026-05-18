@@ -239,6 +239,10 @@ def main() -> None:
     parser = argparse.ArgumentParser(
         description="CLIP image indexer for TrustMaker"
     )
+    parser.add_argument(
+        "--media-root", default=None,
+        help="Override media root directory (default: PROJECT/media)"
+    )
     sub = parser.add_subparsers(dest="command", required=True)
 
     idx = sub.add_parser("index", help="Scan media/<treeId>/ and index new images")
@@ -252,6 +256,10 @@ def main() -> None:
     )
 
     args = parser.parse_args()
+
+    if args.media_root:
+        global MEDIA_ROOT
+        MEDIA_ROOT = Path(args.media_root)
 
     if args.command == "index":
         cmd_index(args.treeId)

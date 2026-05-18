@@ -178,9 +178,13 @@ export const searchMediaInSandbox = async (req: Request, res: Response) => {
 
     const cmd = `${pythonBin} "${clipIndexPy}" search "${id}" "${query.trim()}" --limit ${resultLimit}`;
 
+    // Use SANDBOX_BASE_DIR so clip_index.py looks where silentSaveMedia actually writes
+    const sandboxDir = process.env.SANDBOX_BASE_DIR || "/home/trustmaker/trees";
+    const cmdWithRoot = `${cmd} --media-root "${sandboxDir}"`;
+
     const result = await new Promise<{ stdout: string; stderr: string; exitCode: number }>(
       (resolve, reject) => {
-        const child = exec(cmd, {
+        const child = exec(cmdWithRoot, {
           cwd: sb.workspacePath,
           timeout: MEDIA_SEARCH_TIMEOUT_MS,
           maxBuffer: 1024 * 1024,
