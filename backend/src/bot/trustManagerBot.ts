@@ -3,8 +3,88 @@ import { PrismaClient } from "@prisma/client";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
+// ── Onboarding session state ──────────────────────────────────────────────
+
+interface OnboardingState {
+  step: 1 | 2 | 3;
+  treeId: string;
+  treeName: string;
+}
+
+const onboardingSessions = new Map<number, OnboardingState>();
+
 /** Usuarios que están en modo conversacional (supportMode) — key = telegramUserId string */
 const supportModeUsers = new Set<string>();
+
+// ── Terms template (loaded once) ───────────────────────────────────────────
+
+let termsTemplate = "";
+try {
+  termsTemplate = readFileSync(join(__dirname, "menus", "terms.md"), "utf-8");
+} catch {
+  try {
+    termsTemplate = readFileSync(join(process.cwd(), "src/bot/menus/terms.md"), "utf-8");
+  } catch {
+    console.warn("[TrustManagerBot] No se pudo cargar terms.md");
+  }
+}
+
+// ── Helpers ────────────────────────────────────────────────────────────────
+
+/**
+ * Busca o crea un usuario basado en la info de Telegram.
+ * Mismo patrón que commands.ts:resolveTelegramUser.
+ */
+async function resolveTelegramUser(
+  prisma: PrismaClient,
+  tgUser: { id: number; username?: string; first_name?: string }
+): Promise<string | null> {
+  const telegramId = BigInt(tgUser.id);
+
+  try {
+    const byTgId = await (prisma as any).user.findUnique({
+      where: { telegramUserId: telegramId },
+    });
+    if (byTgId) return byTgId.id;
+
+    if (tgUser.username) {
+      const byUsername = await (prisma as any).user.findUnique({
+        where: { username: tgUser.username },
+      });
+      if (byUsername) {
+        await (prisma as any).user.update({
+          where: { id: byUsername.id },
+          data: { telegramUserId: telegramId },
+        });
+        return byUsername.id;
+      }
+    }
+
+    const created = await (prisma as any).user.create({
+      data: {
+        username: tgUser.username || `tg_${tgUser.id}`,
+        firstName: tgUser.first_name,
+        telegramUserId: telegramId,
+        role: "USER",
+      },
+    });
+    return created.id;
+  } catch {
+    return null;
+  }
+}
+
+async function isAlreadyMember(
+  prisma: PrismaClient,
+  userId: string,
+  treeId: string
+): Promise<boolean> {
+  const member = await (prisma as any).treeMember.findUnique({
+    where: { userId_treeId: { userId, treeId } },
+    select: { id: true },
+  });
+  return !!member;
+}
 
 /**
  * Construye el teclado inline del menú principal.
@@ -41,7 +121,7 @@ export async function initTrustManagerBot(
 
   // ── /start ──────────────────────────────────────────────────────────────
   // /start                            → bienvenida genérica + menú
-  // /start <treeId>                   → verifica árbol público y da onboarding
+  // /start <treeId>                   → flujo de onboarding (términos → pago → registro)
   bot.command("start", async (ctx) => {
     const treeId = ctx.match?.trim();
 
@@ -58,10 +138,15 @@ export async function initTrustManagerBot(
       return;
     }
 
+    if (!ctx.from) {
+      await ctx.reply("⚠️ No se pudo identificar tu cuenta de Telegram.");
+      return;
+    }
+
     try {
       const tree = await (prisma as any).tree.findUnique({
         where: { id: treeId },
-        select: { id: true, name: true, admissionPolicy: true, description: true, icono: true },
+        select: { id: true, name: true, admissionPolicy: true },
       });
 
       if (!tree) {
@@ -79,18 +164,28 @@ export async function initTrustManagerBot(
         return;
       }
 
-      // Árbol existe y es OPEN — iniciar flujo de onboarding
-      const icono = tree.icono ?? "🌳";
-      const description = tree.description ?? "Sin descripción.";
-      await ctx.reply(
-        `${icono} *${tree.name}*\n\n` +
-          `${description}\n\n` +
-          "✅ Este árbol es público y acepta nuevos miembros.\n\n" +
-          "Para unirte necesitas una cuenta en Trust Maker. " +
-          "Si ya tienes cuenta, abre @TrustMakerBot y usa /start para vincularte.\n\n" +
-          "Una vez vinculado, serás añadido automáticamente al árbol.",
-        { parse_mode: "Markdown" }
-      );
+      // Verificar si ya es miembro
+      const userId = await resolveTelegramUser(prisma, ctx.from);
+      if (userId) {
+        const alreadyMember = await isAlreadyMember(prisma, userId, treeId);
+        if (alreadyMember) {
+          await ctx.reply(
+            `🌳 Ya eres miembro de *${tree.name}*. Para manejar tu cuenta o cualquier duda, habla con @TrustManagerBot.`,
+            { parse_mode: "Markdown" }
+          );
+          return;
+        }
+      }
+
+      // ── PASO 1: Términos legales ──────────────────────────────────────
+      const termsText = termsTemplate.replace(/<treeName>/g, tree.name);
+      onboardingSessions.set(ctx.from.id, { step: 1, treeId: tree.id, treeName: tree.name });
+
+      const step1Keyboard = new InlineKeyboard()
+        .text("✅ Aceptar", `onboard:accept:${tree.id}`)
+        .text("❌ Rechazar", `onboard:reject:${tree.id}`);
+
+      await ctx.reply(termsText, { reply_markup: step1Keyboard });
     } catch (err: any) {
       console.error("[TrustManagerBot] Error verificando árbol:", err.message);
       await ctx.reply(
@@ -224,6 +319,127 @@ export async function initTrustManagerBot(
     );
   });
 
+  // ── Callback: Onboarding — PASO 1: Aceptar términos ───────────────────
+  bot.callbackQuery(/^onboard:accept:/, async (ctx) => {
+    const tgUserId = ctx.from?.id;
+    if (!tgUserId) return;
+
+    const data = ctx.callbackQuery.data;
+    const treeId = data.slice("onboard:accept:".length);
+    const session = onboardingSessions.get(tgUserId);
+
+    if (!session || session.step !== 1) {
+      await ctx.answerCallbackQuery({ text: "Esta opción ya no está disponible. Usa /start para comenzar de nuevo." });
+      return;
+    }
+
+    // Avanzar a paso 2
+    session.step = 2;
+    onboardingSessions.set(tgUserId, session);
+
+    const step2Keyboard = new InlineKeyboard()
+      .text("💳 Stripe", `onboard:pay:stripe:${treeId}`)
+      .text("💳 Paddle", `onboard:pay:paddle:${treeId}`)
+      .row()
+      .text("⏭️ Por ahora no", `onboard:pay:skip:${treeId}`);
+
+    await ctx.editMessageText(
+      "💳 *Método de pago*\n\n" +
+        "Elige tu método de pago preferido para las cuotas del árbol. " +
+        "Puedes cambiarlo después, o continuar sin método de pago por ahora.",
+      { parse_mode: "Markdown", reply_markup: step2Keyboard }
+    );
+    await ctx.answerCallbackQuery();
+  });
+
+  // ── Callback: Onboarding — PASO 1: Rechazar términos ──────────────────
+  bot.callbackQuery(/^onboard:reject:/, async (ctx) => {
+    const tgUserId = ctx.from?.id;
+    if (!tgUserId) return;
+
+    onboardingSessions.delete(tgUserId);
+
+    await ctx.editMessageText(
+      "Entendido. Cuando quieras unirte, usa el enlace de invitación."
+    );
+    await ctx.answerCallbackQuery();
+  });
+
+  // ── Callback: Onboarding — PASO 2: Elegir método de pago → PASO 3 ────
+  bot.callbackQuery(/^onboard:pay:/, async (ctx) => {
+    const tgUserId = ctx.from?.id;
+    if (!tgUserId) return;
+
+    const session = onboardingSessions.get(tgUserId);
+
+    if (!session || session.step !== 2) {
+      await ctx.answerCallbackQuery({ text: "Esta opción ya no está disponible. Usa /start para comenzar de nuevo." });
+      return;
+    }
+
+    const choice = ctx.callbackQuery.data.slice("onboard:pay:".length);
+    // choice: "stripe:<treeId>", "paddle:<treeId>", o "skip:<treeId>"
+    const paymentMethod = choice.startsWith("skip:") ? null : choice.split(":")[0];
+
+    // Avanzar a paso 3
+    session.step = 3;
+    onboardingSessions.set(tgUserId, session);
+
+    const treeId = session.treeId;
+    const treeName = session.treeName;
+
+    try {
+      const userId = await resolveTelegramUser(prisma, ctx.from!);
+      if (!userId) {
+        await ctx.editMessageText(
+          "⚠️ Error al identificar tu cuenta. Intenta de nuevo con /start."
+        );
+        onboardingSessions.delete(tgUserId);
+        await ctx.answerCallbackQuery();
+        return;
+      }
+
+      // Verificar membresía duplicada
+      const existing = await (prisma as any).treeMember.findUnique({
+        where: { userId_treeId: { userId, treeId } },
+      });
+      if (existing) {
+        onboardingSessions.delete(tgUserId);
+        await ctx.editMessageText(
+          `🌳 Ya eres miembro de *${treeName}*. Para manejar tu cuenta o cualquier duda, habla con @TrustManagerBot.`,
+          { parse_mode: "Markdown" }
+        );
+        await ctx.answerCallbackQuery();
+        return;
+      }
+
+      // Registrar TreeMember
+      await (prisma as any).treeMember.create({
+        data: {
+          userId,
+          treeId,
+          status: "ACTIVE",
+          role: "MEMBER",
+        },
+      });
+
+      onboardingSessions.delete(tgUserId);
+
+      await ctx.editMessageText(
+        `✅ ¡Listo! Ya eres miembro de *${treeName}*.\n\n` +
+          `Para manejar tu cuenta o cualquier duda, habla con @TrustManagerBot.`,
+        { parse_mode: "Markdown" }
+      );
+    } catch (err: any) {
+      console.error("[TrustManagerBot] Error registrando miembro:", err.message);
+      onboardingSessions.delete(tgUserId);
+      await ctx.editMessageText(
+        "⚠️ Error al registrar tu membresía. Inténtalo de nuevo con /start o contacta al administrador del árbol."
+      );
+    }
+    await ctx.answerCallbackQuery();
+  });
+
   // ── Mensajes de texto en modo conversacional ────────────────────────────
   bot.on("message:text", async (ctx) => {
     const tgUser = ctx.from;
@@ -232,8 +448,6 @@ export async function initTrustManagerBot(
 
     if (!supportModeUsers.has(uid)) return;
 
-    // El usuario está en modo soporte — eco de confirmación
-    // (la respuesta conversacional real se implementará en una tarea futura)
     await ctx.reply(
       "📞 *Tu mensaje ha sido recibido*\n\n" +
         "Gracias por escribirnos. Actualmente el modo conversacional " +
