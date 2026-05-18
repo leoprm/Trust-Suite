@@ -107,6 +107,14 @@ enum PaymentMode {
   CENTRALIZED
 }
 
+enum ExternalTaskStatus {
+  OPEN
+  CLAIMED
+  DELIVERED
+  APPROVED
+  REJECTED
+}
+
 enum PenaltyType {
   XP_LOSS
   BEHAVIOR_REVIEW
@@ -160,6 +168,12 @@ model User {
   interventionRatings AgentInterventionRating[]
   penaltyVotes        AgentPenaltyVote[]
   socialProfiles      MemberSocialProfile[]
+  availableForHire    Boolean  @default(false)
+  hourlyRate          Int?
+  currency            String?  @default("CLP")
+  location            String?
+  externalTasksCreated ExternalTask[]  @relation("ExternalTaskCreator")
+  externalTasksWorked  ExternalTask[]  @relation("Worker")
 }
 
 model Tree {
@@ -212,6 +226,7 @@ model Tree {
   investorMatches           InvestmentMatch[]          @relation("InvestorMatches")
   seekerMatches             InvestmentMatch[]          @relation("SeekerMatches")
   todos                     Todo[]
+  externalTasks             ExternalTask[]
   paused                   Boolean      @default(false)
   voteThreshold             Int          @default(20)
 }
@@ -1080,4 +1095,30 @@ model Todo {
 
   @@index([treeId, chatId])
   @@index([messageId, chatId])
+}
+
+// ── ExternalTask (Human-in-the-Loop) ──────────────────────────────────────
+
+model ExternalTask {
+  id            String              @id @default(uuid())
+  treeId        String
+  createdBy     String
+  title         String
+  description   String              @db.Text
+  skills        Json                @default("[]")
+  budget        Int
+  currency      String              @default("CLP")
+  workerId      String?
+  status        ExternalTaskStatus  @default(OPEN)
+  deliverableUrl String?
+  createdAt     DateTime            @default(now())
+  updatedAt     DateTime            @updatedAt
+
+  tree    Tree @relation(fields: [treeId], references: [id], onDelete: Cascade)
+  creator User @relation("ExternalTaskCreator", fields: [createdBy], references: [id])
+  worker  User? @relation("Worker", fields: [workerId], references: [id], onDelete: SetNull)
+
+  @@index([treeId])
+  @@index([workerId])
+  @@index([status])
 }
