@@ -3,7 +3,11 @@ import { exec } from 'child_process';
 import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
+import https from 'https';
+import http from 'http';
 import multer from 'multer';
+import TurndownService from 'turndown';
+import { JSDOM } from 'jsdom';
 import { TreeSandbox } from '../services/treeSandbox';
 import { logEvent, getRequestContext } from '../services/eventLogService';
 import { prisma } from '../index';
@@ -643,7 +647,206 @@ export const saveTreeSkill = async (req: Request, res: Response) => {
   }
 };
 
-// ── POST /api/trees/:id/sandbox/parent/read ────────────────────────────────
+// ── POST /api/trees/:id/sandbox/tm-call ──────────────────────────────────────
+// Body: { action: string, args: object }
+// Proxies 15+ Trust Maker SQLite functions via tools.py --json-rpc.
+// Returns: the JSON output from tools.py (the function's return value).
+//
+// Rate limit: 10 calls/min per tree (in-memory, resets on restart).
+
+const TM_RATE_LIMIT = 10;
+const TM_RATE_WINDOW_MS = 60_000;
+const TM_TIMEOUT_MS = 30_000;
+const tmRateBuckets = new Map<string, { count: number; windowStart: number }>();
+
+const VALID_ACTIONS = new Set([
+  "list_trees", "get_needs", "get_ideas", "get_pending_ideas",
+  "propose_idea", "vote_on_idea", "register_result", "create_need",
+  "get_ideas_by_creator", "search_ideas", "get_task_assignments",
+  "get_user_stats", "get_global_stats", "get_vote_results", "get_tree_members",
+]);
+
+const ACTION_TO_FUNCTION: Record<string, string> = {
+  list_trees: "get_all_trees",
+  get_needs: "get_tree_needs",
+  get_ideas: "get_tree_ideas",
+  get_pending_ideas: "get_pending_ideas",
+  propose_idea: "propose_idea",
+  vote_on_idea: "vote_on_idea",
+  register_result: "register_idea_result",
+  create_need: "create_need",
+  get_ideas_by_creator: "get_ideas_by_creator",
+  search_ideas: "search_ideas",
+  get_task_assignments: "get_task_assignments",
+  get_user_stats: "get_user_stats",
+  get_global_stats: "get_global_stats",
+  get_vote_results: "get_vote_results",
+  get_tree_members: "get_tree_members",
+};
+
+export const tmCall = async (req: Request, res: Response) => {
+  if (!checkApiKey(req, res)) return;
+
+  try {
+    const treeId = req.params.id as string;
+    const { action, args = {} } = req.body;
+
+    if (!action || typeof action !== "string" || !VALID_ACTIONS.has(action)) {
+      return res.status(400).json({
+        error: `Invalid or missing action. Valid: ${Array.from(VALID_ACTIONS).join(", ")}`,
+      });
+    }
+
+    // ── Rate limit per tree ──────────────────────────────────────────────
+    const now = Date.now();
+    let bucket = tmRateBuckets.get(treeId);
+    if (!bucket || now - bucket.windowStart > TM_RATE_WINDOW_MS) {
+      bucket = { count: 0, windowStart: now };
+      tmRateBuckets.set(treeId, bucket);
+    }
+    if (bucket.count >= TM_RATE_LIMIT) {
+      return res.status(429).json({
+        error: `Rate limit exceeded: max ${TM_RATE_LIMIT} calls/min per tree`,
+        retryAfterMs: TM_RATE_WINDOW_MS - (now - bucket.windowStart),
+      });
+    }
+    bucket.count++;
+
+    // ── Resolve Python + tools.py path ────────────────────────────────────
+    const pythonBin = process.env.HERMES_PYTHON_BIN || "python3";
+    const toolsPy = "/home/leo/.hermes/skills/trust-maker/tools.py";
+
+    // ── Build JSON-RPC payload ────────────────────────────────────────────
+    const functionName = ACTION_TO_FUNCTION[action];
+
+    // Inject treeId into args where applicable (most functions need it)
+    const rpcArgs: Record<string, any> = { ...args };
+
+    // Actions that need tree_id injected from URL param
+    const treeActions = new Set([
+      "get_needs", "get_ideas", "get_pending_ideas",
+      "propose_idea", "create_need", "get_ideas_by_creator",
+      "search_ideas", "get_task_assignments", "get_tree_members",
+    ]);
+    if (treeActions.has(action) && !rpcArgs.tree_id) {
+      rpcArgs.tree_id = treeId;
+    }
+
+    // vote_on_idea: map voter_id → user_id
+    if (action === "vote_on_idea") {
+      if (rpcArgs.voter_id && !rpcArgs.user_id) rpcArgs.user_id = rpcArgs.voter_id;
+      if (rpcArgs.vote_value && !rpcArgs.weight) rpcArgs.weight = rpcArgs.vote_value;
+    }
+
+    // propose_idea: map proposer_id → creator_id, title+description → content
+    if (action === "propose_idea") {
+      if (rpcArgs.proposer_id && !rpcArgs.creator_id) rpcArgs.creator_id = rpcArgs.proposer_id;
+      if (rpcArgs.title || rpcArgs.description) {
+        const parts = [rpcArgs.title, rpcArgs.description].filter(Boolean);
+        rpcArgs.content = parts.join("\n\n");
+      }
+    }
+
+    // register_result: map result+notes → summary, idea_id stays
+    if (action === "register_result") {
+      if (rpcArgs.result && !rpcArgs.summary) rpcArgs.summary = rpcArgs.result;
+    }
+
+    const payload = JSON.stringify({ function: functionName, kwargs: rpcArgs });
+
+    // ── Execute tools.py ──────────────────────────────────────────────────
+    const sandboxDir = process.env.SANDBOX_BASE_DIR || "/home/trustmaker/trees";
+    const env: Record<string, string | undefined> = {
+      HOME: process.env.HOME,
+      PATH: process.env.PATH,
+      SANDBOX_BASE_DIR: sandboxDir,
+      TRUST_MAKER_DB_PATH: process.env.TRUST_MAKER_DB_PATH || "",
+      ...Object.fromEntries(
+        Object.entries(process.env).filter(
+          ([k]) => k.startsWith("SANDBOX_") || k.startsWith("HERMES_")
+        )
+      ),
+    };
+
+    const result = await new Promise<{ stdout: string; stderr: string; exitCode: number }>(
+      (resolve, reject) => {
+        const { exec } = require("child_process");
+        const child = exec(
+          `${pythonBin} "${toolsPy}" --json-rpc`,
+          {
+            timeout: TM_TIMEOUT_MS,
+            maxBuffer: 1024 * 1024,
+            env,
+          },
+        );
+
+        let stdout = "";
+        let stderr = "";
+
+        child.stdout?.on("data", (d: string) => { stdout += d; });
+        child.stderr?.on("data", (d: string) => { stderr += d; });
+
+        child.on("close", (code: number) =>
+          resolve({ stdout, stderr, exitCode: code ?? 1 })
+        );
+        child.on("error", (err: NodeJS.ErrnoException) => {
+          if ((err as any).killed) {
+            resolve({
+              stdout,
+              stderr: stderr + `\n[Timeout after ${TM_TIMEOUT_MS / 1000}s]`,
+              exitCode: 124,
+            });
+          } else {
+            reject(err);
+          }
+        });
+
+        // Write JSON payload to stdin and close
+        child.stdin?.write(payload);
+        child.stdin?.end();
+      },
+    );
+
+    if (result.exitCode !== 0) {
+      console.error("[tmCall] tools.py error:", result.stderr);
+      return res.status(500).json({
+        error: "tm-call failed",
+        detail: result.stderr.slice(0, 500),
+        exitCode: result.exitCode,
+      });
+    }
+
+    // Parse JSON output from tools.py
+    let data: any;
+    try {
+      data = JSON.parse(result.stdout);
+    } catch {
+      return res.status(500).json({
+        error: "Invalid JSON from tools.py",
+        raw: result.stdout.slice(0, 500),
+      });
+    }
+
+    if (data.error) {
+      return res.status(400).json({ error: data.error });
+    }
+
+    void logEvent({
+      ...getRequestContext(req),
+      treeId,
+      action: "SANDBOX_TM_CALL",
+      entityType: "TreeSandbox",
+      entityId: treeId,
+      source: "SYSTEM",
+      metadataJson: { action, functionName },
+    });
+
+    res.json(data);
+  } catch (error: any) {
+    console.error("[tmCall] ERROR:", error?.message || error);
+    res.status(500).json({ error: "tm-call failed", detail: error?.message });
+  }
+};
 // Body: { path: string }
 // Reads a file from the parent tree's sandbox. No write, no delete.
 // Returns: { content: string, size: number }
@@ -707,5 +910,207 @@ export const readParentTreeSandbox = async (req: Request, res: Response) => {
   } catch (error: any) {
     console.error('[readParentTreeSandbox] ERROR:', error?.message || error);
     res.status(500).json({ error: 'File read failed', detail: error?.message });
+  }
+};
+
+// ── Rate limiter for web-extract (5 calls/min per tree) ─────────────────────
+
+const webExtractWindowMs = 60_000; // 1 minute
+const webExtractMaxCalls = 5;
+const webExtractCounters = new Map<string, { count: number; resetAt: number }>();
+
+function checkWebExtractRate(treeId: string): boolean {
+  const now = Date.now();
+  let entry = webExtractCounters.get(treeId);
+
+  if (!entry || now > entry.resetAt) {
+    entry = { count: 0, resetAt: now + webExtractWindowMs };
+    webExtractCounters.set(treeId, entry);
+  }
+
+  if (entry.count >= webExtractMaxCalls) return false;
+  entry.count++;
+  return true;
+}
+
+// ── Helper: fetch URL with timeout ─────────────────────────────────────────
+
+function fetchUrl(url: string, timeoutMs: number): Promise<{ html: string; finalUrl: string }> {
+  return new Promise((resolve, reject) => {
+    const transport = url.startsWith('https') ? https : http;
+    const req = transport.get(url, { timeout: timeoutMs }, (res) => {
+      // Follow redirects (up to 3)
+      if (res.statusCode && res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+        const redirectUrl = new URL(res.headers.location, url).toString();
+        resolve(fetchUrl(redirectUrl, timeoutMs));
+        return;
+      }
+
+      const chunks: Buffer[] = [];
+      res.on('data', (chunk: Buffer) => chunks.push(chunk));
+      res.on('end', () => {
+        const html = Buffer.concat(chunks).toString('utf-8');
+        resolve({ html, finalUrl: res.headers.location ? new URL(res.headers.location, url).toString() : url });
+      });
+      res.on('error', reject);
+    });
+
+    req.on('timeout', () => {
+      req.destroy();
+      reject(new Error(`Request timeout after ${timeoutMs}ms`));
+    });
+    req.on('error', reject);
+  });
+}
+
+// ── POST /api/trees/:id/sandbox/web-extract ────────────────────────────────
+// Body: { urls: string[] }
+// Fetches each URL, converts HTML to Markdown (via turndown).
+// Rate limit: 5 calls/min per tree. Timeout: 20s per URL.
+// Returns: { results: [{ url, title, content }, ...] }
+
+export const webExtractTreeSandbox = async (req: Request, res: Response) => {
+  if (!checkApiKey(req, res)) return;
+
+  try {
+    const treeId = req.params.id as string;
+    const { urls } = req.body;
+
+    if (!Array.isArray(urls) || urls.length === 0) {
+      return res.status(400).json({ error: 'urls is required (non-empty array of strings)' });
+    }
+    if (!urls.every((u: any) => typeof u === 'string')) {
+      return res.status(400).json({ error: 'Each url must be a string' });
+    }
+    if (urls.length > 10) {
+      return res.status(400).json({ error: 'Maximum 10 URLs per request' });
+    }
+
+    // Rate limit
+    if (!checkWebExtractRate(treeId)) {
+      return res.status(429).json({
+        error: 'Rate limit exceeded — 5 calls/min per tree',
+        retryAfterSec: Math.ceil(
+          ((webExtractCounters.get(treeId)?.resetAt ?? Date.now() + webExtractWindowMs) - Date.now()) / 1000
+        ),
+      });
+    }
+
+    const turndown = new TurndownService({
+      headingStyle: 'atx',
+      codeBlockStyle: 'fenced',
+    });
+
+    const timeoutMs = 20_000;
+    const results: Array<{ url: string; title: string; content: string; error?: string }> = [];
+
+    for (const url of urls) {
+      try {
+        const { html, finalUrl } = await fetchUrl(url, timeoutMs);
+
+        const dom = new JSDOM(html, { url: finalUrl });
+        const title = dom.window.document.title || finalUrl;
+
+        // Remove script/style/noscript tags before converting
+        for (const el of dom.window.document.querySelectorAll('script, style, noscript, nav, footer, header')) {
+          el.remove();
+        }
+
+        const bodyHtml = dom.window.document.body?.innerHTML || html;
+        const content = turndown.turndown(bodyHtml).slice(0, 100_000); // cap at 100 KB
+
+        results.push({ url: finalUrl, title, content });
+      } catch (err: any) {
+        results.push({ url, title: '', content: '', error: err?.message || 'Unknown error' });
+      }
+    }
+
+    void logEvent({
+      ...getRequestContext(req),
+      treeId,
+      action: 'SANDBOX_WEB_EXTRACT',
+      entityType: 'TreeSandbox',
+      entityId: treeId,
+      source: 'SYSTEM',
+      metadataJson: { urlCount: urls.length, resultsCount: results.length },
+    });
+
+    res.json({ results });
+  } catch (error: any) {
+    console.error('[webExtractTreeSandbox] ERROR:', error?.message || error);
+    res.status(500).json({ error: 'Web extract failed', detail: error?.message });
+  }
+};
+
+// ── POST /api/trees/:id/sandbox/memory ─────────────────────────────────────
+// Body: { action: "write"|"read"|"list", key?: string, value?: string }
+// Flat key-value JSON store at <sandbox>/memory/memory.json.
+// Returns write: { ok: true }, read: { key, value }, list: { keys: string[] }
+
+export const memoryTreeSandbox = async (req: Request, res: Response) => {
+  if (!checkApiKey(req, res)) return;
+
+  try {
+    const treeId = req.params.id as string;
+    const { action, key, value } = req.body;
+
+    if (!['write', 'read', 'list'].includes(action)) {
+      return res.status(400).json({ error: 'action must be "write", "read", or "list"' });
+    }
+
+    if ((action === 'write' || action === 'read') && (!key || typeof key !== 'string')) {
+      return res.status(400).json({ error: 'key is required (string) for write/read' });
+    }
+
+    if (action === 'write' && (value === undefined || typeof value !== 'string')) {
+      return res.status(400).json({ error: 'value is required (string) for write' });
+    }
+
+    const SANDBOX_BASE = process.env.SANDBOX_BASE_DIR || '/home/trustmaker/trees';
+    const memoryDir = path.join(SANDBOX_BASE, treeId, 'memory');
+    const memoryFile = path.join(memoryDir, 'memory.json');
+
+    // ── Read existing data ──
+    let data: Record<string, string> = {};
+    if (fs.existsSync(memoryFile)) {
+      try {
+        const raw = fs.readFileSync(memoryFile, 'utf-8');
+        data = JSON.parse(raw);
+      } catch {
+        data = {};
+      }
+    }
+
+    if (action === 'read') {
+      if (!(key! in data)) {
+        return res.status(404).json({ error: 'Key not found', key });
+      }
+      return res.json({ key, value: data[key!] });
+    }
+
+    if (action === 'list') {
+      return res.json({ keys: Object.keys(data).sort() });
+    }
+
+    // action === 'write'
+    data[key!] = value!;
+
+    fs.mkdirSync(memoryDir, { recursive: true });
+    fs.writeFileSync(memoryFile, JSON.stringify(data, null, 2), 'utf-8');
+
+    void logEvent({
+      ...getRequestContext(req),
+      treeId,
+      action: 'SANDBOX_MEMORY_WRITE',
+      entityType: 'TreeSandbox',
+      entityId: treeId,
+      source: 'SYSTEM',
+      metadataJson: { action: 'write', key },
+    });
+
+    res.json({ ok: true });
+  } catch (error: any) {
+    console.error('[memoryTreeSandbox] ERROR:', error?.message || error);
+    res.status(500).json({ error: 'Memory operation failed', detail: error?.message });
   }
 };

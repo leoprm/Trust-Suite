@@ -23,6 +23,9 @@ import {
   sandboxUpload,
   readParentTreeSandbox,
   saveTreeSkill,
+  webExtractTreeSandbox,
+  memoryTreeSandbox,
+  tmCall,
 } from '../controllers/treeSandboxController';
 import { authenticateJWT } from '../middleware/authMiddleware';
 
@@ -46,6 +49,9 @@ router.post('/:id/sandbox/upload', sandboxUpload.single('file'), uploadTreeSandb
 router.post('/:id/sandbox/media-search', searchMediaInSandbox);
 router.post('/:id/sandbox/parent/read', readParentTreeSandbox);
 router.post('/:id/sandbox/save-skill', saveTreeSkill);
+router.post('/:id/sandbox/tm-call', tmCall);
+router.post('/:id/sandbox/web-extract', webExtractTreeSandbox);
+router.post('/:id/sandbox/memory', memoryTreeSandbox);
 
 // ── NotebookLM endpoints (API Key-protected, same as sandbox ops) ──────────────
 router.post('/:id/notebooklm/ask', notebooklmAsk);
