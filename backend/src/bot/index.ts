@@ -2146,20 +2146,10 @@ export async function createBot(prisma: PrismaClient): Promise<Bot<BotContext> |
 
       // ── Ari responded — send the text ───────────────────────────────
       if (decision.text) {
-        let sentMsg: any;
         try {
-          sentMsg = await ctx.reply(decision.text, { parse_mode: "Markdown" });
+          await sendTelegramMessage(ctx, decision.text, "Markdown");
         } catch (markdownErr: any) {
-          if (markdownErr.message?.includes("can't parse entities")) {
-            sentMsg = await ctx.reply(decision.text);
-          } else {
-            throw markdownErr;
-          }
-        }
-
-        // Track Ari's intro message ID (2nd or 3rd msg per tree → reply anchor)
-        if (sentMsg?.message_id) {
-          trackIntroMessage(prisma, tree.id, sentMsg.message_id).catch(() => {});
+          console.error("[HermesBridge] Failed to send decision.text:", markdownErr.message);
         }
       }
       return;
