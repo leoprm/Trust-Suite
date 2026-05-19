@@ -964,37 +964,28 @@ export async function createBot(prisma: PrismaClient): Promise<Bot<BotContext> |
           // Send welcome / rejoin message
           try {
             if (isNewTree) {
-              // New tree: show language selector first (bilingual prompt + TTS in English)
-              const langMsg = await ctx.api.sendMessage(
+              // T2: Ask subtree question BEFORE language selector
+              // Save onboardingTreeId in session so callbacks can find it
+              (ctx as BotContext).session.onboardingTreeId = tree.id;
+
+              await ctx.api.sendMessage(
                 chatId,
-                "\uD83C\uDF10 Select your language / Selecciona tu idioma",
+                "¿Es este un sub-árbol?",
                 {
                   reply_markup: {
                     inline_keyboard: [[
                       {
-                        text: "\uD83C\uDDFA\uD83C\uDDF8 English",
-                        callback_data: "lang_group:en:" + tree.id,
+                        text: "\uD83C\uDF3F Sí, es sub-árbol",
+                        callback_data: "onboarding:subtree_early_yes:" + tree.id,
                       },
                       {
-                        text: "\uD83C\uDDF2\uD83C\uDDFD Español",
-                        callback_data: "lang_group:es:" + tree.id,
+                        text: "\uD83C\uDF33 No, es independiente",
+                        callback_data: "onboarding:subtree_early_no:" + tree.id,
                       },
                     ]],
                   },
                 }
               );
-              // Track message #1 for intro capture
-              trackBotMessage(prisma, tree.id, langMsg.message_id);
-
-              // Send TTS audio in English (non-blocking)
-              try {
-                const voiceBuffer = await textToSpeech("Select your language", "en");
-                const voiceMsg = await ctx.api.sendVoice(chatId, new InputFile(voiceBuffer));
-                // Track message #2 for intro capture
-                trackBotMessage(prisma, tree.id, voiceMsg.message_id);
-              } catch {
-                // Non-blocking — voice is a nice-to-have
-              }
             } else {
               // Rejoin: existing tree, cancel any pending deletion
               await (prisma as any).tree.update({
@@ -2738,6 +2729,178 @@ export async function createBot(prisma: PrismaClient): Promise<Bot<BotContext> |
           }
         }
       }
+      return;
+    }
+
+    // T2: Early subtree question callbacks (group onboarding, before language selector)
+    if (data.startsWith("onboarding:subtree_early_yes:") || data.startsWith("onboarding:subtree_early_no:")) {
+      const isYes = data.startsWith("onboarding:subtree_early_yes:");
+      const treeId = data.split(":").slice(3).join(":"); // treeId may contain colons
+
+      const session = (ctx as BotContext).session;
+      if (!session.onboardingTreeId || session.onboardingTreeId !== treeId) {
+        await ctx.answerCallbackQuery();
+        return;
+      }
+
+      // Remove inline keyboard from the question message
+      try { await ctx.editMessageReplyMarkup({ reply_markup: undefined }); } catch { /* ok */ }
+
+      if (!isYes) {
+        // No → continue to language selector (existing flow)
+        await ctx.answerCallbackQuery();
+
+        const langMsg = await ctx.api.sendMessage(
+          ctx.chat!.id,
+          "\uD83C\uDF10 Select your language / Selecciona tu idioma",
+          {
+            reply_markup: {
+              inline_keyboard: [[
+                {
+                  text: "\uD83C\uDDFA\uD83C\uDDF8 English",
+                  callback_data: "lang_group:en:" + treeId,
+                },
+                {
+                  text: "\uD83C\uDDF2\uD83C\uDDFD Español",
+                  callback_data: "lang_group:es:" + treeId,
+                },
+              ]],
+            },
+          }
+        );
+        // Track message for intro capture
+        trackBotMessage(prisma, treeId, langMsg.message_id);
+
+        // Send TTS audio in English (non-blocking)
+        try {
+          const voiceBuffer = await textToSpeech("Select your language", "en");
+          const voiceMsg = await ctx.api.sendVoice(ctx.chat!.id, new InputFile(voiceBuffer));
+          trackBotMessage(prisma, treeId, voiceMsg.message_id);
+        } catch {
+          // Non-blocking — voice is a nice-to-have
+        }
+        return;
+      }
+
+      // Yes → fetch user's memberships and show parent tree selector
+      await ctx.answerCallbackQuery();
+
+      const tgId = ctx.from!.id;
+      const user = await prisma.user.findUnique({
+        where: { telegramUserId: BigInt(tgId) },
+        select: { id: true },
+      });
+
+      if (!user) {
+        await ctx.api.sendMessage(ctx.chat!.id, "⚠️ No se encontró tu cuenta. Continuando con el selector de idioma...");
+        return;
+      }
+
+      const memberships = await prisma.treeMember.findMany({
+        where: {
+          userId: user.id,
+          status: "ACTIVE",
+          treeId: { not: treeId }, // exclude current tree
+        },
+        include: {
+          tree: { select: { id: true, name: true, icono: true } },
+        },
+        take: 10, // limit to avoid huge keyboards
+      });
+
+      if (memberships.length === 0) {
+        await ctx.api.sendMessage(
+          ctx.chat!.id,
+          "No tienes otros árboles donde seas miembro. Continuando con el selector de idioma...",
+        );
+        // Fall through to language selector
+        const langMsg = await ctx.api.sendMessage(
+          ctx.chat!.id,
+          "\uD83C\uDF10 Select your language / Selecciona tu idioma",
+          {
+            reply_markup: {
+              inline_keyboard: [[
+                {
+                  text: "\uD83C\uDDFA\uD83C\uDDF8 English",
+                  callback_data: "lang_group:en:" + treeId,
+                },
+                {
+                  text: "\uD83C\uDDF2\uD83C\uDDFD Español",
+                  callback_data: "lang_group:es:" + treeId,
+                },
+              ]],
+            },
+          }
+        );
+        trackBotMessage(prisma, treeId, langMsg.message_id);
+        return;
+      }
+
+      // Show parent tree selector (T3 will refine this)
+      const keyboard = memberships.map((m) => [{
+        text: `${m.tree.icono || "\uD83C\uDF33"} ${m.tree.name}`,
+        callback_data: `onboarding:subtree_early_pick:${treeId}:${m.tree.id}`,
+      }]);
+
+      await ctx.api.sendMessage(
+        ctx.chat!.id,
+        "Selecciona el árbol padre:",
+        { reply_markup: { inline_keyboard: keyboard } },
+      );
+      return;
+    }
+
+    // T2: Pick parent tree callback (subtree early onboarding)
+    if (data.startsWith("onboarding:subtree_early_pick:")) {
+      // data = onboarding:subtree_early_pick:<childTreeId>:<parentTreeId>
+      const parts = data.split(":");
+      if (parts.length < 5) {
+        await ctx.answerCallbackQuery();
+        return;
+      }
+      const childTreeId = parts[3];
+      const parentTreeId = parts.slice(4).join(":");
+
+      const session = (ctx as BotContext).session;
+      if (session.onboardingTreeId !== childTreeId) {
+        await ctx.answerCallbackQuery();
+        return;
+      }
+
+      // Link child tree to parent
+      try {
+        await (prisma as any).tree.update({
+          where: { id: childTreeId },
+          data: { parentTreeId },
+        });
+
+        await ctx.editMessageText("✅ Vinculado como sub-árbol.", { reply_markup: undefined });
+      } catch (err: any) {
+        console.error("[subtree_early_pick] Failed to link parent tree:", err.message);
+        await ctx.editMessageText("❌ Error al vincular. Intenta de nuevo.", { reply_markup: undefined });
+      }
+      await ctx.answerCallbackQuery();
+
+      // Now continue to language selector
+      const langMsg = await ctx.api.sendMessage(
+        ctx.chat!.id,
+        "\uD83C\uDF10 Select your language / Selecciona tu idioma",
+        {
+          reply_markup: {
+            inline_keyboard: [[
+              {
+                text: "\uD83C\uDDFA\uD83C\uDDF8 English",
+                callback_data: "lang_group:en:" + childTreeId,
+              },
+              {
+                text: "\uD83C\uDDF2\uD83C\uDDFD Español",
+                callback_data: "lang_group:es:" + childTreeId,
+              },
+            ]],
+          },
+        }
+      );
+      trackBotMessage(prisma, childTreeId, langMsg.message_id);
       return;
     }
 
