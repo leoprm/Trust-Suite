@@ -1,4 +1,5 @@
 import { PrismaClient } from "@prisma/client";
+import { deleteNotebook } from "./notebooklmSingleton";
 
 export async function processExpiredDeletions(prisma: PrismaClient): Promise<number> {
   const now = new Date();
@@ -37,6 +38,11 @@ export async function processExpiredDeletions(prisma: PrismaClient): Promise<num
           );
         }
       }
+
+      // N3: clean up NotebookLM sandbox — non-blocking, fire-and-forget
+      deleteNotebook(tree.id).catch(err => {
+        console.error(`[TreeCleanup] notebooklm delete failed for "${tree.name}":`, err?.message || err);
+      });
 
       await (prisma as any).tree.delete({ where: { id: tree.id } });
       deleted++;

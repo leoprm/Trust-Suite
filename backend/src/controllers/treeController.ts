@@ -5,6 +5,7 @@ import { getRequestContext, getRequestMetadata, logEvent } from '../services/eve
 import { onTreeCreated } from '../services/genesisService';
 import { TreeSandbox } from '../services/treeSandbox';
 import { suggestTreeStructure, generateRecommendationForNewTree } from '../services/treeRecommenderService';
+import { createNotebook } from '../services/notebooklmSingleton';
 
 // ── Helpers ──────────────────────────────────────────────────────────────
 
@@ -147,6 +148,15 @@ export const createTree = async (req: any, res: Response) => {
       } catch {
         // Non-blocking
       }
+    }
+
+    // N3: auto-create NotebookLM sandbox — non-blocking, fire-and-forget
+    try {
+      createNotebook(tree.id).catch(err => {
+        console.error('[notebooklm] auto-create failed:', err?.message || err);
+      });
+    } catch {
+      // Non-blocking: import or top-level sync error
     }
 
     // T23: Generate structure recommendation based on similar successful trees
