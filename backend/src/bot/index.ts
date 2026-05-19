@@ -1269,6 +1269,46 @@ export async function createBot(prisma: PrismaClient): Promise<Bot<BotContext> |
 
       if (!tree) return; // Not a TrustMaker group
 
+      // ── Upsert the new member into the database ──────────────────────
+      try {
+        const tgUser = newMember.user;
+        const tgId = BigInt(tgUser.id);
+
+        let user = await prisma.user.findUnique({
+          where: { telegramUserId: tgId },
+        });
+        if (!user) {
+          user = await prisma.user.create({
+            data: {
+              username: tgUser.username || `tg${tgUser.id}`,
+              firstName: tgUser.first_name || null,
+              telegramUserId: tgId,
+            },
+          });
+        } else if (tgUser.first_name && user.firstName !== tgUser.first_name) {
+          await prisma.user.update({
+            where: { id: user.id },
+            data: { firstName: tgUser.first_name },
+          });
+        }
+
+        await prisma.treeMember.upsert({
+          where: { userId_treeId: { userId: user.id, treeId: tree.id } },
+          create: {
+            userId: user.id,
+            treeId: tree.id,
+            role: "MEMBER",
+            status: "ACTIVE",
+          },
+          update: { status: "ACTIVE" },
+        });
+      } catch (err: any) {
+        console.error(
+          `[Telegram Bot] Error upserting new member ${newMember.user.id}:`,
+          err.message,
+        );
+      }
+
       const lang = tree.language || "es";
       const welcomeText = t("common.welcome_new_member", lang, { name: newUserName });
 
