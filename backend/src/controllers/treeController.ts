@@ -1,5 +1,5 @@
 import { Request, Response } from 'express';
-import { prisma } from '../index';
+import { prisma, telegramBot } from '../index';
 import { randomBytes } from 'crypto';
 import { getRequestContext, getRequestMetadata, logEvent } from '../services/eventLogService';
 import { onTreeCreated } from '../services/genesisService';
@@ -604,6 +604,39 @@ export const createSubTree = async (req: any, res: Response) => {
     await prisma.treeMember.create({
       data: { userId, treeId: subTree.id, status: 'ACTIVE', role: 'ADMIN' },
     });
+
+    // ── B5: Inherit objectives from ancestor chain ────────────────────────
+    const ancestorObjectives: string[] = [];
+    let ancestor: { id: string; parentTreeId: string | null; objectives: string | null } | null = parentTree;
+    while (ancestor) {
+      if (ancestor.objectives) {
+        ancestorObjectives.push(ancestor.objectives);
+      }
+      if (!ancestor.parentTreeId) break;
+      ancestor = await prisma.tree.findUnique({
+        where: { id: ancestor.parentTreeId },
+        select: { id: true, parentTreeId: true, objectives: true },
+      });
+    }
+    if (ancestorObjectives.length > 0) {
+      await prisma.tree.update({
+        where: { id: subTree.id },
+        data: { objectives: ancestorObjectives.join('\n') },
+      });
+    }
+
+    // ── B5: Notify parent tree via Telegram ───────────────────────────────
+    if (parentTree.telegramChatId && telegramBot) {
+      try {
+        await telegramBot.api.sendMessage(
+          parentTree.telegramChatId,
+          `🌿 Nuevo sub-árbol vinculado: *${subTree.name}*`,
+          { parse_mode: 'Markdown' },
+        );
+      } catch (tgErr: any) {
+        console.error(`[createSubTree] Telegram notify failed for parent ${parentTreeId}:`, tgErr.message);
+      }
+    }
 
     void logEvent({
       ...getRequestContext(req),
