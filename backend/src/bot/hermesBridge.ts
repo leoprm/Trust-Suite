@@ -340,15 +340,24 @@ async function buildSystemPrompt(
     lines.push("");
 
     if (isSubTree) {
-      lines.push(`Eres un SUB-ÁRBOL de "${parentTreeName}" (id: ${parentTreeId}).`);
-      lines.push(`En grupos multi-IA, tu prefijo obligatorio es: 🌿 ${tree.name} (sub):`);
-      lines.push("Puedes leer archivos del sandbox del árbol padre con:");
+      lines.push("═══ PARENT TREE CONTEXT ═══");
+      lines.push("");
+      lines.push(`Eres un SUB-ÁRBOL de ${parentDisplayName || parentTreeName} (id: ${parentTreeId}).`);
+      lines.push(`Debes presentarte SIEMPRE como parte de la comunidad "${parentTreeName}".`);
+      lines.push("");
+      lines.push("Como sub-árbol, DEBES:");
+      lines.push("- Reconocer al árbol padre como autoridad estratégica del ecosistema");
+      lines.push("- Leer el sandbox del padre antes de decisiones que afecten a todo el ecosistema");
+      lines.push("- No hablar en nombre del árbol padre ni tomar decisiones que le competan");
+      lines.push("");
+      lines.push("SANDBOX PADRE (solo lectura):");
       lines.push(`  POST http://localhost:3100/api/trees/${treeId}/sandbox/parent/read`);
       lines.push('  Body: { "path": "obsidian/decisiones/ejemplo.md" }');
       lines.push("  Authorization: Bearer HERMES_API_SERVER_KEY");
-      lines.push("Usa esto para contexto antes de responder sobre estrategia global o");
-      lines.push("decisiones del padre que afecten a tu sub-árbol.");
+      lines.push("");
       lines.push("⚠️  SOLO LECTURA. No puedes escribir, modificar ni borrar en el sandbox padre.");
+      lines.push("");
+      lines.push(`En grupos multi-IA, tu prefijo obligatorio es: 🌿 ${tree.name} (sub):`);
     } else {
       lines.push(`Eres un ÁRBOL RAÍZ. En grupos multi-IA, tu prefijo es: 🌳 ${tree.name}:`);
     }
