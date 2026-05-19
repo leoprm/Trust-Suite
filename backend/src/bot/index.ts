@@ -1855,6 +1855,53 @@ export async function createBot(prisma: PrismaClient): Promise<Bot<BotContext> |
       // ── Prepend display name so the agent knows who is speaking ──────
       const fullMessage = `${displayName}: ${cmdText}`;
 
+      // ── MEDIUM: skip shouldAriRespond, route directly to Hermes ──────
+      if (interactionMode === "MEDIUM") {
+        const userId = ctx.from?.id.toString() || "0";
+        const typingInterval = setInterval(() => {
+          ctx.replyWithChatAction("typing").catch(() => {});
+        }, 4000);
+        ctx.replyWithChatAction("typing").catch(() => {});
+        try {
+          const response = await routeToHermes(
+            fullMessage, tree.id, userId, undefined, displayName,
+            ctx.chat?.id, msg.message_id,
+          );
+          clearInterval(typingInterval);
+          if (response) {
+            if (response.saturationMessage) {
+              await ctx.reply(response.saturationMessage);
+              return;
+            }
+            if (response.queued) {
+              await ctx.reply(
+                `🔄 Ari está procesando otro mensaje. Estás en la posición ${response.queuePosition} de la cola.`,
+              );
+              return;
+            }
+            if (response.text) {
+              let sentMsg: any;
+              try {
+                sentMsg = await ctx.reply(response.text, { parse_mode: "Markdown" });
+              } catch (markdownErr: any) {
+                if (markdownErr.message?.includes("can't parse entities")) {
+                  sentMsg = await ctx.reply(response.text);
+                } else {
+                  throw markdownErr;
+                }
+              }
+              if (sentMsg?.message_id) {
+                trackIntroMessage(prisma, tree.id, sentMsg.message_id).catch(() => {});
+              }
+            }
+          }
+        } catch (err: any) {
+          clearInterval(typingInterval);
+          console.error("[HermesBridge] MEDIUM routeToHermes threw:", err.message);
+        }
+        return;
+      }
+
       // Determine explicit triggers for the decision filter
       const isReplyToBot = !!(
         msg.reply_to_message &&

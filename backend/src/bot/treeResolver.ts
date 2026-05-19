@@ -14,6 +14,7 @@ export interface TreeInfo {
   admissionPolicy: string;
   creatorId: string | null;
   code: string | null;
+  interactionMode: string | null;
   memberCount: number;
   needCount: number;
   openNeedCount: number;
@@ -60,6 +61,7 @@ export async function findTreeByChat(
     admissionPolicy: tree.admissionPolicy,
     creatorId: tree.creatorId,
     code: tree.code,
+    interactionMode: tree.interactionMode ?? null,
     memberCount: tree._count.members,
     needCount: tree._count.needs,
     openNeedCount,
