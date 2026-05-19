@@ -760,7 +760,7 @@ export const tmCall = async (req: Request, res: Response) => {
       HOME: process.env.HOME,
       PATH: process.env.PATH,
       SANDBOX_BASE_DIR: sandboxDir,
-      TRUST_MAKER_DB_PATH: process.env.TRUST_MAKER_DB_PATH || "",
+      ...(process.env.TRUST_MAKER_DB_PATH ? { TRUST_MAKER_DB_PATH: process.env.TRUST_MAKER_DB_PATH } : {}),
       ...Object.fromEntries(
         Object.entries(process.env).filter(
           ([k]) => k.startsWith("SANDBOX_") || k.startsWith("HERMES_")
