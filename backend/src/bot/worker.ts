@@ -77,10 +77,10 @@ export async function startWorkerOnboarding(
   ctx: BotContext,
 ): Promise<void> {
   const lng = getUserLanguage(ctx);
-  ctx.session.workerOnboardingStep = "skills";
-  await ctx.reply(hWK("step_skills", lng), {
+  ctx.session.workerOnboardingStep = "hourlyRate";
+  await ctx.reply(hWK("step_rate", lng), {
     parse_mode: "Markdown",
-    reply_markup: { force_reply: true, input_field_placeholder: hWK("skills_placeholder", lng) },
+    reply_markup: { force_reply: true, input_field_placeholder: hWK("rate_placeholder", lng) },
   });
 }
 
@@ -110,21 +110,6 @@ export async function handleWorkerOnboardingResponse(
   }
 
   switch (step) {
-    case "skills": {
-      if (!text || text.length < 2) {
-        await ctx.reply(hWK("skills_invalid", lng), {
-          reply_markup: { force_reply: true, input_field_placeholder: hWK("skills_placeholder", lng) },
-        });
-        return;
-      }
-      ctx.session.workerSkills = text;
-      ctx.session.workerOnboardingStep = "hourlyRate";
-      await ctx.reply(hWK("step_rate", lng), {
-        parse_mode: "Markdown",
-        reply_markup: { force_reply: true, input_field_placeholder: hWK("rate_placeholder", lng) },
-      });
-      return;
-    }
     case "hourlyRate": {
       const rate = parseInt(text, 10);
       if (isNaN(rate) || rate <= 0) {
@@ -160,7 +145,6 @@ export async function handleWorkerOnboardingResponse(
       ctx.session.workerLocation = text;
       ctx.session.workerOnboardingStep = "confirm";
       const confirmMsg = hWK("confirm", lng, {
-        skills: ctx.session.workerSkills || "",
         rate: String(ctx.session.workerHourlyRate || 0),
         currency: ctx.session.workerCurrency || "CLP",
         location: ctx.session.workerLocation || "",

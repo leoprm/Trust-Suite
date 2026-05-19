@@ -200,6 +200,7 @@ model User {
   externalTasksWorked  ExternalTask[]            @relation("Worker")
   workerSkills         WorkerSkill[]
   workerLevelHistory   WorkerLevelHistory[]
+  treeSkills           TreeSkill[]
 }
 
 model Tree {
@@ -253,9 +254,13 @@ model Tree {
   seekerMatches           InvestmentMatch[]      @relation("SeekerMatches")
   todos                   Todo[]
   externalTasks           ExternalTask[]
+  satisfactionSurveys     SatisfactionSurvey[]
+  treeSkills              TreeSkill[]
   paused                  Boolean                @default(false)
   voteThreshold           Int                    @default(20)
   interactionMode         InteractionMode        @default(MAXIMUM)
+  classification          Json?
+  classificationUpdatedAt DateTime?
 }
 
 model TreeTechStack {
@@ -1272,4 +1277,61 @@ model WorkerLevelHistory {
 
   @@index([userId])
   @@index([userId, skill, createdAt])
+}
+
+// ── Tree Skills ─────────────────────────────────────────────────────────────
+
+model TreeSkill {
+  id        String   @id @default(uuid())
+  treeId    String
+  userId    String
+  skill     String
+  xp        Int      @default(0)
+  level     Int      @default(1)
+  updatedAt DateTime @updatedAt
+
+  tree Tree @relation(fields: [treeId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, treeId, skill])
+  @@index([userId])
+  @@index([userId, skill])
+}
+
+model SatisfactionSurvey {
+  id           String   @id @default(uuid())
+  treeId       String
+  targetUserId String
+  skill        String
+  createdBy    String
+  announcedAt  DateTime @default(now())
+  closesAt     DateTime
+  visible      Boolean  @default(false) // true when closed and results revealed
+  createdAt    DateTime @default(now())
+
+  tree  Tree         @relation(fields: [treeId], references: [id], onDelete: Cascade)
+  votes SurveyVote[]
+
+  @@index([treeId])
+  @@index([closesAt])
+}
+
+model SurveyVote {
+  id       String @id @default(uuid())
+  surveyId String
+  voterId  String // hash anonimo (SHA256 de userId + surveyId)
+  score    Int    // 1-10
+
+  survey SatisfactionSurvey @relation(fields: [surveyId], references: [id], onDelete: Cascade)
+
+  @@unique([surveyId, voterId])
+}
+
+model SatisfactionScore {
+  userId       String
+  skill        String
+  avgScore     Float   @default(0)
+  totalSurveys Int     @default(0)
+
+  @@id([userId, skill])
 }
