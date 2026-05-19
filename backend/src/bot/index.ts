@@ -3925,6 +3925,7 @@ export async function createBot(prisma: PrismaClient): Promise<Bot<BotContext> |
 
   // ── Iniciar polling ────────────────────────────────────────────────────
   bot.start({
+    drop_pending_updates: true,
     onStart(botInfo) {
       console.log(
         `[Telegram Bot] @${botInfo.username} iniciado en modo polling`
