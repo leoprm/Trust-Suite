@@ -103,6 +103,7 @@ import { startScheduler } from './bot/scheduler';
 import { initDisputeService } from './services/telegramBotService';
 import { startTreeCleanupCron } from './services/treeCleanupService';
 import { startTreeClassifierCron } from './services/treeClassifier';
+import { startCrossTreeSkillCron } from './services/crossTreeSkillAggregator';
 import { stripeWebhook, paddleWebhook, createCheckout, cancelSubscription, currentCost, mySubscription } from './controllers/billingController';
 import { whatsappReceive } from './controllers/whatsappController';
 import { getTreeAgents, assignTreeAgent } from './controllers/agentController';
@@ -132,6 +133,9 @@ let trustManagerBot: any = null;
 
   // ── Tree classifier cron: sincroniza tree-classification.json de sandboxes ──
   startTreeClassifierCron(prisma);
+
+  // ── Cross-tree skill aggregator: promedia TreeSkill → WorkerSkill cada 24h ──
+  startCrossTreeSkillCron(prisma);
 
   // ── Scheduler: cierre diario a medianoche ──────────────────────────────────────
   if (telegramBot) {

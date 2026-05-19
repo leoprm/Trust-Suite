@@ -9,6 +9,9 @@ import {
   notebooklmPodcast,
   notebooklmAddSource,
   notebooklmListSources,
+  createSurvey,
+  voteOnSurvey,
+  getSurveyResults,
 } from '../controllers/sandboxController';
 import {
   execTreeSandbox,
@@ -45,5 +48,10 @@ router.post('/:id/notebooklm/ask', notebooklmAsk);
 router.post('/:id/notebooklm/podcast', notebooklmPodcast);
 router.post('/:id/notebooklm/source', notebooklmAddSource);
 router.get('/:id/notebooklm/sources', notebooklmListSources);
+
+// ── Survey endpoints (JWT-protected, tree members) ────────────────────────────
+router.post('/:treeId/surveys', authenticateJWT, createSurvey);
+router.post('/:treeId/surveys/:surveyId/vote', authenticateJWT, voteOnSurvey);
+router.get('/:treeId/surveys/:surveyId/results', getSurveyResults);
 
 export default router;

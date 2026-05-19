@@ -384,3 +384,178 @@ export const notebooklmListSources = async (req: Request, res: Response) => {
     res.status(status).json({ error: error.message || 'NotebookLM list sources failed' });
   }
 };
+
+// ── POST /api/trees/:treeId/surveys ────────────────────────────────────────────
+// Body: { targetUserId, skill, closesAt }
+// Creates a SatisfactionSurvey with announcedAt=now. Returns { surveyId }.
+// JWT required — creator must be a tree member.
+
+import crypto from 'crypto';
+
+function voterHash(userId: string, surveyId: string): string {
+  return crypto.createHash('sha256').update(userId + surveyId).digest('hex');
+}
+
+export const createSurvey = async (req: Request, res: Response) => {
+  try {
+    const treeId = (req.params.treeId ?? req.params.id) as string;
+    const { targetUserId, skill, closesAt } = req.body;
+    const userId = (req as any).user!.id;
+
+    if (!targetUserId || !skill || !closesAt) {
+      return res.status(400).json({ error: 'targetUserId, skill, and closesAt are required' });
+    }
+
+    // Verify tree exists
+    const tree = await prisma.tree.findUnique({ where: { id: treeId } });
+    if (!tree) return res.status(404).json({ error: 'Tree not found' });
+
+    // Verify creator is a tree member
+    const membership = await prisma.treeMember.findUnique({
+      where: { userId_treeId: { userId, treeId } },
+    });
+    if (!membership) {
+      return res.status(403).json({ error: 'You must be a tree member to create surveys' });
+    }
+
+    // Verify target user exists
+    const target = await prisma.user.findUnique({ where: { id: targetUserId } });
+    if (!target) return res.status(404).json({ error: 'Target user not found' });
+
+    const survey = await prisma.satisfactionSurvey.create({
+      data: {
+        treeId,
+        targetUserId,
+        skill,
+        createdBy: userId,
+        closesAt: new Date(closesAt),
+      },
+    });
+
+    void logEvent({
+      ...getRequestContext(req),
+      treeId,
+      action: 'SURVEY_CREATED',
+      entityType: 'SatisfactionSurvey',
+      entityId: survey.id,
+      actorId: userId,
+      source: 'USER',
+      metadataJson: { targetUserId, skill },
+    });
+
+    res.status(201).json({ surveyId: survey.id });
+  } catch (error: any) {
+    console.error('[createSurvey] ERROR:', error?.message || error);
+    res.status(500).json({ error: 'Failed to create survey' });
+  }
+};
+
+// ── POST /api/trees/:treeId/surveys/:surveyId/vote ─────────────────────────────
+// Body: { score (1-10) }
+// voterId = SHA256(userId + surveyId) — anonymous, idempotent (@unique surveyId+voterId).
+// Only allowed while survey is still open AND not closed.
+// JWT required.
+
+export const voteOnSurvey = async (req: Request, res: Response) => {
+  try {
+    const surveyId = req.params.surveyId;
+    const userId = (req as any).user!.id;
+    const { score } = req.body;
+
+    if (typeof score !== 'number' || score < 1 || score > 10) {
+      return res.status(400).json({ error: 'score must be an integer 1-10' });
+    }
+
+    // Verify survey exists
+    const survey = await prisma.satisfactionSurvey.findUnique({
+      where: { id: surveyId },
+    });
+    if (!survey) return res.status(404).json({ error: 'Survey not found' });
+
+    // Block votes after closesAt
+    if (new Date() > survey.closesAt) {
+      return res.status(410).json({ error: 'Survey has closed' });
+    }
+
+    const hash = voterHash(userId, surveyId);
+
+    // Idempotent upsert
+    const vote = await prisma.surveyVote.upsert({
+      where: { surveyId_voterId: { surveyId, voterId: hash } },
+      update: { score: Math.floor(score) },
+      create: {
+        surveyId,
+        voterId: hash,
+        score: Math.floor(score),
+      },
+    });
+
+    // Update SatisfactionScore aggregate
+    const allVotes = await prisma.surveyVote.findMany({
+      where: { surveyId },
+      select: { score: true },
+    });
+    const avg =
+      allVotes.reduce((sum, v) => sum + v.score, 0) / allVotes.length;
+
+    await prisma.satisfactionScore.upsert({
+      where: { userId_skill: { userId: survey.targetUserId, skill: survey.skill } },
+      update: {
+        avgScore: avg,
+        totalSurveys: allVotes.length,
+      },
+      create: {
+        userId: survey.targetUserId,
+        skill: survey.skill,
+        avgScore: avg,
+        totalSurveys: allVotes.length,
+      },
+    });
+
+    res.json({ message: 'Vote recorded', voterId: hash });
+  } catch (error: any) {
+    console.error('[voteOnSurvey] ERROR:', error?.message || error);
+    res.status(500).json({ error: 'Failed to record vote' });
+  }
+};
+
+// ── GET /api/trees/:treeId/surveys/:surveyId/results ───────────────────────────
+// Only if survey.closesAt < now AND survey.visible = true.
+// Returns: { avgScore, totalVotes, scores: [{ voterHash, score }] }
+
+export const getSurveyResults = async (req: Request, res: Response) => {
+  try {
+    const surveyId = req.params.surveyId;
+
+    const survey = await prisma.satisfactionSurvey.findUnique({
+      where: { id: surveyId },
+    });
+    if (!survey) return res.status(404).json({ error: 'Survey not found' });
+
+    if (new Date() < survey.closesAt) {
+      return res.status(403).json({ error: 'Survey is still open' });
+    }
+    if (!survey.visible) {
+      return res.status(403).json({ error: 'Results are not yet visible' });
+    }
+
+    const votes = await prisma.surveyVote.findMany({
+      where: { surveyId },
+      select: { voterId: true, score: true },
+    });
+
+    const avgScore =
+      votes.length > 0
+        ? votes.reduce((sum, v) => sum + v.score, 0) / votes.length
+        : 0;
+
+    res.json({
+      avgScore: Math.round(avgScore * 100) / 100,
+      totalVotes: votes.length,
+      scores: votes.map((v) => ({ voterHash: v.voterId, score: v.score })),
+    });
+  } catch (error: any) {
+    console.error('[getSurveyResults] ERROR:', error?.message || error);
+    res.status(500).json({ error: 'Failed to get survey results' });
+  }
+};

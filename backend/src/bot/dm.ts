@@ -236,12 +236,14 @@ async function showProfile(
   prisma: PrismaClient,
   lng: string,
 ): Promise<void> {
-  // Parse skills
-  let skills: Record<string, number> = {};
-  try {
-    skills = user.skills ? JSON.parse(user.skills) : {};
-  } catch {
-    /* ignore */
+  // Parse skills from WorkerSkill table
+  const workerSkills = await (prisma as any).workerSkill.findMany({
+    where: { userId: user.id },
+    orderBy: { xp: "desc" as const },
+  });
+  const skills: Record<string, number> = {};
+  for (const ws of workerSkills) {
+    skills[ws.skill] = ws.xp;
   }
 
   const totalXp = user.totalXp || 0;
@@ -330,24 +332,18 @@ export async function handleProfileCallback(
       return true;
     }
 
-    let skills: Record<string, number> = {};
-    try {
-      skills = user.skills ? JSON.parse(user.skills) : {};
-    } catch {
-      /* ignore */
-    }
+    // Read skills from WorkerSkill table
+    const workerSkills = await (prisma as any).workerSkill.findMany({
+      where: { userId: user.id },
+      orderBy: { xp: "desc" as const },
+    });
 
-    const entries = Object.entries(skills).sort(
-      ([, a], [, b]) => (b as number) - (a as number),
-    );
-
-    if (entries.length === 0) {
+    if (workerSkills.length === 0) {
       await ctx.reply(t("dm:skills_empty", lng));
     } else {
       const skillLines = [t("dm:skills_title", lng), ""];
-      for (const [name, xp] of entries) {
-        const lvl = Math.floor((xp as number) / 100) + 1;
-        skillLines.push(t("dm:skill_item", lng, { name, xp, level: lvl }));
+      for (const ws of workerSkills) {
+        skillLines.push(t("dm:skill_item", lng, { name: ws.skill, xp: String(ws.xp), level: String(ws.level) }));
       }
       await ctx.reply(skillLines.join("\n"), { parse_mode: "Markdown" });
     }
