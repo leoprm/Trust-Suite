@@ -157,6 +157,21 @@ function scanSandboxes(): { treeId: string; taskId: string; filePath: string }[]
   return found;
 }
 
+/** Validate ISO 8601 date string (YYYY-MM-DD). */
+function isValidISODate(s: string): boolean {
+  // Must match YYYY-MM-DD exactly
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return false;
+  const d = new Date(s + "T00:00:00Z");
+  if (isNaN(d.getTime())) return false;
+  // Round-trip check: new Date("2026-02-30") parses to Mar 2
+  const [y, m, day] = s.split("-").map(Number);
+  return (
+    d.getUTCFullYear() === y &&
+    d.getUTCMonth() + 1 === m &&
+    d.getUTCDate() === day
+  );
+}
+
 function readRequest(filePath: string): HiringRequest | null {
   try {
     const raw = fs.readFileSync(filePath, "utf-8");
@@ -169,19 +184,23 @@ function readRequest(filePath: string): HiringRequest | null {
     const treeId = String(data.treeId || "").trim();
     const startDate = String(data.startDate || "").trim();
     const endDate = String(data.endDate || "").trim();
-    const location = data.location ? String(data.location).trim() : undefined;
+    const location = String(data.location || "").trim();
 
-    if (
-      isNaN(minSkillLevel) ||
-      isNaN(minSatisfactionPersonal) ||
-      isNaN(minSatisfactionGrupal) ||
-      !skill ||
-      !treeId ||
-      !startDate ||
-      !endDate
-    ) {
+    const missing: string[] = [];
+    if (isNaN(minSkillLevel)) missing.push("minSkillLevel");
+    if (isNaN(minSatisfactionPersonal)) missing.push("minSatisfactionPersonal");
+    if (isNaN(minSatisfactionGrupal)) missing.push("minSatisfactionGrupal");
+    if (!skill) missing.push("skill");
+    if (!treeId) missing.push("treeId");
+    if (!startDate) missing.push("startDate");
+    else if (!isValidISODate(startDate)) missing.push("startDate (invalid ISO 8601)");
+    if (!endDate) missing.push("endDate");
+    else if (!isValidISODate(endDate)) missing.push("endDate (invalid ISO 8601)");
+    if (!location) missing.push("location");
+
+    if (missing.length > 0) {
       console.error(
-        `[hiringBridge] Invalid/missing fields in ${filePath}: ${raw.slice(0, 300)}`,
+        `[hiringBridge] Invalid/missing fields in ${filePath}: ${missing.join(", ")} — ${raw.slice(0, 300)}`,
       );
       return null;
     }
@@ -335,7 +354,7 @@ async function notifyCandidate(
   request: HiringRequest,
   taskId: string,
 ): Promise<boolean> {
-  const locationStr = request.location ? `\n📍 Ubicación: ${request.location}` : "";
+  const locationStr = `\n📍 Ubicación: ${request.location}`;
 
   const text = [
     `📋 *Trabajo disponible:* ${request.skill} en árbol \`${request.treeId}\``,
