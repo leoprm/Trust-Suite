@@ -289,6 +289,13 @@ export const deleteTree = async (req: any, res: Response) => {
       console.warn(`[deleteTree] Sandbox destroy failed for tree ${id.slice(0, 8)}…:`, err?.message || err);
     }
 
+    // N3: clean up NotebookLM notebook — non-blocking, fire-and-forget
+    import('../services/notebooklmSingleton').then(({ deleteNotebook }) => {
+      deleteNotebook(id).catch(err => {
+        console.error(`[deleteTree] NotebookLM delete failed for tree ${id.slice(0, 8)}…:`, err?.message || err);
+      });
+    });
+
     // Prisma cascade cleans up: members, needs, ideas, votes, tokens,
     // chatMessages, eventLogs, ratings, ledgerEntries, TreeSandbox, etc.
     await prisma.tree.delete({ where: { id } });
