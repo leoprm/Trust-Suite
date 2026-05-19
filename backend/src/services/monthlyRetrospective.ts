@@ -71,6 +71,46 @@ function getPreviousMonth(): { yearMonth: string; label: string } {
   };
 }
 
+/** Returns true if today is the last day of a calendar quarter (Mar 31, Jun 30, Sep 30, Dec 31). */
+export function isEndOfQuarter(): boolean {
+  const today = new Date();
+  const month = today.getMonth(); // 0-indexed
+  const lastDay = new Date(today.getFullYear(), month + 1, 0).getDate();
+  return today.getDate() === lastDay && [2, 5, 8, 11].includes(month);
+}
+
+const QUARTER_MONTHS = [
+  ["enero", "febrero", "marzo"],
+  ["abril", "mayo", "junio"],
+  ["julio", "agosto", "septiembre"],
+  ["octubre", "noviembre", "diciembre"],
+];
+
+/** Calculate quarter metadata for a given date. */
+export function getQuarterLabel(date: Date): {
+  quarterLabel: string;
+  prevQuarterLabel: string;
+  yearMonths: string[];
+} {
+  const month = date.getMonth(); // 0-indexed
+  const year = date.getFullYear();
+  const quarter = Math.floor(month / 3); // 0=Q1, 1=Q2, 2=Q3, 3=Q4
+  const quarterNum = quarter + 1;
+  const months = QUARTER_MONTHS[quarter];
+  const quarterLabel = `Q${quarterNum} ${year} (${months[0]}-${months[2]})`;
+
+  const prevQuarter = quarter === 0 ? 3 : quarter - 1;
+  const prevYear = quarter === 0 ? year - 1 : year;
+  const prevQuarterLabel = `Q${prevQuarter + 1} ${prevYear}`;
+
+  const yearMonths = [0, 1, 2].map((offset) => {
+    const m = quarter * 3 + offset;
+    return `${year}-${String(m + 1).padStart(2, "0")}`;
+  });
+
+  return { quarterLabel, prevQuarterLabel, yearMonths };
+}
+
 /** Spawn lib/concat_month.py and parse its JSON stdout. */
 function runConcatMonth(
   treeId: string,
@@ -316,16 +356,278 @@ async function processTree(
   }
 }
 
+// ── Quarterly ─────────────────────────────────────────────────────────────────
+
+async function processQuarterlyTree(
+  prisma: PrismaClient,
+  tree: { id: string; name: string; telegramChatId: string | null },
+  bot: Bot<BotContext> | null,
+  yearMonths: string[],
+  quarterLabel: string,
+  prevQuarterLabel: string,
+): Promise<RetrospectiveResult> {
+  const chatId = tree.telegramChatId;
+
+  // ── 1. Concatenate all 3 months ──────────────────────────────────────────
+  const concatResults: ConcatOutput[] = [];
+  for (const ym of yearMonths) {
+    const concat = await runConcatMonth(tree.id, ym);
+    if (concat) concatResults.push(concat);
+  }
+
+  if (concatResults.length === 0) {
+    return {
+      treeName: tree.name,
+      chatId,
+      monthLabel: quarterLabel,
+      totalMessages: 0,
+      reportPosted: false,
+      error: "concat_month.py failed for all 3 months",
+    };
+  }
+
+  // ── 2. Read and concatenate all 3 monthly files ──────────────────────────
+  let allText = "";
+  let totalMessages = 0;
+  for (const concat of concatResults) {
+    try {
+      allText += fs.readFileSync(concat.path, "utf-8") + "\n";
+      totalMessages += concat.total_messages;
+    } catch {
+      console.error(`[Retro] Cannot read ${concat.path}, skipping.`);
+    }
+  }
+
+  if (!allText.trim()) {
+    return {
+      treeName: tree.name,
+      chatId,
+      monthLabel: quarterLabel,
+      totalMessages,
+      reportPosted: false,
+      error: "all 3 monthly files were unreadable",
+    };
+  }
+
+  // ── 3. Gate: skip trees with too few messages ────────────────────────────
+  if (totalMessages < MIN_MESSAGES) {
+    console.log(
+      `[Retro] ${tree.name}: ${totalMessages} msgs en ${quarterLabel} < ${MIN_MESSAGES} — saltando.`,
+    );
+    return {
+      treeName: tree.name,
+      chatId,
+      monthLabel: quarterLabel,
+      totalMessages,
+      reportPosted: false,
+    };
+  }
+
+  // ── 4. Truncate oversized conversations ──────────────────────────────────
+  if (allText.length > MAX_CONVERSATION_CHARS) {
+    console.log(
+      `[Retro] ${tree.name}: truncando conversación trimestral de ${allText.length} → ${MAX_CONVERSATION_CHARS} chars.`,
+    );
+    allText = allText.slice(0, MAX_CONVERSATION_CHARS);
+  }
+
+  // ── 5. Send to Hermes with quarterly instructions ────────────────────────
+  const instructions = retroInstructionsQuarterly(
+    tree.name,
+    quarterLabel,
+    prevQuarterLabel,
+  );
+  const fullMessage = `${instructions}\n\n${allText}`;
+
+  try {
+    const response = await routeToHermes(
+      fullMessage,
+      tree.id,
+      "0", // synthetic userId
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+    );
+
+    if (!response || !response.text) {
+      return {
+        treeName: tree.name,
+        chatId,
+        monthLabel: quarterLabel,
+        totalMessages,
+        reportPosted: false,
+        error: "Hermes returned null/empty",
+      };
+    }
+
+    const trimmed = response.text.trim();
+
+    // ── 6. NO_REPORT check ─────────────────────────────────────────────────
+    if (trimmed === "NO_REPORT" || trimmed === '"NO_REPORT"') {
+      console.log(
+        `[Retro] ${tree.name}: NO_REPORT (trimestral) — ${totalMessages} msgs sin hallazgos.`,
+      );
+      return {
+        treeName: tree.name,
+        chatId,
+        monthLabel: quarterLabel,
+        totalMessages,
+        reportPosted: false,
+      };
+    }
+
+    // ── 7. Save quarterly presentation to sandbox ──────────────────────────
+    const quarterMatch = quarterLabel.match(/Q(\d)\s+(\d{4})/);
+    if (quarterMatch) {
+      const sandboxBase =
+        process.env.SANDBOX_BASE_DIR || "/home/trustmaker/trees";
+      const filename = `quarterly-presentation-Q${quarterMatch[1]}-${quarterMatch[2]}.md`;
+      const filePath = path.join(sandboxBase, tree.id, filename);
+      const dir = path.dirname(filePath);
+      if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+      fs.writeFileSync(filePath, trimmed, "utf-8");
+      console.log(
+        `[Retro] ${tree.name}: quarterly presentation saved → ${filePath}`,
+      );
+    }
+
+    // ── 8. Post report to Telegram group ───────────────────────────────────
+    if (!bot || !chatId) {
+      console.log(
+        `[Retro] ${tree.name}: reporte trimestral generado (${trimmed.length} chars) sin bot/chatId.`,
+      );
+      return {
+        treeName: tree.name,
+        chatId,
+        monthLabel: quarterLabel,
+        totalMessages,
+        reportPosted: false,
+        error: "no bot or chatId",
+      };
+    }
+
+    const header = `📊 INFORME TRIMESTRAL — ${tree.name}\n_${quarterLabel}_\n\n`;
+    try {
+      await bot.api.sendMessage(chatId, header + trimmed, {
+        parse_mode: "Markdown",
+      });
+      console.log(
+        `[Retro] ${tree.name}: reporte trimestral publicado (${trimmed.length} chars, ${totalMessages} msgs).`,
+      );
+      return {
+        treeName: tree.name,
+        chatId,
+        monthLabel: quarterLabel,
+        totalMessages,
+        reportPosted: true,
+      };
+    } catch (err: any) {
+      console.error(
+        `[Retro] ${tree.name}: sendMessage error a ${chatId}: ${err?.message || err}`,
+      );
+      return {
+        treeName: tree.name,
+        chatId,
+        monthLabel: quarterLabel,
+        totalMessages,
+        reportPosted: false,
+        error: `sendMessage: ${err?.message || err}`,
+      };
+    }
+  } catch (err: any) {
+    console.error(
+      `[Retro] ${tree.name}: routeToHermes error: ${err?.message || err}`,
+    );
+    return {
+      treeName: tree.name,
+      chatId,
+      monthLabel: quarterLabel,
+      totalMessages,
+      reportPosted: false,
+      error: `routeToHermes: ${err?.message || err}`,
+    };
+  }
+}
+
+/** Run the quarterly retrospective for all trees with a Telegram group. */
+async function runQuarterlyRetrospective(
+  prisma: PrismaClient,
+  bot: Bot<BotContext> | null,
+): Promise<RetrospectiveResult[]> {
+  const today = new Date();
+  const { quarterLabel, prevQuarterLabel, yearMonths } =
+    getQuarterLabel(today);
+
+  const trees = await (prisma as any).tree.findMany({
+    where: { telegramChatId: { not: null } },
+    select: { id: true, name: true, telegramChatId: true },
+  });
+
+  console.log(
+    `[Retro] 📊📊 Iniciando retrospectiva TRIMESTRAL ${quarterLabel} para ${trees.length} árbol(es)…`,
+  );
+
+  const results: RetrospectiveResult[] = [];
+  for (let i = 0; i < trees.length; i++) {
+    const tree = trees[i];
+    try {
+      results.push(
+        await processQuarterlyTree(
+          prisma,
+          tree,
+          bot,
+          yearMonths,
+          quarterLabel,
+          prevQuarterLabel,
+        ),
+      );
+    } catch (err: any) {
+      console.error(`[Retro] ❌ ${tree.name}: ${err?.message || err}`);
+      results.push({
+        treeName: tree.name,
+        chatId: tree.telegramChatId,
+        monthLabel: quarterLabel,
+        totalMessages: 0,
+        reportPosted: false,
+        error: String(err),
+      });
+    }
+    if (i < trees.length - 1) {
+      console.log(
+        `[Retro] ⏳ Esperando ${INTER_TREE_DELAY_MS / 60_000} min antes del siguiente árbol…`,
+      );
+      await new Promise((r) => setTimeout(r, INTER_TREE_DELAY_MS));
+    }
+  }
+
+  const posted = results.filter((r) => r.reportPosted).length;
+  const silent = results.filter((r) => !r.reportPosted && !r.error).length;
+  const failed = results.filter((r) => !!r.error).length;
+
+  console.log(
+    `[Retro] 📊📊 Trimestral ${results.length} árboles: ${posted} publicados, ${silent} sin reporte, ${failed} errores.`,
+  );
+
+  return results;
+}
+
 // ── Public API ─────────────────────────────────────────────────────────────────
 
-/**
- * Run the monthly retrospective for all trees with a Telegram group.
- * Called by the scheduler on day 1 of each month at 01:00.
- */
+/** 
+ * Run the monthly retrospective for all trees with a Telegram group. 
+ * Called by the scheduler on day 1 of each month at 01:00. 
+ */ 
 export async function runMonthlyRetrospective(
   prisma: PrismaClient,
   bot: Bot<BotContext> | null,
 ): Promise<RetrospectiveResult[]> {
+  // ── End of quarter → run quarterly instead, skip monthly ──────────────────
+  if (isEndOfQuarter()) {
+    console.log("[Retro] 🗓️ Fin de trimestre detectado — ejecutando retrospectiva trimestral…");
+    return runQuarterlyRetrospective(prisma, bot);
+  }
+
   const { yearMonth, label: monthLabel } = getPreviousMonth();
 
   const trees = await (prisma as any).tree.findMany({

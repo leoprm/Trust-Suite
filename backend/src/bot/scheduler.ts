@@ -118,7 +118,6 @@ let healthCheckTask: ScheduledTask | null = null;
 let proposalResolverTask: ScheduledTask | null = null;
 let cleanupConversationsTask: ScheduledTask | null = null;
 let monthlyRetroTask: ScheduledTask | null = null;
-let monthlyRetroLastDayTask: ScheduledTask | null = null;
 let skillEvolutionTask: ScheduledTask | null = null;
 let externalTaskOrchestratorTask: ScheduledTask | null = null;
 let candidateAnnouncementTask: ScheduledTask | null = null;
@@ -307,9 +306,12 @@ export function startScheduler(
   });
   console.log("[Scheduler] 📢 Candidate Announcement Cron programado cada minuto");
 
-  // ── Cron: 0 1 1 * * (día 1 de cada mes a la 01:00) — Retrospectiva mensual con Ari ──
-  monthlyRetroTask = cron.schedule("0 1 1 * *", async () => {
-    console.log("[Scheduler] 📊 Día 1 del mes — ejecutando retrospectiva mensual…");
+  // ── Cron: 0 23 28-31 * * (último día del mes a las 23:00) — Retrospectiva mensual/trimestral ──
+  // Internally routes to quarterly if isEndOfQuarter(), otherwise runs monthly.
+  monthlyRetroTask = cron.schedule("0 23 28-31 * *", async () => {
+    if (!isLastDayOfMonth()) return;
+
+    console.log("[Scheduler] 📊 Último día del mes — ejecutando retrospectiva…");
     try {
       const results = await runMonthlyRetrospective(prismaClient, bot);
       const posted = results.filter((r) => r.reportPosted).length;
@@ -317,27 +319,10 @@ export function startScheduler(
         `[Scheduler] 📊 Retrospectiva: ${posted}/${results.length} árboles publicaron reporte.`,
       );
     } catch (err) {
-      console.error("[Scheduler] Error fatal en retrospectiva mensual:", err);
+      console.error("[Scheduler] Error fatal en retrospectiva:", err);
     }
   });
-  console.log("[Scheduler] 📊 Retrospectiva mensual programada al día 1 de cada mes a las 01:00");
-
-  // ── Cron: 0 23 28-31 * * (último día del mes a las 23:00) — Retrospectiva fin de mes ──
-  monthlyRetroLastDayTask = cron.schedule("0 23 28-31 * *", async () => {
-    if (!isLastDayOfMonth()) return;
-
-    console.log("[Scheduler] 📊 Último día del mes — ejecutando retrospectiva de fin de mes…");
-    try {
-      const results = await runMonthlyRetrospective(prismaClient, bot);
-      const posted = results.filter((r) => r.reportPosted).length;
-      console.log(
-        `[Scheduler] 📊 Retrospectiva fin de mes: ${posted}/${results.length} árboles publicaron reporte.`,
-      );
-    } catch (err) {
-      console.error("[Scheduler] Error fatal en retrospectiva de fin de mes:", err);
-    }
-  });
-  console.log("[Scheduler] 📊 Retrospectiva mensual programada al último día de cada mes a las 23:00");
+  console.log("[Scheduler] 📊 Retrospectiva mensual/trimestral programada al último día de cada mes a las 23:00");
 
   // DISABLED: modelo proposal eliminado en simplificación v4.
   // proposalResolverTask = cron.schedule("*/2 * * * *", async () => {
@@ -381,7 +366,7 @@ export async function triggerDailyClose(
  */
 export function stopScheduler(): void {
   let stopped = false;
-  for (const task of [midnightTask, decayTask, rotationTask, autoScaleTask, monthlyFeeTask, disputeResolutionTask, skillPricingTask, talentMigrationTask, healthCheckTask, proposalResolverTask, cleanupConversationsTask, monthlyRetroTask, monthlyRetroLastDayTask, skillEvolutionTask, externalTaskOrchestratorTask, candidateAnnouncementTask, nightlyResearchTask]) {
+  for (const task of [midnightTask, decayTask, rotationTask, autoScaleTask, monthlyFeeTask, disputeResolutionTask, skillPricingTask, talentMigrationTask, healthCheckTask, proposalResolverTask, cleanupConversationsTask, monthlyRetroTask, skillEvolutionTask, externalTaskOrchestratorTask, candidateAnnouncementTask, nightlyResearchTask]) {
     if (task) {
       task.stop();
       stopped = true;
@@ -400,7 +385,6 @@ export function stopScheduler(): void {
   proposalResolverTask = null;
   cleanupConversationsTask = null;
   monthlyRetroTask = null;
-  monthlyRetroLastDayTask = null;
   skillEvolutionTask = null;
   externalTaskOrchestratorTask = null;
   candidateAnnouncementTask = null;
