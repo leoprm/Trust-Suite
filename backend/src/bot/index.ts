@@ -2836,10 +2836,10 @@ export async function createBot(prisma: PrismaClient): Promise<Bot<BotContext> |
         return;
       }
 
-      // Show parent tree selector (T3 will refine this)
+      // T3: Parent tree selector — inline keyboard with tree icon + name
       const keyboard = memberships.map((m) => [{
         text: `${m.tree.icono || "\uD83C\uDF33"} ${m.tree.name}`,
-        callback_data: `onboarding:subtree_early_pick:${treeId}:${m.tree.id}`,
+        callback_data: `onboarding:parent_select:${treeId}:${m.tree.id}`,
       }]);
 
       await ctx.api.sendMessage(
@@ -2850,9 +2850,9 @@ export async function createBot(prisma: PrismaClient): Promise<Bot<BotContext> |
       return;
     }
 
-    // T2: Pick parent tree callback (subtree early onboarding)
-    if (data.startsWith("onboarding:subtree_early_pick:")) {
-      // data = onboarding:subtree_early_pick:<childTreeId>:<parentTreeId>
+    // T3: Parent tree selection callback (subtree early onboarding)
+    if (data.startsWith("onboarding:parent_select:")) {
+      // data = onboarding:parent_select:<childTreeId>:<parentTreeId>
       const parts = data.split(":");
       if (parts.length < 5) {
         await ctx.answerCallbackQuery();
@@ -2867,6 +2867,39 @@ export async function createBot(prisma: PrismaClient): Promise<Bot<BotContext> |
         return;
       }
 
+      // Verify user is an active member of the selected parent tree
+      const tgId = ctx.from!.id;
+      const user = await prisma.user.findUnique({
+        where: { telegramUserId: BigInt(tgId) },
+        select: { id: true },
+      });
+
+      if (!user) {
+        await ctx.editMessageText(
+          "⚠️ No se encontró tu cuenta. Continuando con el selector de idioma...",
+          { reply_markup: undefined },
+        );
+        await ctx.answerCallbackQuery();
+        return;
+      }
+
+      const parentMembership = await prisma.treeMember.findFirst({
+        where: {
+          userId: user.id,
+          treeId: parentTreeId,
+          status: "ACTIVE",
+        },
+      });
+
+      if (!parentMembership) {
+        await ctx.editMessageText(
+          "⚠️ No eres miembro activo de ese árbol. Selecciona otro o continúa con el selector de idioma.",
+          { reply_markup: undefined },
+        );
+        await ctx.answerCallbackQuery();
+        return;
+      }
+
       // Link child tree to parent
       try {
         await (prisma as any).tree.update({
@@ -2874,14 +2907,18 @@ export async function createBot(prisma: PrismaClient): Promise<Bot<BotContext> |
           data: { parentTreeId },
         });
 
+        // T4: Notify parent chat — fetch parentTree.telegramChatId and childTree.name,
+        // send message "🌿 *Nuevo sub-árbol vinculado:* 🌳 Nombre\nAhora las IAs pueden colaborar."
+        // TODO(t_ec43f5a4): Implement parent chat notification
+
         await ctx.editMessageText("✅ Vinculado como sub-árbol.", { reply_markup: undefined });
       } catch (err: any) {
-        console.error("[subtree_early_pick] Failed to link parent tree:", err.message);
+        console.error("[parent_select] Failed to link parent tree:", err.message);
         await ctx.editMessageText("❌ Error al vincular. Intenta de nuevo.", { reply_markup: undefined });
       }
       await ctx.answerCallbackQuery();
 
-      // Now continue to language selector
+      // Continue to language selector
       const langMsg = await ctx.api.sendMessage(
         ctx.chat!.id,
         "\uD83C\uDF10 Select your language / Selecciona tu idioma",
