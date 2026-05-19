@@ -5,6 +5,7 @@ import path from 'path';
 import multer from 'multer';
 import { TreeSandbox } from '../services/treeSandbox';
 import { logEvent, getRequestContext } from '../services/eventLogService';
+import { prisma } from '../index';
 
 const API_SERVER_KEY = process.env.HERMES_API_SERVER_KEY ?? '';
 const DEFAULT_TIMEOUT_MS = 30_000;
@@ -549,5 +550,72 @@ print(json.dumps({"ok": True, "size": __import__('os').path.getsize(output_path)
   } catch (error: any) {
     console.error("[convertTreeSandbox] ERROR:", error?.message || error);
     res.status(500).json({ error: "Conversion failed", detail: error?.message });
+  }
+};
+
+// ── POST /api/trees/:id/sandbox/parent/read ────────────────────────────────
+// Body: { path: string }
+// Reads a file from the parent tree's sandbox. No write, no delete.
+// Returns: { content: string, size: number }
+
+export const readParentTreeSandbox = async (req: Request, res: Response) => {
+  if (!checkApiKey(req, res)) return;
+
+  try {
+    const id = req.params.id as string;
+    const { path: requestedPath } = req.body;
+
+    if (!requestedPath || typeof requestedPath !== 'string') {
+      return res.status(400).json({ error: 'path is required (string)' });
+    }
+
+    // Verify tree has a parent
+    const tree = await prisma.tree.findUnique({ where: { id } });
+    if (!tree) {
+      return res.status(404).json({ error: 'Tree not found' });
+    }
+    if (!tree.parentTreeId) {
+      return res.status(400).json({ error: 'Tree has no parent' });
+    }
+
+    // Build parent sandbox path
+    const SANDBOX_BASE = process.env.SANDBOX_BASE_DIR || '/home/trustmaker/trees';
+    const parentWorkspace = path.join(SANDBOX_BASE, tree.parentTreeId);
+
+    // Path traversal protection — MUST start with parent workspace
+    const safePath = resolveSafePath(parentWorkspace, requestedPath);
+    if (!safePath) {
+      return res.status(403).json({ error: 'Path escapes parent sandbox' });
+    }
+
+    if (!fs.existsSync(safePath)) {
+      return res.status(404).json({ error: 'File not found', path: requestedPath });
+    }
+
+    const stat = fs.statSync(safePath);
+    if (!stat.isFile()) {
+      return res.status(400).json({ error: 'Path is not a file' });
+    }
+
+    // 100 KB limit for reads
+    if (stat.size > 100_000) {
+      return res.status(413).json({ error: 'File too large (max 100 KB)', size: stat.size });
+    }
+
+    const content = fs.readFileSync(safePath, 'utf-8');
+
+    void logEvent({
+      ...getRequestContext(req),
+      treeId: id,
+      action: 'SANDBOX_PARENT_READ',
+      entityType: 'TreeSandbox',
+      entityId: tree.parentTreeId,
+      source: 'SYSTEM',
+    });
+
+    res.json({ content, size: stat.size });
+  } catch (error: any) {
+    console.error('[readParentTreeSandbox] ERROR:', error?.message || error);
+    res.status(500).json({ error: 'File read failed', detail: error?.message });
   }
 };

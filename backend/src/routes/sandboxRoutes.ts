@@ -13,6 +13,7 @@ import {
   convertTreeSandbox,
   uploadTreeSandbox,
   sandboxUpload,
+  readParentTreeSandbox,
 } from '../controllers/treeSandboxController';
 import { authenticateJWT } from '../middleware/authMiddleware';
 
@@ -33,5 +34,6 @@ router.post('/:id/sandbox/write', writeTreeSandbox);
 router.post('/:id/sandbox/convert', convertTreeSandbox);
 router.post('/:id/sandbox/upload', sandboxUpload.single('file'), uploadTreeSandbox);
 router.post('/:id/sandbox/media-search', searchMediaInSandbox);
+router.post('/:id/sandbox/parent/read', readParentTreeSandbox);
 
 export default router;

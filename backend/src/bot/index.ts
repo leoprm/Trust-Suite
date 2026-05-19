@@ -763,7 +763,9 @@ export async function createBot(prisma: PrismaClient): Promise<Bot<BotContext> |
 
           const isBetaAdmin = adderId === TRUSTMAKER_ADMIN_TELEGRAM_ID;
 
-          // ── Gate: capacity limit (MAX_TREES) ──────────────────────────
+          // ── Gate: capacity limit (MAX_TREES) — DISABLED para fase beta ──
+          // Código original preservado. Reactivar: descomentar y quitar if(false)
+          if (false) {
           const MAX_TREES = parseInt(process.env.MAX_TREES || "5", 10);
           const treeCount = await (prisma as any).tree.count({
             where: { telegramChatId: { not: null } },
@@ -842,6 +844,7 @@ export async function createBot(prisma: PrismaClient): Promise<Bot<BotContext> |
             );
             return;
           }
+          } // END if(false) — DISABLED
 
           // ── Gate: 1 group per user during beta ──────────────────────────
           // Check if the adder already administers a tree
@@ -860,6 +863,9 @@ export async function createBot(prisma: PrismaClient): Promise<Bot<BotContext> |
               },
             });
 
+            // ── Gate: 1 group per user during beta — DISABLED ──
+            // Código original preservado
+            if (false) {
             const MAX_USER_TREES = parseInt(process.env.MAX_TREES_PER_USER || "2", 10);
             if (!isBetaAdmin && adminTrees >= MAX_USER_TREES) {
               // Check if tree already exists (rejoin to same tree)
@@ -880,6 +886,7 @@ export async function createBot(prisma: PrismaClient): Promise<Bot<BotContext> |
                 return;
               }
             }
+            } // END if(false) — DISABLED
           }
 
           // Check if tree already exists for this group
