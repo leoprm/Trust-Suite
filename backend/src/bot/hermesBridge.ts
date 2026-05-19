@@ -447,7 +447,7 @@ async function buildSystemPrompt(
   // ── Global skills ──────────────────────────────────────────────────────
   const skillsDir = path.join(
     process.env.HOME || "/home/leo",
-    ".hermes/skills/trustmaker",
+    ".hermes/skills/trust-maker",
   );
   lines.push("");
   lines.push("═══ SKILLS GLOBALES CARGADAS ═══");
@@ -1019,7 +1019,7 @@ async function buildSystemPrompt(
   lines.push("");
   lines.push("3. SKILLS GLOBALES:");
   lines.push(
-    "   - Están en ~/.hermes/skills/trustmaker/ y se cargan automáticamente.",
+    "   - Están en ~/.hermes/skills/trust-maker/ y se cargan automáticamente.",
   );
   lines.push("");
   lines.push("4. FORMATO DE SKILL (.md):");
