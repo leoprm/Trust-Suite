@@ -129,6 +129,24 @@ export class TreeSandbox {
     // 2b. Scaffold obsidian vault
     scaffoldObsidianVault(workspacePath);
 
+    // 2c. Deploy keyword extractor into sandbox apps/
+    const extractorSrc = path.resolve(__dirname, '../../lib/keyword_extractor.py');
+    if (fs.existsSync(extractorSrc)) {
+      fs.copyFileSync(extractorSrc, path.join(workspacePath, 'apps', 'keyword_extractor.py'));
+      console.log('[TreeSandbox] keyword_extractor.py deployed');
+    }
+
+    // 2d. Write tree metadata for sandbox tools (keyword extractor, etc.)
+    const treeMeta = {
+      description: tree.description || '',
+      objectives: tree.objectives || '',
+    };
+    fs.writeFileSync(
+      path.join(workspacePath, 'context', 'tree_meta.json'),
+      JSON.stringify(treeMeta, null, 2),
+      'utf-8',
+    );
+
     // 3. Assign a free port
     const port = await findFreePort();
 
