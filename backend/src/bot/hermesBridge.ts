@@ -18,6 +18,7 @@ import fs from "fs";
 import path from "path";
 import { incrementUsage } from "../lib/skillUsage";
 import { messageQueue } from "./messageQueue";
+import { deriveTreeApiKey } from "../controllers/treeSandboxController";
 
 const HERMES_API = "http://127.0.0.1:8644/v1/chat/completions";
 const SUPPORT_HERMES_GATEWAY = process.env.HERMES_SUPPORT_GATEWAY || "http://127.0.0.1:8646";
@@ -271,6 +272,7 @@ async function buildSystemPrompt(
   displayName?: string,
 ): Promise<string> {
   const lines: string[] = [];
+  const treeApiKey = deriveTreeApiKey(treeId);
 
   // ── Tree info ─────────────────────────────────────────────────────────
   const tree = await (prisma as any).tree.findUnique({
@@ -609,7 +611,7 @@ async function buildSystemPrompt(
   lines.push('   Response: { "success": true }');
   lines.push("");
   lines.push(
-    "Formato de solicitud HTTP — usa fetch con Authorization Bearer HERMES_API_SERVER_KEY:",
+    "Formato de solicitud HTTP — usa fetch con tu TREE_API_KEY (específica de este árbol):",
   );
   lines.push("");
   lines.push("```javascript");
@@ -619,7 +621,7 @@ async function buildSystemPrompt(
   lines.push('  method: "POST",');
   lines.push("  headers: {");
   lines.push('    "Content-Type": "application/json",');
-  lines.push('    "Authorization": "Bearer HERMES_API_SERVER_KEY"');
+  lines.push(`    "Authorization": "Bearer ${treeApiKey}"`);
   lines.push("  },");
   lines.push(
     '  body: JSON.stringify({ command: "...", cwd: "/sandbox" })',

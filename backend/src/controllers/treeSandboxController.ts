@@ -2,6 +2,7 @@ import { Request, Response } from 'express';
 import { exec } from 'child_process';
 import fs from 'fs';
 import path from 'path';
+import crypto from 'crypto';
 import multer from 'multer';
 import { TreeSandbox } from '../services/treeSandbox';
 import { logEvent, getRequestContext } from '../services/eventLogService';
@@ -9,6 +10,14 @@ import { prisma } from '../index';
 
 const API_SERVER_KEY = process.env.HERMES_API_SERVER_KEY ?? '';
 const DEFAULT_TIMEOUT_MS = 30_000;
+
+// ── Tree-specific API key derivation ────────────────────────────────────────
+
+/** Derive a per-tree API key from the master key + treeId. */
+export function deriveTreeApiKey(treeId: string): string {
+  if (!API_SERVER_KEY || !treeId) return '';
+  return crypto.createHmac('sha256', API_SERVER_KEY).update(treeId).digest('hex');
+}
 
 // ── Auth helper ─────────────────────────────────────────────────────────────
 
@@ -21,11 +30,16 @@ function checkApiKey(req: Request, res: Response): boolean {
   const token = authHeader.startsWith('Bearer ')
     ? authHeader.slice(7)
     : authHeader;
-  if (!API_SERVER_KEY || token !== API_SERVER_KEY) {
-    res.status(403).json({ error: 'Invalid API key' });
-    return false;
-  }
-  return true;
+  
+  // Accept global master key
+  if (API_SERVER_KEY && token === API_SERVER_KEY) return true;
+  
+  // Accept tree-specific derived key (matches :id in URL)
+  const treeId = req.params.id as string;
+  if (treeId && token === deriveTreeApiKey(treeId)) return true;
+  
+  res.status(403).json({ error: 'Invalid API key' });
+  return false;
 }
 
 // ── Sandbox env whitelist ────────────────────────────────────────────────────
