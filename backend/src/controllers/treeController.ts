@@ -1097,3 +1097,44 @@ export const getTreeServers = async (req: any, res: Response) => {
     res.status(500).json({ error: "Failed to get tree servers" });
   }
 };
+
+// ── User-scoped tree queries ─────────────────────────────────────────────
+
+/** GET /api/users/:telegramUserId/trees — trees where a user is an active member */
+export const getUserTrees = async (req: Request, res: Response) => {
+  try {
+    const { telegramUserId } = req.params;
+
+    const numericId = Number(telegramUserId);
+    if (!Number.isInteger(numericId) || numericId <= 0) {
+      return res.status(400).json({ error: "Invalid telegramUserId" });
+    }
+
+    const user = await prisma.user.findUnique({
+      where: { telegramUserId: BigInt(numericId) },
+      select: { id: true },
+    });
+
+    if (!user) {
+      return res.status(404).json({ error: "User not found" });
+    }
+
+    const memberships = await prisma.treeMember.findMany({
+      where: {
+        userId: user.id,
+        status: "ACTIVE",
+      },
+      include: {
+        tree: {
+          select: { id: true, name: true, icono: true },
+        },
+      },
+    });
+
+    const trees = memberships.map((m) => m.tree);
+    res.json(trees);
+  } catch (error: any) {
+    console.error("[getUserTrees] ERROR:", error?.message || error);
+    res.status(500).json({ error: "Failed to get user trees", detail: error?.message || String(error) });
+  }
+};

@@ -318,12 +318,17 @@ async function buildSystemPrompt(
     select: { id: true, name: true },
   });
 
+  let parentDisplayName: string | null = null;
+
   if (parentTreeId) {
     const parent = await (prisma as any).tree.findUnique({
       where: { id: parentTreeId },
-      select: { name: true },
+      select: { name: true, icono: true },
     });
-    if (parent) parentTreeName = parent.name;
+    if (parent) {
+      parentTreeName = parent.name;
+      parentDisplayName = `${parent.icono || "🌳"} ${parent.name}`;
+    }
   }
 
   const isSubTree = !!parentTreeName;
@@ -1467,6 +1472,28 @@ export async function routeToHermes(
     // ── Prefix Enforcement ──────────────────────────────────────────────
     accumulatedContent = await enforcePrefix(accumulatedContent, treeId, prisma);
 
+    // ── Multi-tree name prefix ──────────────────────────────────────────
+    if (chatId !== undefined && treeId) {
+      try {
+        const treeCount = await (prisma as any).tree.count({
+          where: { telegramChatId: String(chatId) },
+        });
+        if (treeCount > 1) {
+          const tree = await (prisma as any).tree.findUnique({
+            where: { id: treeId },
+            select: { name: true, icono: true },
+          });
+          if (tree?.name) {
+            const icon = tree.icono || "";
+            const prefix = `${icon} ${tree.name}`.trim();
+            accumulatedContent = `- ${prefix}:\n\n${accumulatedContent}`;
+          }
+        }
+      } catch {
+        // Non-critical — silently skip prefix if lookup fails
+      }
+    }
+
     // Increment task counter for skill auto-evaluation
     if (treeId) taskCounters.set(treeId, (taskCounters.get(treeId) ?? 0) + 1);
     return { text: accumulatedContent };
@@ -1476,6 +1503,27 @@ export async function routeToHermes(
     if (accumulatedContent) {
       console.warn(`[hermesBridge] Stream interrupted, returning ${accumulatedContent.length} partial chars`);
       accumulatedContent = await enforcePrefix(accumulatedContent, treeId, prisma);
+      // ── Multi-tree name prefix (same as happy path) ──────────────────
+      if (chatId !== undefined && treeId) {
+        try {
+          const treeCount = await (prisma as any).tree.count({
+            where: { telegramChatId: String(chatId) },
+          });
+          if (treeCount > 1) {
+            const tree = await (prisma as any).tree.findUnique({
+              where: { id: treeId },
+              select: { name: true, icono: true },
+            });
+            if (tree?.name) {
+              const icon = tree.icono || "";
+              const prefix = `${icon} ${tree.name}`.trim();
+              accumulatedContent = `- ${prefix}:\n\n${accumulatedContent}`;
+            }
+          }
+        } catch {
+          // Non-critical — silently skip
+        }
+      }
       if (treeId) taskCounters.set(treeId, (taskCounters.get(treeId) ?? 0) + 1);
       return { text: accumulatedContent };
     }
