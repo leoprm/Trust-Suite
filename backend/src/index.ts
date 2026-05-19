@@ -102,6 +102,7 @@ import { initTrustManagerBot } from './bot/trustManagerBot';
 import { startScheduler } from './bot/scheduler';
 import { initDisputeService } from './services/telegramBotService';
 import { startTreeCleanupCron } from './services/treeCleanupService';
+import { startTreeClassifierCron } from './services/treeClassifier';
 import { stripeWebhook, paddleWebhook, createCheckout, cancelSubscription, currentCost, mySubscription } from './controllers/billingController';
 import { whatsappReceive } from './controllers/whatsappController';
 import { getTreeAgents, assignTreeAgent } from './controllers/agentController';
@@ -128,6 +129,9 @@ let trustManagerBot: any = null;
 
   // ── Tree cleanup cron: procesa pendingDeletionAt expirados ───────────────────
   startTreeCleanupCron(prisma);
+
+  // ── Tree classifier cron: sincroniza tree-classification.json de sandboxes ──
+  startTreeClassifierCron(prisma);
 
   // ── Scheduler: cierre diario a medianoche ──────────────────────────────────────
   if (telegramBot) {

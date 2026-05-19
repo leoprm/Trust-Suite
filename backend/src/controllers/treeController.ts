@@ -6,6 +6,7 @@ import { onTreeCreated } from '../services/genesisService';
 import { TreeSandbox } from '../services/treeSandbox';
 import { suggestTreeStructure, generateRecommendationForNewTree } from '../services/treeRecommenderService';
 import { createNotebook } from '../services/notebooklmSingleton';
+import { classifyTree } from '../services/treeClassificationService';
 
 // ── Helpers ──────────────────────────────────────────────────────────────
 
@@ -154,6 +155,15 @@ export const createTree = async (req: any, res: Response) => {
     try {
       createNotebook(tree.id).catch(err => {
         console.error('[notebooklm] auto-create failed:', err?.message || err);
+      });
+    } catch {
+      // Non-blocking: import or top-level sync error
+    }
+
+    // C1: Ari tree classification — non-blocking, fire-and-forget
+    try {
+      classifyTree(tree.id, tree.name, tree.description || '').catch(err => {
+        console.error('[classifyTree] classification failed:', err?.message || err);
       });
     } catch {
       // Non-blocking: import or top-level sync error

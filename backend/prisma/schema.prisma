@@ -1307,6 +1307,7 @@ model SatisfactionSurvey {
   announcedAt  DateTime @default(now())
   closesAt     DateTime
   visible      Boolean  @default(false) // true when closed and results revealed
+  reminderSent Boolean  @default(false) // true when 3-day closing reminder was sent
   createdAt    DateTime @default(now())
 
   tree  Tree         @relation(fields: [treeId], references: [id], onDelete: Cascade)

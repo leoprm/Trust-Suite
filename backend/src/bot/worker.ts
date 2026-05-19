@@ -101,7 +101,6 @@ export async function handleWorkerOnboardingResponse(
 
   if (text === "/cancelar" || text === "/cancel") {
     ctx.session.workerOnboardingStep = undefined;
-    ctx.session.workerSkills = undefined;
     ctx.session.workerHourlyRate = undefined;
     ctx.session.workerCurrency = undefined;
     ctx.session.workerLocation = undefined;
@@ -195,7 +194,6 @@ export async function handleWorkerConfirmCallback(
 
   if (choice === "no") {
     ctx.session.workerOnboardingStep = undefined;
-    ctx.session.workerSkills = undefined;
     ctx.session.workerHourlyRate = undefined;
     ctx.session.workerCurrency = undefined;
     ctx.session.workerLocation = undefined;
@@ -209,7 +207,6 @@ export async function handleWorkerConfirmCallback(
   await (prisma as any).user.update({
     where: { telegramUserId: BigInt(tgUser.id) },
     data: {
-      skills: ctx.session.workerSkills,
       hourlyRate: ctx.session.workerHourlyRate,
       currency: ctx.session.workerCurrency || "CLP",
       location: ctx.session.workerLocation,
@@ -218,7 +215,6 @@ export async function handleWorkerConfirmCallback(
   });
 
   ctx.session.workerOnboardingStep = undefined;
-  ctx.session.workerSkills = undefined;
   ctx.session.workerHourlyRate = undefined;
   ctx.session.workerCurrency = undefined;
   ctx.session.workerLocation = undefined;
@@ -240,8 +236,16 @@ export async function showWorkerProfile(
   const user = await resolveTelegramUser(prisma, tgUser);
   if (!user) { await ctx.reply(hWK("error_profile", lng)); return; }
 
+  // Read skills from WorkerSkill table
+  const workerSkills = await (prisma as any).workerSkill.findMany({
+    where: { userId: user.id },
+    orderBy: { xp: "desc" as const },
+  });
+  const skillsList = workerSkills.length > 0
+    ? workerSkills.map((ws: any) => `${ws.skill}: ${ws.xp} XP (Lv${ws.level})`).join(", ")
+    : "---";
+
   const isHired = user.availableForHire;
-  const skillsList = user.skills || "---";
   const rate = user.hourlyRate ? `${user.hourlyRate} ${user.currency || "CLP"}` : "---";
   const loc = user.location || "---";
   const currency = user.currency || "CLP";
@@ -253,7 +257,6 @@ export async function showWorkerProfile(
 
   const keyboard = {
     inline_keyboard: [
-      [{ text: hWK("edit_skills", lng), callback_data: "worker_edit:skills" }],
       [{ text: hWK("edit_rate", lng), callback_data: "worker_edit:rate" }],
       [{ text: hWK("edit_currency", lng), callback_data: "worker_edit:currency" }],
       [{ text: hWK("edit_location", lng), callback_data: "worker_edit:location" }],
@@ -275,11 +278,6 @@ export async function handleWorkerEditCallback(
   const lng = getUserLanguage(ctx);
 
   switch (action) {
-    case "skills":
-      ctx.session.workerEditField = "skills";
-      await ctx.answerCallbackQuery();
-      await ctx.editMessageText(hWK("edit_skills_prompt", lng), { parse_mode: "Markdown" });
-      return;
     case "rate":
       ctx.session.workerEditField = "rate";
       await ctx.answerCallbackQuery();
@@ -330,13 +328,6 @@ export async function handleWorkerEditResponse(
   }
 
   switch (field) {
-    case "skills": {
-      if (!text || text.length < 2) { await ctx.reply(hWK("skills_invalid", lng)); return true; }
-      await (prisma as any).user.update({ where: { telegramUserId: BigInt(tgUser.id) }, data: { skills: text } });
-      ctx.session.workerEditField = undefined;
-      await ctx.reply(hWK("profile_updated", lng), { parse_mode: "Markdown" });
-      return true;
-    }
     case "rate": {
       const rate = parseInt(text, 10);
       if (isNaN(rate) || rate <= 0) { await ctx.reply(hWK("rate_invalid", lng)); return true; }
@@ -394,10 +385,12 @@ export async function showAvailableTasks(
   const user = await resolveTelegramUser(prisma, tgUser);
   if (!user) { await ctx.reply(hWK("error_profile", lng)); return; }
 
-  let skills: string[] = [];
-  try {
-    if (user.skills) skills = user.skills.split(",").map((s: string) => s.trim().toLowerCase()).filter(Boolean);
-  } catch { /* empty */ }
+  // Read skills from WorkerSkill table
+  const workerSkills = await (prisma as any).workerSkill.findMany({
+    where: { userId: user.id },
+    select: { skill: true },
+  });
+  const skills: string[] = workerSkills.map((ws: any) => ws.skill.toLowerCase());
 
   const tasks = await (prisma as any).externalTask.findMany({
     where: { status: "OPEN" },
