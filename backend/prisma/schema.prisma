@@ -1236,6 +1236,8 @@ model ExternalTask {
   deliverableUrl String?
   approvedBy     String?
   rejectReason   String?                  @db.Text
+  startDate      DateTime?
+  endDate        DateTime?
   createdAt      DateTime                 @default(now())
   updatedAt      DateTime                 @updatedAt
 

@@ -3569,6 +3569,81 @@ export async function createBot(prisma: PrismaClient): Promise<Bot<BotContext> |
       return;
     }
 
+    // ── Hiring DM callbacks: Postular / Ignorar desde hiringBridge ──────────
+    // Callback format: hiring:apply:<taskId>  or  hiring:ignore:<taskId>
+    if (data.startsWith("hiring:apply:") || data.startsWith("hiring:ignore:")) {
+      const isApply = data.startsWith("hiring:apply:");
+      const prefix = isApply ? "hiring:apply:" : "hiring:ignore:";
+      const taskId = data.slice(prefix.length);
+
+      if (!taskId) {
+        await ctx.answerCallbackQuery({ text: "⚠️ Datos inválidos" });
+        return;
+      }
+
+      const tgUser = ctx.from;
+      if (!tgUser) {
+        await ctx.answerCallbackQuery({ text: "⚠️ No se pudo identificar tu cuenta" });
+        return;
+      }
+
+      const user = await (prisma as any).user.findUnique({
+        where: { telegramUserId: BigInt(tgUser.id) },
+        select: { id: true, firstName: true },
+      });
+      if (!user) {
+        await ctx.answerCallbackQuery({ text: "⚠️ No tienes cuenta vinculada. Usa /start en @TrustMakerBot." });
+        return;
+      }
+
+      // Check for duplicate
+      const existing = await (prisma as any).hiringApplicant.findUnique({
+        where: { taskId_userId: { taskId, userId: user.id } },
+      });
+      if (existing) {
+        const label = existing.status === "APPLIED" ? "Ya te postulaste" : "Ya respondiste";
+        await ctx.answerCallbackQuery({ text: `⚠️ ${label} a esta oferta` });
+        return;
+      }
+
+      const newStatus = isApply ? "APPLIED" : "IGNORED";
+
+      try {
+        await (prisma as any).hiringApplicant.create({
+          data: {
+            taskId,
+            userId: user.id,
+            treeId: "", // filled by hiringBridge on deadline close if needed
+            status: newStatus,
+          },
+        });
+
+        const msg = isApply
+          ? "✅ Te has postulado. El árbol revisará tu perfil cuando cierre la convocatoria."
+          : "👋 Oferta ignorada. No recibirás más notificaciones de esta búsqueda.";
+
+        // Edit the inline keyboard to show confirmation (remove buttons)
+        try {
+          await ctx.editMessageReplyMarkup({
+            reply_markup: {
+              inline_keyboard: [[
+                { text: isApply ? "✅ Postulado" : "❌ Ignorado", callback_data: "hiring:done" },
+              ]],
+            },
+          });
+        } catch { /* DM may not be editable */ }
+
+        await ctx.answerCallbackQuery({ text: msg, show_alert: true });
+        console.log(
+          `[hiring callback] User ${user.id} ${isApply ? "APPLIED" : "IGNORED"} to task ${taskId}`,
+        );
+      } catch (err: any) {
+        console.error("[hiring callback] Error:", err.message);
+        await ctx.answerCallbackQuery({ text: "⚠️ Error al procesar. Intenta de nuevo." });
+      }
+      return;
+    }
+
     // ── Encuesta callbacks (target selection, survey selector, voting) ──
     let handled = await handleEncuestaCallback(prisma, bot, ctx as BotContext);
     if (handled) return;
@@ -3667,6 +3742,10 @@ export async function createBot(prisma: PrismaClient): Promise<Bot<BotContext> |
       }
       return;
     }
+
+    // ── Encuesta wizard text continuation (skill, duration) ───────────
+    const encuestaHandled = await handleEncuestaText(prisma, bot, ctx as BotContext);
+    if (encuestaHandled) return;
 
     // Check if this is a reply to a bot message (force_reply pattern)
     if (msg.reply_to_message) {
