@@ -3923,20 +3923,44 @@ export async function createBot(prisma: PrismaClient): Promise<Bot<BotContext> |
   // ── Inicializar i18n ───────────────────────────────────────────────────
   await initI18n();
 
-  // ── Iniciar polling ────────────────────────────────────────────────────
-  bot.start({
-    drop_pending_updates: true,
-    onStart(botInfo) {
-      console.log(
-        `[Telegram Bot] @${botInfo.username} iniciado en modo polling`
-      );
-      // T13: Recuperar encuestas de aprobación pendientes tras reinicio
-      recoverPendingApprovals(bot, prisma).catch((err) =>
-        console.error("[approval] Recovery error:", err.message)
-      );
-    },
-  }).catch((err) => {
-    console.error("[Telegram Bot] ERROR al iniciar polling:", err.message);
+  // ── Iniciar polling (con reintentos para 409 Conflict) ──────────────────
+  async function startBotWithRetry(maxRetries = 5) {
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        // Limpiar conexiones stale antes de cada intento
+        await bot.api.getUpdates({ timeout: 0, offset: -1 });
+        await new Promise((r) => setTimeout(r, 500));
+
+        await bot.start({
+          drop_pending_updates: true,
+          onStart(botInfo) {
+            console.log(
+              `[Telegram Bot] @${botInfo.username} iniciado en modo polling`
+            );
+            // T13: Recuperar encuestas de aprobación pendientes tras reinicio
+            recoverPendingApprovals(bot, prisma).catch((err) =>
+              console.error("[approval] Recovery error:", err.message)
+            );
+          },
+        });
+        return; // éxito
+      } catch (err: any) {
+        const is409 = err?.error_code === 409;
+        if (is409 && attempt < maxRetries) {
+          const delay = Math.min(2000 * 2 ** (attempt - 1), 30000);
+          console.warn(
+            `[Telegram Bot] 409 Conflict (intento ${attempt}/${maxRetries}), reintentando en ${delay / 1000}s...`
+          );
+          await new Promise((r) => setTimeout(r, delay));
+        } else {
+          console.error("[Telegram Bot] ERROR al iniciar polling:", err.message);
+          throw err;
+        }
+      }
+    }
+  }
+  startBotWithRetry().catch(() => {
+    /* ya logeado — el servidor sigue corriendo sin bot */
   });
 
   // Initialize payment service (used by /pagar command)
