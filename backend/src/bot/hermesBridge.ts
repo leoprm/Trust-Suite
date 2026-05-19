@@ -587,31 +587,45 @@ async function buildSystemPrompt(
     lines.push("Address this user by their name when responding. Never use internal IDs.");
   }
 
-  // ── Sandbox tools ────────────────────────────────────────────────────
+  // ── Tools & capabilities (REAL — must match Hermes config) ────────────
   lines.push("");
-  lines.push("═══ HERRAMIENTAS DISPONIBLES (SANDBOX) ═══");
+  lines.push("═══ TUS HERRAMIENTAS REALES ═══");
+  lines.push("");
+  lines.push("Tus ÚNICAS herramientas nativas son estas 5. No tienes ninguna otra:");
+  lines.push("");
+  lines.push("1. skill_view     — Leer skills disponibles (procedimientos guardados)");
+  lines.push("2. skill_manage   — Crear/actualizar/eliminar skills");
+  lines.push("3. skills_list    — Listar todas las skills disponibles");
+  lines.push("4. web_search     — Buscar información en la web");
+  lines.push("5. web_extract    — Extraer contenido de URLs (páginas, PDFs)");
+  lines.push("");
+  lines.push("NO TIENES estas herramientas y NUNCA debes afirmar que las tienes:");
+  lines.push("  ❌ terminal / shell / bash    ❌ file / write_file / read_file");
+  lines.push("  ❌ memory / session_search    ❌ execute_code / process");
+  lines.push("");
+  lines.push("═══ ACCESO AL SANDBOX (vía API REST) ═══");
   lines.push("");
   lines.push(`Tu Tree ID es: ${treeId}`);
-  lines.push("Para ejecutar operaciones de archivos o comandos, usa EXCLUSIVAMENTE");
-  lines.push("los siguientes endpoints REST del sandbox del árbol:");
+  lines.push("No tienes acceso directo al filesystem. Para leer/escribir archivos");
+  lines.push("o ejecutar comandos en tu sandbox, usa estos endpoints REST:");
   lines.push("");
-  lines.push("1. EJECUTAR COMANDOS:");
+  lines.push("1. EJECUTAR COMANDOS EN EL SANDBOX:");
   lines.push(`   POST /api/trees/${treeId}/sandbox/exec`);
   lines.push('   Body: { "command": "ls -la", "cwd": "/sandbox" }');
   lines.push('   Response: { "stdout": "...", "stderr": "...", "exitCode": 0 }');
   lines.push("");
-  lines.push("2. LEER ARCHIVOS:");
+  lines.push("2. LEER ARCHIVOS DEL SANDBOX:");
   lines.push(`   POST /api/trees/${treeId}/sandbox/read`);
   lines.push('   Body: { "path": "archivo.txt" }');
   lines.push('   Response: { "content": "...", "exists": true }');
   lines.push("");
-  lines.push("3. ESCRIBIR ARCHIVOS:");
+  lines.push("3. ESCRIBIR ARCHIVOS EN EL SANDBOX:");
   lines.push(`   POST /api/trees/${treeId}/sandbox/write`);
   lines.push('   Body: { "path": "archivo.txt", "content": "contenido..." }');
   lines.push('   Response: { "success": true }');
   lines.push("");
   lines.push(
-    "Formato de solicitud HTTP — usa fetch con tu TREE_API_KEY (específica de este árbol):",
+    "Formato de solicitud HTTP — usa fetch con tu TREE_API_KEY:",
   );
   lines.push("");
   lines.push("```javascript");
@@ -629,21 +643,18 @@ async function buildSystemPrompt(
   lines.push("});");
   lines.push("```");
   lines.push("");
-  lines.push("⚠️  ADVERTENCIA CRÍTICA:");
+  lines.push("⚠️  REGLAS DEL SANDBOX:");
   lines.push(
-    "- NO uses herramientas nativas de terminal ni file system.",
+    "- NUNCA afirmes que puedes leer/escribir archivos directamente. Solo puedes hacerlo vía API REST.",
   );
   lines.push(
-    "- Toda operación de archivos o comandos DEBE pasar por la API sandbox de este árbol listada arriba.",
+    "- El sandbox está en /home/trustmaker/trees/ y solo accedes vía API.",
   );
   lines.push(
-    "- Este árbol NUNCA debe acceder archivos fuera de su sandbox.",
+    "- Las rutas en la API son relativas a la raíz del sandbox del árbol.",
   );
   lines.push(
-    "- Las rutas de archivos son relativas a la raíz del sandbox del árbol.",
-  );
-  lines.push(
-    "- Si la API sandbox no está disponible (error de conexión), informa al usuario y NO uses workarounds con herramientas nativas.",
+    "- Si la API no responde, informa al usuario. NO finjas que creaste o leíste un archivo.",
   );
 
   // ── Security restrictions ─────────────────────────────────────────────
