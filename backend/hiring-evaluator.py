@@ -108,34 +108,44 @@ def run_mysql(query, fetch=True):
         conn.close()
 
 
+def scalar(result, default=None):
+    """Extract first scalar from a pymysql result tuple ((val,),)."""
+    if not result:
+        return default
+    row = result[0]
+    if isinstance(row, (tuple, list)):
+        return row[0] if row else default
+    return row
+
+
 def ensure_test_data():
     """Set up test WorkerSkill + SatisfactionScore + SurveyVote + Survey."""
     header("SETUP: Test data")
     
     # 1. WorkerSkill — insert or update
-    existing = run_mysql(
-        f"SELECT id FROM WorkerSkill WHERE userId='{USER_ID}' AND skill='{SKILL}'"
-    )
-    if existing:
+    count = int(scalar(run_mysql(
+        f"SELECT COUNT(*) FROM WorkerSkill WHERE userId='{USER_ID}' AND skill='{SKILL}'"
+    ), 0))
+    if count:
         run_mysql(
-            f"UPDATE WorkerSkill SET level=5, xp=500 WHERE userId='{USER_ID}' AND skill='{SKILL}'",
+            f"UPDATE WorkerSkill SET level=5, xp=500, updatedAt=NOW() WHERE userId='{USER_ID}' AND skill='{SKILL}'",
             fetch=False,
         )
         info(f"Updated WorkerSkill: {SKILL}=5 xp=500")
     else:
         run_mysql(
-            f"INSERT INTO WorkerSkill (id, userId, skill, level, xp) "
-            f"VALUES (UUID(), '{USER_ID}', '{SKILL}', 5, 500)",
+            f"INSERT INTO WorkerSkill (id, userId, skill, level, xp, updatedAt) "
+            f"VALUES (UUID(), '{USER_ID}', '{SKILL}', 5, 500, NOW())",
             fetch=False,
         )
         info(f"Created WorkerSkill: {SKILL}=5 xp=500")
     ok("WorkerSkill ready")
     
     # 2. SatisfactionScore
-    existing = run_mysql(
-        f"SELECT id FROM SatisfactionScore WHERE userId='{USER_ID}' AND skill='{SKILL}'"
-    )
-    if existing:
+    count = int(scalar(run_mysql(
+        f"SELECT COUNT(*) FROM SatisfactionScore WHERE userId='{USER_ID}' AND skill='{SKILL}'"
+    ), 0))
+    if count:
         run_mysql(
             f"UPDATE SatisfactionScore SET avgScore=4.5, totalSurveys=10 "
             f"WHERE userId='{USER_ID}' AND skill='{SKILL}'",
@@ -144,42 +154,44 @@ def ensure_test_data():
         info(f"Updated SatisfactionScore: avg=4.5")
     else:
         run_mysql(
-            f"INSERT INTO SatisfactionScore (id, userId, skill, avgScore, totalSurveys) "
-            f"VALUES (UUID(), '{USER_ID}', '{SKILL}', 4.5, 10)",
+            f"INSERT INTO SatisfactionScore (userId, skill, avgScore, totalSurveys) "
+            f"VALUES ('{USER_ID}', '{SKILL}', 4.5, 10)",
             fetch=False,
         )
         info(f"Created SatisfactionScore: avg=4.5")
     ok("SatisfactionScore ready")
     
     # 3. SatisfactionSurvey + SurveyVote (for group satisfaction)
-    # Check if a survey exists for this user/tree/skill combo
-    surveys = run_mysql(
+    survey_id = scalar(run_mysql(
         f"SELECT id FROM SatisfactionSurvey "
         f"WHERE targetUserId='{USER_ID}' AND treeId='{TREE_ID}' AND skill='{SKILL}'"
-    )
-    survey_id = None
-    if surveys:
-        survey_id = surveys[0][0] if isinstance(surveys[0], tuple) else surveys[0]
+    ))
+    if survey_id:
         info(f"Existing survey: {survey_id}")
     else:
         survey_id = str(uuid.uuid4())
         run_mysql(
-            f"INSERT INTO SatisfactionSurvey (id, treeId, targetUserId, skill, status, createdAt, updatedAt) "
-            f"VALUES ('{survey_id}', '{TREE_ID}', '{USER_ID}', '{SKILL}', 'CLOSED', NOW(), NOW())",
+            f"INSERT INTO SatisfactionSurvey (id, treeId, targetUserId, skill, createdBy, closesAt, visible, reminderSent) "
+            f"VALUES ('{survey_id}', '{TREE_ID}', '{USER_ID}', '{SKILL}', '{USER_ID}', "
+            f"DATE_ADD(NOW(), INTERVAL 30 DAY), 1, 0)",
             fetch=False,
         )
         info(f"Created survey: {survey_id}")
     
     # Add SurveyVote if not enough
-    votes = run_mysql(
+    vote_count = int(scalar(run_mysql(
         f"SELECT COUNT(*) FROM SurveyVote WHERE surveyId='{survey_id}'"
-    )
-    vote_count = int(votes[0] if isinstance(votes, str) else (votes[0][0] if votes else 0))
+    ), 0))
     if vote_count < 3:
-        for score in [5, 4, 4]:
+        fake_voters = [
+            "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+            "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
+            "cccccccc-cccc-cccc-cccc-cccccccccccc",
+        ]
+        for score, voter in zip([5, 4, 4], fake_voters):
             run_mysql(
-                f"INSERT INTO SurveyVote (id, surveyId, score, createdAt) "
-                f"VALUES (UUID(), '{survey_id}', {score}, NOW())",
+                f"INSERT INTO SurveyVote (id, surveyId, voterId, score) "
+                f"VALUES (UUID(), '{survey_id}', '{voter}', {score})",
                 fetch=False,
             )
         info(f"Created 3 SurveyVotes (5,4,4) → avg=4.33")
@@ -243,24 +255,24 @@ def step2_verify_matching():
         return False
     
     # Check SatisfactionScore
-    ss = run_mysql(
+    avg = scalar(run_mysql(
         f"SELECT avgScore FROM SatisfactionScore "
         f"WHERE userId='{USER_ID}' AND skill='{SKILL}' AND avgScore >= {HIRING_REQUEST['minSatisfactionPersonal']}"
-    )
-    if ss:
-        ok(f"SatisfactionScore passed: avg={ss[0][0] if isinstance(ss[0], tuple) else ss[0]} >= {HIRING_REQUEST['minSatisfactionPersonal']}")
+    ))
+    if avg is not None:
+        ok(f"SatisfactionScore passed: avg={float(avg)} >= {HIRING_REQUEST['minSatisfactionPersonal']}")
     else:
         fail("SatisfactionScore filter failed")
         return False
     
     # Check group satisfaction (SurveyVote average)
-    sv = run_mysql(
+    avg = scalar(run_mysql(
         f"SELECT AVG(sv.score) FROM SurveyVote sv "
         f"JOIN SatisfactionSurvey s ON sv.surveyId = s.id "
         f"WHERE s.targetUserId='{USER_ID}' AND s.treeId='{TREE_ID}' AND s.skill='{SKILL}'"
-    )
-    if sv:
-        avg = float(sv[0] if isinstance(sv, str) else (sv[0][0] if sv[0] else 0))
+    ))
+    if avg is not None:
+        avg = float(avg)
         if avg >= HIRING_REQUEST['minSatisfactionGrupal']:
             ok(f"Group satisfaction passed: avg={avg:.2f} >= {HIRING_REQUEST['minSatisfactionGrupal']}")
         else:
@@ -333,7 +345,7 @@ def step4_simulate_apply():
         f"SELECT id, taskId, userId, treeId, status FROM HiringApplicant "
         f"WHERE taskId='{TASK_ID}' AND userId='{USER_ID}'"
     )
-    if result:
+    if result and result[0]:
         ok(f"HiringApplicant created: status=APPLIED, taskId={TASK_ID}, userId={USER_ID[:8]}...")
         ok(f"  treeId populated: {TREE_ID} (from sandbox fallback)")
     else:
@@ -382,7 +394,7 @@ def step5_deadline_close():
         f"SELECT COUNT(*) FROM HiringApplicant "
         f"WHERE taskId='{TASK_ID}' AND status='CLOSED'"
     )
-    count = int(closed_count[0] if isinstance(closed_count, str) else (closed_count[0][0] if closed_count else 0))
+    count = int(scalar(closed_count, 0))
     if count > 0:
         ok(f"HiringApplicant status → CLOSED ({count} records)")
     else:
@@ -393,22 +405,25 @@ def step5_deadline_close():
     ws = run_mysql(
         f"SELECT level, xp FROM WorkerSkill WHERE userId='{USER_ID}' AND skill='{SKILL}'"
     )
-    skill_level = float(ws[0][0]) if ws else 1.0
-    xp = float(ws[0][1]) if ws else 0.0
+    if ws and ws[0]:
+        row = ws[0]
+        skill_level = float(row[0])
+        xp = float(row[1]) if len(row) > 1 else 0.0
+    else:
+        skill_level = 1.0
+        xp = 0.0
     
     # Get SatisfactionScore
-    ss = run_mysql(
+    sat_personal = float(scalar(run_mysql(
         f"SELECT avgScore FROM SatisfactionScore WHERE userId='{USER_ID}' AND skill='{SKILL}'"
-    )
-    sat_personal = float(ss[0][0]) if ss else 0.0
+    ), 0))
     
     # Get group satisfaction
-    sv = run_mysql(
+    sat_grupal = float(scalar(run_mysql(
         f"SELECT AVG(sv.score) FROM SurveyVote sv "
         f"JOIN SatisfactionSurvey s ON sv.surveyId = s.id "
         f"WHERE s.targetUserId='{USER_ID}' AND s.treeId='{TREE_ID}' AND s.skill='{SKILL}'"
-    )
-    sat_grupal = float(sv[0]) if sv else 0.0
+    ), 0))
     
     # 4-factor composite (matching hiringBridge weights: 0.3, 0.3, 0.2, 0.2)
     level_norm = min(1, skill_level / 10)
