@@ -3612,14 +3612,44 @@ export async function createBot(prisma: PrismaClient): Promise<Bot<BotContext> |
         return;
       }
 
-      // Look up the ExternalTask to get endDate and verify candidate list
+      // Resolve treeId and endDate — try ExternalTask first, fall back to sandbox
+      let treeId = "";
+      let endDate: string | null = null;
+
       const externalTask = await (prisma as any).externalTask.findFirst({
         where: { kanbanTaskId: taskId },
         select: { id: true, endDate: true, treeId: true },
       });
 
+      if (externalTask) {
+        treeId = externalTask.treeId;
+        endDate = externalTask.endDate;
+      } else {
+        // Fallback: scan sandboxes for hiring-request-<taskId>.json
+        try {
+          const fsSync = require("fs");
+          const pathMod = require("path");
+          const sandboxBase = process.env.SANDBOX_BASE_DIR || "/home/trustmaker/trees";
+          if (fsSync.existsSync(sandboxBase)) {
+            const dirs = fsSync.readdirSync(sandboxBase, { withFileTypes: true });
+            for (const dir of dirs) {
+              if (!dir.isDirectory() || dir.name.startsWith(".")) continue;
+              const reqPath = pathMod.join(sandboxBase, dir.name, `hiring-request-${taskId}.json`);
+              if (fsSync.existsSync(reqPath)) {
+                const raw = fsSync.readFileSync(reqPath, "utf-8");
+                const reqData = JSON.parse(raw);
+                treeId = reqData.treeId || dir.name;
+                endDate = reqData.endDate || null;
+                break;
+              }
+            }
+          }
+        } catch (scanErr: any) {
+          console.error("[hiring callback] Sandbox scan error:", scanErr.message);
+        }
+      }
+
       // Format endDate for display
-      const endDate = externalTask?.endDate;
       const endDateStr = endDate
         ? new Date(endDate).toLocaleDateString(lng === "en" ? "en-US" : "es-CL", {
             day: "numeric", month: "short", year: "numeric",
@@ -3658,7 +3688,7 @@ export async function createBot(prisma: PrismaClient): Promise<Bot<BotContext> |
           data: {
             taskId,
             userId: user.id,
-            treeId: externalTask?.treeId ?? "",
+            treeId: treeId,
             status: newStatus,
           },
         });

@@ -59,6 +59,7 @@ function urlToOpts(u: string | URL): Record<string, any> {
 import express from 'express';
 import path from 'path';
 import fs from 'fs';
+import { execSync } from 'child_process';
 import mysql from 'mysql2/promise';
 import { PrismaClient } from '@prisma/client';
 import { authLimiter, globalLimiter, conciergeLimiter } from './config/rateLimiter';
@@ -328,6 +329,19 @@ app.use((err: any, _req: express.Request, res: express.Response, _next: express.
 // ── Start ─────────────────────────────────────────────────────────────────────
 if (process.env.NODE_ENV !== 'test') {
   bootstrapDatabase().then(() => {
+    // ── Sandbox isolation: bloquea outbound MySQL para el user trustmaker ──
+    try {
+      const isolateScript = path.resolve(__dirname, '..', 'scripts', 'isolate-sandbox.sh');
+      const output = execSync(`bash "${isolateScript}"`, {
+        encoding: 'utf-8',
+        timeout: 10_000,
+      });
+      console.log('[Sandbox Isolation]', output.trim());
+    } catch (err: any) {
+      const msg = err.stderr || err.stdout || err.message || String(err);
+      console.warn('[Sandbox Isolation] Non-blocking warning — iptables rules not applied:', msg.trim());
+    }
+
     app.listen(Number(port), '0.0.0.0', () => {
       console.log(`Server is running on http://0.0.0.0:${port}`);
     });
