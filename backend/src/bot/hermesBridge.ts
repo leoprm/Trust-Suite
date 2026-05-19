@@ -309,6 +309,86 @@ async function buildSystemPrompt(
     lines.push(`  Objectives: ${tree.objectives}`);
   }
 
+  // ── Related Trees ──────────────────────────────────────────────────────
+  const parentTreeId = tree.parentTreeId;
+  let parentTreeName: string | null = null;
+
+  const childTrees = await (prisma as any).tree.findMany({
+    where: { parentTreeId: treeId },
+    select: { id: true, name: true },
+  });
+
+  if (parentTreeId) {
+    const parent = await (prisma as any).tree.findUnique({
+      where: { id: parentTreeId },
+      select: { name: true },
+    });
+    if (parent) parentTreeName = parent.name;
+  }
+
+  const isSubTree = !!parentTreeName;
+  const hasChildren = childTrees.length > 0;
+
+  if (isSubTree || hasChildren) {
+    lines.push("");
+    lines.push("═══════ ÁRBOLES RELACIONADOS ═══════");
+    lines.push("");
+
+    if (isSubTree) {
+      lines.push(`Eres un SUB-ÁRBOL de "${parentTreeName}" (id: ${parentTreeId}).`);
+      lines.push(`En grupos multi-IA, tu prefijo obligatorio es: 🌿 ${tree.name} (sub):`);
+      lines.push("Puedes leer archivos del sandbox del árbol padre con:");
+      lines.push(`  POST http://localhost:3100/api/trees/${treeId}/sandbox/parent/read`);
+      lines.push('  Body: { "path": "obsidian/decisiones/ejemplo.md" }');
+      lines.push("  Authorization: Bearer HERMES_API_SERVER_KEY");
+      lines.push("Usa esto para contexto antes de responder sobre estrategia global o");
+      lines.push("decisiones del padre que afecten a tu sub-árbol.");
+      lines.push("⚠️  SOLO LECTURA. No puedes escribir, modificar ni borrar en el sandbox padre.");
+    } else {
+      lines.push(`Eres un ÁRBOL RAÍZ. En grupos multi-IA, tu prefijo es: 🌳 ${tree.name}:`);
+    }
+
+    lines.push("");
+
+    if (hasChildren) {
+      lines.push(`Sub-árboles vinculados (${childTrees.length}):`);
+      for (const child of childTrees) {
+        lines.push(`  - 🌿 ${child.name} (id: ${child.id})`);
+      }
+      lines.push("");
+    }
+
+    lines.push("═══ REGLAS DE COMUNICACIÓN MULTI-IA (grupos Telegram) ═══");
+    lines.push("");
+    lines.push("1. PREFIJO OBLIGATORIO:");
+    lines.push(`   ${isSubTree ? `🌿 ${tree.name} (sub):` : `🌳 ${tree.name}:`} → TODA respuesta en grupo empieza con esto.`);
+    lines.push("   No es opcional. Si lo olvidas, el bridge lo agrega, pero hazlo siempre.");
+    lines.push("");
+    lines.push("2. CUÁNDO RESPONDER:");
+    lines.push("   - @TuNombre → mención directa. Responder SIEMPRE.");
+    lines.push("   - El mensaje contiene keywords de tu objetivo (ver 'Objectives' arriba).");
+    lines.push("   - 'todos:' → broadcast a todos los árboles.");
+    lines.push("   - Un árbol padre menciona algo relevante para tu sub-árbol.");
+    lines.push("");
+    lines.push("3. CUÁNDO CALLAR (NO_RESPONSE):");
+    lines.push("   - El mensaje es para otro árbol (contiene @OtroArbol).");
+    lines.push("   - No tiene keywords de tu objetivo ni te menciona.");
+    lines.push("   - No tienes nada útil que agregar. El silencio es correcto.");
+    lines.push("   - El grupo no es un chatbot — es un puente de coordinación.");
+    lines.push("");
+    lines.push("4. RESPUESTAS CRUZADAS (cross-tree):");
+    lines.push("   - Si un árbol padre responde con algo relevante para ti, puedes complementar.");
+    lines.push("   - Respuestas breves (1-3 líneas), con tu prefijo, complementarias no repetitivas.");
+    lines.push("");
+    lines.push("5. SANDBOX PADRE (solo sub-árboles):");
+    if (isSubTree) {
+      lines.push("   - POST .../sandbox/parent/read → contexto del padre.");
+      lines.push("   - NUNCA intentes escribir en el sandbox del padre.");
+    } else {
+      lines.push("   - No aplica (eres árbol raíz).");
+    }
+  }
+
   // ── Global skills ──────────────────────────────────────────────────────
   const skillsDir = path.join(
     process.env.HOME || "/home/leo",
