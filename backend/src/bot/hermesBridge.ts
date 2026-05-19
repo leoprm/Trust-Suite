@@ -1430,6 +1430,33 @@ export async function routeToHermes(
     }
 
     console.log(`[hermesBridge] Response: ${accumulatedContent.length} chars`);
+
+    // ── Prefix Enforcement ──────────────────────────────────────────────
+    // Garantiza que toda respuesta de Ari tenga el prefijo 🌳/🌿 aunque
+    // el modelo lo olvide. El system prompt ya lo exige, pero este es el
+    // safety net a nivel de bridge.
+    if (treeId && accumulatedContent) {
+      const trimmed = accumulatedContent.trimStart();
+      const hasPrefix = trimmed.startsWith("🌳") || trimmed.startsWith("🌿");
+      if (!hasPrefix) {
+        try {
+          const treeInfo = await (prisma as any).tree.findUnique({
+            where: { id: treeId },
+            select: { name: true, parentTreeId: true },
+          });
+          if (treeInfo?.name) {
+            const prefix = treeInfo.parentTreeId
+              ? `🌿 ${treeInfo.name} (sub): `
+              : `🌳 ${treeInfo.name}: `;
+            accumulatedContent = prefix + accumulatedContent;
+            console.log(`[hermesBridge] Prefix enforced: ${treeInfo.parentTreeId ? "🌿 sub" : "🌳 root"}`);
+          }
+        } catch {
+          // non-blocking: prefix enforcement must never break the flow
+        }
+      }
+    }
+
     // Increment task counter for skill auto-evaluation
     if (treeId) taskCounters.set(treeId, (taskCounters.get(treeId) ?? 0) + 1);
     return { text: accumulatedContent };
