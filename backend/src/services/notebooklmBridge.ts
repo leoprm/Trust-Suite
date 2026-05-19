@@ -14,13 +14,13 @@ import path from "path";
 
 // ── Configuration ──────────────────────────────────────────────────────────
 
-const NOTEBOOKLM_BIN =
-  process.env.NOTEBOOKLM_BIN ||
+const NOTEBOOKLM_BIN = "notebooklm"; // Use from PATH — trust-maker profile has it in venv/bin
+const NOTEBOOKLM_STORAGE =
+  process.env.NOTEBOOKLM_STORAGE_PATH ||
   path.join(
     process.env.HOME || "/home/leo",
-    ".hermes/hermes-agent/venv/bin/notebooklm"
+    ".notebooklm/profiles/default/storage_state.json"
   );
-const NOTEBOOKLM_STORAGE = process.env.NOTEBOOKLM_STORAGE_PATH || "";
 const DEFAULT_TIMEOUT_MS = parseInt(
   process.env.NOTEBOOKLM_TIMEOUT_MS || "60000",
   10
@@ -124,8 +124,10 @@ function execCLI(
   args: string[],
   timeoutMs: number = DEFAULT_TIMEOUT_MS
 ): Promise<{ stdout: string; stderr: string }> {
-  // Shell-quote arguments containing spaces or special chars
-  const quoted = args.map((a) => (/\s/.test(a) ? `'${a.replace(/'/g, "'\\''")}'` : a));
+  // Build args with --storage if configured
+  const storageArgs = NOTEBOOKLM_STORAGE ? ["--storage", NOTEBOOKLM_STORAGE] : [];
+  const allArgs = [...storageArgs, ...args];
+  const quoted = allArgs.map((a) => (/\s/.test(a) ? `'${a.replace(/'/g, "'\\''")}'` : a));
   const cmd = `${NOTEBOOKLM_BIN} ${quoted.join(" ")}`;
   return new Promise((resolve, reject) => {
     exec(
