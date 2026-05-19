@@ -978,8 +978,7 @@ export async function createBot(prisma: PrismaClient): Promise<Bot<BotContext> |
           try {
             if (isNewTree) {
               // T2: Ask subtree question BEFORE language selector
-              // Save onboardingTreeId in session so callbacks can find it
-              (ctx as BotContext).session.onboardingTreeId = tree.id;
+              // treeId travels in callback_data — no session needed
 
               await ctx.api.sendMessage(
                 chatId,
@@ -2823,8 +2822,8 @@ export async function createBot(prisma: PrismaClient): Promise<Bot<BotContext> |
       const isYes = data.startsWith("onboarding:subtree_early_yes:");
       const treeId = data.split(":").slice(3).join(":"); // treeId may contain colons
 
-      const session = (ctx as BotContext).session;
-      if (!session.onboardingTreeId || session.onboardingTreeId !== treeId) {
+      // Validate treeId is present (session may not be available in my_chat_member context)
+      if (!treeId) {
         await ctx.answerCallbackQuery();
         return;
       }
