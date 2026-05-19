@@ -5,6 +5,7 @@ import {
   removeTreeSandbox,
   healthCheckTreeSandbox,
   searchMediaInSandbox,
+  querySql,
   notebooklmAsk,
   notebooklmPodcast,
   notebooklmAddSource,
@@ -33,6 +34,7 @@ router.get('/:id/sandbox/health', healthCheckTreeSandbox);
 // ── JWT-protected endpoints ───────────────────────────────────────────────────
 router.post('/:id/sandbox', authenticateJWT, createTreeSandbox);
 router.delete('/:id/sandbox', authenticateJWT, removeTreeSandbox);
+router.post('/:id/sandbox/query', authenticateJWT, querySql);
 
 // ── API Key-protected sandbox ops (Hermes agent calls) ────────────────────────
 router.post('/:id/sandbox/exec', execTreeSandbox);

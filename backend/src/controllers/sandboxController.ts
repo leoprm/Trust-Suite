@@ -1,6 +1,8 @@
 import { Request, Response } from 'express';
 import { exec } from 'child_process';
+import fs from 'fs';
 import path from 'path';
+import mysql from 'mysql2/promise';
 import { TreeSandbox, PortPoolExhaustedError } from '../services/treeSandbox';
 import { logEvent, getRequestContext } from '../services/eventLogService';
 import { prisma } from '../index';
@@ -557,5 +559,201 @@ export const getSurveyResults = async (req: Request, res: Response) => {
   } catch (error: any) {
     console.error('[getSurveyResults] ERROR:', error?.message || error);
     res.status(500).json({ error: 'Failed to get survey results' });
+  }
+};
+
+// ── In-Memory Rate Limiter ────────────────────────────────────────────────────
+// Shared across all trees. 10 queries per minute per treeId.
+
+class SimpleRateLimiter {
+  private windows = new Map<string, { count: number; resetAt: number }>();
+
+  allowed(key: string, limit: number, windowMs: number): boolean {
+    const now = Date.now();
+    const entry = this.windows.get(key);
+
+    if (!entry || now >= entry.resetAt) {
+      this.windows.set(key, { count: 1, resetAt: now + windowMs });
+      return true;
+    }
+
+    if (entry.count >= limit) return false;
+
+    entry.count++;
+    return true;
+  }
+}
+
+const sqlRateLimiter = new SimpleRateLimiter();
+
+// ── Sandbox Read-Only Pool ─────────────────────────────────────────────────────
+// Lazy singleton — reuses connection for all querySql calls.
+
+let sandboxPool: mysql.Pool | null = null;
+
+async function getSandboxPool(): Promise<mysql.Pool> {
+  if (sandboxPool) return sandboxPool;
+
+  const dbUrl = process.env.DATABASE_URL;
+  if (!dbUrl) throw new Error('DATABASE_URL not configured');
+
+  // Parse DATABASE_URL to extract host/port/database
+  const parsed = new URL(dbUrl);
+  const host = parsed.hostname;
+  const port = parseInt(parsed.port || '3306', 10);
+  const database = parsed.pathname.slice(1); // strip leading /
+  const sslEnabled = parsed.searchParams.get('ssl') !== 'false';
+
+  const password =
+    process.env.TRUST_SANDBOX_RO_PASSWORD ??
+    (() => {
+      try {
+        const credsPath = '/home/trustmaker/.sandbox_db_creds';
+        if (fs.existsSync(credsPath)) {
+          const content = fs.readFileSync(credsPath, 'utf-8').trim();
+          // File may be "user:password" or just "password"
+          const colonIdx = content.indexOf(':');
+          return colonIdx >= 0 ? content.slice(colonIdx + 1) : content;
+        }
+      } catch {
+        // ignore — file read failures are non-fatal
+      }
+      return null;
+    })();
+
+  if (!password) {
+    throw new Error(
+      'Sandbox read-only credentials not configured. ' +
+      'Set TRUST_SANDBOX_RO_PASSWORD or create /home/trustmaker/.sandbox_db_creds',
+    );
+  }
+
+  sandboxPool = mysql.createPool({
+    host,
+    port,
+    user: 'trust_sandbox_ro',
+    password,
+    database,
+    ssl: sslEnabled ? { rejectUnauthorized: false } : undefined,
+    waitForConnections: true,
+    connectionLimit: 3,
+    maxIdle: 3,
+    idleTimeout: 60_000,
+    queueLimit: 10,
+  });
+
+  return sandboxPool;
+}
+
+// ── SQL Injection Parser ───────────────────────────────────────────────────────
+// Only SELECT allowed. Injects treeId filter into WHERE clause.
+
+interface ParsedQuery {
+  sql: string;
+  params: any[];
+}
+
+const FORBIDDEN_SQL = /\b(INSERT|UPDATE|DELETE|DROP|ALTER|CREATE|TRUNCATE|REPLACE|GRANT|REVOKE|EXECUTE|EXEC)\b/i;
+const TAIL_CLAUSE = /\b(GROUP\s+BY|ORDER\s+BY|LIMIT|HAVING|INTO\s+OUTFILE|INTO\s+DUMPFILE|PROCEDURE|FOR\s+UPDATE|LOCK\s+IN\s+SHARE\s+MODE)\b/i;
+
+function injectTreeIdFilter(sql: string, treeId: string): ParsedQuery {
+  const trimmed = sql.trim();
+
+  // Only SELECT
+  if (!/^SELECT\b/i.test(trimmed)) {
+    throw new Error('Only SELECT queries are allowed');
+  }
+
+  // No forbidden keywords anywhere in the query
+  if (FORBIDDEN_SQL.test(trimmed)) {
+    throw new Error('Only SELECT queries are allowed');
+  }
+
+  // Duplicate semicolons are suspicious
+  if ((trimmed.match(/;/g) || []).length > 1) {
+    throw new Error('Multiple statements are not allowed');
+  }
+
+  // Find the injection point: before GROUP BY / ORDER BY / LIMIT / HAVING
+  // or at end of query. Strip trailing semicolon for injection.
+  const noSemi = trimmed.replace(/;\s*$/, '');
+  const tailMatch = noSemi.match(TAIL_CLAUSE);
+  const injectionIdx = tailMatch?.index ?? noSemi.length;
+
+  // Check if WHERE exists before the injection point
+  const whereMatch = noSemi.substring(0, injectionIdx).match(/\bWHERE\b/i);
+
+  const prefix = noSemi.substring(0, injectionIdx);
+  const suffix = noSemi.substring(injectionIdx);
+
+  if (whereMatch) {
+    return {
+      sql: `${prefix} AND treeId = ? ${suffix}`,
+      params: [treeId],
+    };
+  }
+
+  return {
+    sql: `${prefix} WHERE treeId = ? ${suffix}`,
+    params: [treeId],
+  };
+}
+
+// ── POST /api/trees/:treeId/sandbox/query-sql ──────────────────────────────────
+// Body: { sql: string }
+// JWT required — caller must be a tree member.
+// Rate limited: 10 queries/minute per tree.
+// Returns: { rows: [...], count: N }
+
+export const querySql = async (req: Request, res: Response) => {
+  try {
+    const treeId = (req.params.treeId ?? req.params.id) as string;
+    const userId = (req as any).user!.id;
+    const { sql } = req.body;
+
+    // Validate body
+    if (!sql || typeof sql !== 'string' || sql.trim().length === 0) {
+      return res.status(400).json({ error: 'sql is required (non-empty string)' });
+    }
+
+    // Verify tree exists
+    const tree = await prisma.tree.findUnique({ where: { id: treeId } });
+    if (!tree) return res.status(404).json({ error: 'Tree not found' });
+
+    // Verify caller is a tree member
+    const membership = await prisma.treeMember.findUnique({
+      where: { userId_treeId: { userId, treeId } },
+    });
+    if (!membership) {
+      return res.status(403).json({ error: 'You must be a tree member to query the sandbox database' });
+    }
+
+    // Rate limit: 10 queries/minute per tree
+    if (!sqlRateLimiter.allowed(`sql:${treeId}`, 10, 60_000)) {
+      return res.status(429).json({ error: 'Rate limit exceeded. Max 10 queries per minute per tree.' });
+    }
+
+    // Parse and inject treeId filter
+    let parsed: ParsedQuery;
+    try {
+      parsed = injectTreeIdFilter(sql.trim(), treeId);
+    } catch (parseErr: any) {
+      return res.status(400).json({ error: parseErr.message });
+    }
+
+    // Execute via sandbox read-only pool
+    const pool = await getSandboxPool();
+    const [rows] = await pool.execute(parsed.sql, parsed.params);
+
+    res.json({ rows: rows as any[], count: Array.isArray(rows) ? rows.length : 0 });
+  } catch (error: any) {
+    console.error('[querySql] ERROR:', error?.message || error);
+    if (error.code === 'ER_ACCESS_DENIED_ERROR' || error.code === 'ER_DBACCESS_DENIED_ERROR') {
+      return res.status(500).json({ error: 'Sandbox database access denied' });
+    }
+    if (error.code === 'ER_PARSE_ERROR' || error.code === 'ER_BAD_FIELD_ERROR') {
+      return res.status(400).json({ error: `SQL error: ${error.message}` });
+    }
+    res.status(500).json({ error: 'Query execution failed' });
   }
 };
