@@ -6,6 +6,7 @@ import {
   healthCheckTreeSandbox,
   searchMediaInSandbox,
   querySql,
+  webSearchInSandbox,
   notebooklmAsk,
   notebooklmPodcast,
   notebooklmAddSource,
@@ -47,6 +48,7 @@ router.post('/:id/sandbox/write', writeTreeSandbox);
 router.post('/:id/sandbox/convert', convertTreeSandbox);
 router.post('/:id/sandbox/upload', sandboxUpload.single('file'), uploadTreeSandbox);
 router.post('/:id/sandbox/media-search', searchMediaInSandbox);
+router.post('/:id/sandbox/web-search', webSearchInSandbox);
 router.post('/:id/sandbox/parent/read', readParentTreeSandbox);
 router.post('/:id/sandbox/save-skill', saveTreeSkill);
 router.post('/:id/sandbox/tm-call', tmCall);

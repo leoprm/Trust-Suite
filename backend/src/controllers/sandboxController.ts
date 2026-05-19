@@ -1,6 +1,8 @@
 import { Request, Response } from 'express';
 import { exec } from 'child_process';
+import crypto from 'crypto';
 import fs from 'fs';
+import https from 'https';
 import path from 'path';
 import mysql from 'mysql2/promise';
 import { TreeSandbox, PortPoolExhaustedError } from '../services/treeSandbox';
@@ -9,6 +11,15 @@ import { prisma } from '../index';
 
 const API_SERVER_KEY = process.env.HERMES_API_SERVER_KEY ?? '';
 const MEDIA_SEARCH_TIMEOUT_MS = 90_000;
+const WEB_SEARCH_TIMEOUT_MS = 15_000;
+
+// ── Tree-specific API key derivation ────────────────────────────────────────
+
+/** Derive a per-tree API key from the master key + treeId. */
+function deriveTreeApiKey(treeId: string): string {
+  if (!API_SERVER_KEY || !treeId) return '';
+  return crypto.createHmac('sha256', API_SERVER_KEY).update(treeId).digest('hex');
+}
 
 function checkApiKey(req: Request, res: Response): boolean {
   const authHeader = req.headers.authorization;
@@ -19,11 +30,16 @@ function checkApiKey(req: Request, res: Response): boolean {
   const token = authHeader.startsWith('Bearer ')
     ? authHeader.slice(7)
     : authHeader;
-  if (!API_SERVER_KEY || token !== API_SERVER_KEY) {
-    res.status(403).json({ error: 'Invalid API key' });
-    return false;
-  }
-  return true;
+
+  // Accept global master key
+  if (API_SERVER_KEY && token === API_SERVER_KEY) return true;
+
+  // Accept tree-specific derived key (matches :id in URL)
+  const treeId = req.params.id as string;
+  if (treeId && token === deriveTreeApiKey(treeId)) return true;
+
+  res.status(403).json({ error: 'Invalid API key' });
+  return false;
 }
 
 /**
@@ -585,6 +601,7 @@ class SimpleRateLimiter {
 }
 
 const sqlRateLimiter = new SimpleRateLimiter();
+const webSearchRateLimiter = new SimpleRateLimiter();
 
 // ── Sandbox Read-Only Pool ─────────────────────────────────────────────────────
 // Lazy singleton — reuses connection for all querySql calls.
@@ -755,5 +772,134 @@ export const querySql = async (req: Request, res: Response) => {
       return res.status(400).json({ error: `SQL error: ${error.message}` });
     }
     res.status(500).json({ error: 'Query execution failed' });
+  }
+};
+
+// ── DuckDuckGo HTML search parser ───────────────────────────────────────────
+
+interface WebSearchResult {
+  title: string;
+  url: string;
+  description: string;
+}
+
+/**
+ * Fetch and parse DuckDuckGo HTML search results.
+ * Returns up to `limit` results with title, url, description.
+ */
+function searchDuckDuckGo(query: string, limit: number): Promise<WebSearchResult[]> {
+  return new Promise((resolve, reject) => {
+    const encoded = encodeURIComponent(query.trim());
+    const url = `https://html.duckduckgo.com/html/?q=${encoded}`;
+
+    const req = https.get(
+      url,
+      {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36',
+        },
+        timeout: WEB_SEARCH_TIMEOUT_MS,
+      },
+      (res) => {
+        let body = '';
+        res.on('data', (chunk: Buffer) => { body += chunk.toString(); });
+        res.on('end', () => {
+          const results: WebSearchResult[] = [];
+          // Extract result blocks: each result has result__title > result__a (with href) + result__snippet
+          const blockRegex = /<h2 class="result__title">\s*<a rel="nofollow" class="result__a" href="\/\/duckduckgo\.com\/l\/\?uddg=([^"&]+)[^"]*">([\s\S]*?)<\/a>[\s\S]*?<a class="result__snippet"[^>]*>([\s\S]*?)<\/a>/gi;
+          let match;
+          while ((match = blockRegex.exec(body)) !== null && results.length < limit) {
+            try {
+              const rawUrl = decodeURIComponent(match[1]);
+              const title = match[2].replace(/<[^>]*>/g, '').trim();
+              const description = match[3]
+                .replace(/<b>/g, '')
+                .replace(/<\/b>/g, '')
+                .replace(/&#x27;/g, "'")
+                .replace(/&amp;/g, '&')
+                .replace(/<[^>]*>/g, '')
+                .trim();
+              if (title && rawUrl && description) {
+                results.push({ title, url: rawUrl, description });
+              }
+            } catch {
+              // skip malformed entries
+            }
+          }
+          resolve(results);
+        });
+        res.on('error', reject);
+      },
+    );
+
+    req.on('timeout', () => {
+      req.destroy();
+      reject(new Error('Web search timeout'));
+    });
+
+    req.on('error', reject);
+  });
+}
+
+// ── POST /api/trees/:id/sandbox/web-search ─────────────────────────────────
+// Body: { query: string, limit?: number }
+// Auth: Bearer <tree_api_key> (or global HERMES_API_SERVER_KEY)
+// Rate limit: 5 calls/minute per tree
+// Timeout: 15s
+// Returns: { results: [{ title, url, description }, ...] }
+
+export const webSearchInSandbox = async (req: Request, res: Response) => {
+  if (!checkApiKey(req, res)) return;
+
+  try {
+    const id = req.params.id as string;
+    const { query, limit } = req.body;
+
+    if (!query || typeof query !== 'string' || query.trim().length === 0) {
+      return res.status(400).json({ error: 'query is required (non-empty string)' });
+    }
+
+    const resultLimit =
+      typeof limit === 'number' && limit > 0 && limit <= 20
+        ? Math.floor(limit)
+        : 5;
+
+    // Verify tree + sandbox exist
+    const sb = await TreeSandbox.get(id);
+    if (!sb) {
+      return res.status(404).json({ error: 'Sandbox not found for this tree' });
+    }
+
+    // Rate limit: 5 calls/minute per tree
+    if (!webSearchRateLimiter.allowed(`ws:${id}`, 5, 60_000)) {
+      return res
+        .status(429)
+        .json({ error: 'Rate limit exceeded. Max 5 calls per minute per tree.' });
+    }
+
+    let results: WebSearchResult[];
+    try {
+      results = await searchDuckDuckGo(query.trim(), resultLimit);
+    } catch (searchErr: any) {
+      console.error('[webSearchInSandbox] Search error:', searchErr?.message || searchErr);
+      return res
+        .status(searchErr.message === 'Web search timeout' ? 504 : 502)
+        .json({ error: 'Web search failed', detail: searchErr?.message });
+    }
+
+    void logEvent({
+      ...getRequestContext(req),
+      treeId: id,
+      action: 'SANDBOX_WEB_SEARCH',
+      entityType: 'TreeSandbox',
+      entityId: id,
+      source: 'SYSTEM',
+      metadataJson: { query: query.trim(), resultCount: results.length },
+    });
+
+    res.json({ results });
+  } catch (error: any) {
+    console.error('[webSearchInSandbox] ERROR:', error?.message || error);
+    res.status(500).json({ error: 'Web search failed', detail: error?.message });
   }
 };

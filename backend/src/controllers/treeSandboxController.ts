@@ -713,7 +713,7 @@ export const tmCall = async (req: Request, res: Response) => {
     bucket.count++;
 
     // ── Resolve Python + tools.py path ────────────────────────────────────
-    const pythonBin = process.env.HERMES_PYTHON_BIN || "python3";
+    const pythonBin = process.env.HERMES_PYTHON_BIN || "/home/leo/.hermes/hermes-agent/venv/bin/python3";
     const toolsPy = "/home/leo/.hermes/skills/trust-maker/tools.py";
 
     // ── Build JSON-RPC payload ────────────────────────────────────────────
@@ -770,35 +770,24 @@ export const tmCall = async (req: Request, res: Response) => {
 
     const result = await new Promise<{ stdout: string; stderr: string; exitCode: number }>(
       (resolve, reject) => {
-        const { exec } = require("child_process");
-        const child = exec(
-          `${pythonBin} "${toolsPy}" --json-rpc`,
-          {
-            timeout: TM_TIMEOUT_MS,
-            maxBuffer: 1024 * 1024,
-            env,
-          },
-        );
+        const { spawn } = require("child_process");
+        const child = spawn(pythonBin, [toolsPy, "--json-rpc"], {
+          timeout: TM_TIMEOUT_MS,
+          env,
+          stdio: ["pipe", "pipe", "pipe"],
+        });
 
         let stdout = "";
         let stderr = "";
 
-        child.stdout?.on("data", (d: string) => { stdout += d; });
-        child.stderr?.on("data", (d: string) => { stderr += d; });
+        child.stdout?.on("data", (d: Buffer) => { stdout += d.toString(); });
+        child.stderr?.on("data", (d: Buffer) => { stderr += d.toString(); });
 
         child.on("close", (code: number) =>
           resolve({ stdout, stderr, exitCode: code ?? 1 })
         );
         child.on("error", (err: NodeJS.ErrnoException) => {
-          if ((err as any).killed) {
-            resolve({
-              stdout,
-              stderr: stderr + `\n[Timeout after ${TM_TIMEOUT_MS / 1000}s]`,
-              exitCode: 124,
-            });
-          } else {
-            reject(err);
-          }
+          reject(err);
         });
 
         // Write JSON payload to stdin and close
