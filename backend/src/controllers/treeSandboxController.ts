@@ -797,10 +797,10 @@ export const tmCall = async (req: Request, res: Response) => {
     );
 
     if (result.exitCode !== 0) {
-      console.error("[tmCall] tools.py error:", result.stderr);
+      console.error("[tmCall] tools.py error | exitCode:", result.exitCode, "| stderr:", result.stderr, "| stdout:", result.stdout.slice(0, 200));
       return res.status(500).json({
         error: "tm-call failed",
-        detail: result.stderr.slice(0, 500),
+        detail: result.stderr.slice(0, 500) || result.stdout.slice(0, 500),
         exitCode: result.exitCode,
       });
     }
