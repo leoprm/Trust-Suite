@@ -20,6 +20,7 @@ const NOTEBOOKLM_BIN =
     process.env.HOME || "/home/leo",
     ".hermes/hermes-agent/venv/bin/notebooklm"
   );
+const NOTEBOOKLM_STORAGE = process.env.NOTEBOOKLM_STORAGE_PATH || "";
 const DEFAULT_TIMEOUT_MS = parseInt(
   process.env.NOTEBOOKLM_TIMEOUT_MS || "60000",
   10
@@ -123,7 +124,9 @@ function execCLI(
   args: string[],
   timeoutMs: number = DEFAULT_TIMEOUT_MS
 ): Promise<{ stdout: string; stderr: string }> {
-  const cmd = `${NOTEBOOKLM_BIN} ${args.join(" ")}`;
+  // Shell-quote arguments containing spaces or special chars
+  const quoted = args.map((a) => (/\s/.test(a) ? `'${a.replace(/'/g, "'\\''")}'` : a));
+  const cmd = `${NOTEBOOKLM_BIN} ${quoted.join(" ")}`;
   return new Promise((resolve, reject) => {
     exec(
       cmd,
@@ -289,8 +292,8 @@ export class NotebookLMBridge {
   ): Promise<AddSourceResult> {
     const nbId = await getOrCreateNotebook(treeId);
 
-    // notebooklm source add --notebook <id> <input>
-    const args = ["source", "add", "--notebook", nbId];
+    // notebooklm source add --notebook <id> --json <input>
+    const args = ["source", "add", "--notebook", nbId, "--json"];
     if (title) {
       args.push("--title", title);
     }

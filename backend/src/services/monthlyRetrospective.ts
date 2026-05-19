@@ -132,14 +132,52 @@ function retroInstructions(treeName: string, monthLabel: string): string {
     "",
     "Si no hay hallazgos significativos, responde EXACTAMENTE: NO_REPORT",
     "",
-    "📓 4. NOTEBOOKLM — Después del informe, usa el notebook del árbol para enriquecer el análisis:",
-    "   - Revisa los archivos en el sandbox del árbol y selecciona los más relevantes",
-    "   - Sube los archivos seleccionados al notebook via /notebooklm/source",
-    "   - Haz preguntas analíticas al notebook sobre los temas encontrados",
-    "   - Guarda el análisis enriquecido en monthly-presentation-MES.md en el sandbox",
-    "   - Publica un resumen en el grupo con los hallazgos principales",
+    "📓 4. NOTEBOOKLM (OBLIGATORIO) — Realiza SIEMPRE estos pasos:\n" +
+    "   - Lista los archivos en el sandbox del árbol y selecciona los mas relevantes (max 10, >50KB resumir)\n" +
+    "   - Sube los archivos seleccionados al notebook via POST /api/trees/TREE_ID/notebooklm/source\n" +
+    "   - Crea un prompt de presentacion que explique el proposito, mes, temas encontrados y tono deseado\n" +
+    "   - Genera contenido con POST /api/trees/TREE_ID/notebooklm/ask\n" +
+    "   - Guarda el resultado en el sandbox como monthly-presentation-MES.md\n" +
+    "   - Publica un resumen ejecutivo en el grupo con los hallazgos principales\n" +
+    "\n" +
+    "Si NotebookLM falla (auth expirada, rate limit, etc.), CONTINUA con el informe base de 3 secciones. NotebookLM es enriquecimiento, no bloqueante.",
     "",
     "El registro de conversaciones:",
+    "═══════════════════════════════",
+  ].join("\n");
+}
+
+/** Build the quarterly retrospective system prompt (6 sections, 60 lines max). */ 
+function retroInstructionsQuarterly(
+  treeName: string,
+  quarterLabel: string,
+  prevQuarterLabel?: string,
+): string {
+  return [
+    "═══ RETROSPECTIVA TRIMESTRAL ═══",
+    "",
+    `Analiza el registro de conversaciones del árbol "${treeName}" durante ${quarterLabel}.`,
+    "Produce un informe con CINCO secciones:",
+    "",
+    "📋 1. PROBLEMAS — conflictos, dificultades recurrentes o fricciones detectadas.",
+    "💡 2. OPORTUNIDADES — posibles colaboraciones, mejoras o sinergias visibles.",
+    "🔧 3. SUGERENCIAS — acciones concretas y accionables para la comunidad.",
+    "📈 4. EVOLUCIÓN DEL TRIMESTRE — tendencias, patrones de crecimiento, cambios en la dinámica del grupo.",
+    prevQuarterLabel
+      ? `📊 5. COMPARATIVA vs ${prevQuarterLabel} — qué cambió, qué mejoró, qué empeoró.`
+      : "📊 5. COMPARATIVA — sin trimestre anterior para comparar (primer informe).",
+    "📓 6. NOTEBOOKLM (OBLIGATORIO) — mismos pasos que el mensual.",
+    "",
+    "REGLAS:",
+    "- Español neutral (tú/ustedes, sin voseo).",
+    "- Sé específico: menciona temas reales, no generalidades.",
+    "- Constructivo, no alarmista. Enfócate en soluciones.",
+    "- Máximo 60 líneas (15 más que el mensual por las secciones extra).",
+    "- Usa los nombres de los participantes tal como aparecen.",
+    "",
+    "Si no hay hallazgos significativos, responde EXACTAMENTE: NO_REPORT",
+    "",
+    "El registro de conversaciones (3 meses):",
     "═══════════════════════════════",
   ].join("\n");
 }
