@@ -1333,6 +1333,13 @@ export async function enforcePrefix(
       select: { name: true, parentTreeId: true },
     });
     if (treeInfo?.name) {
+      // Only enforce prefix when tree is part of a multi-tree setup
+      // (has parent OR has children) — to distinguish multiple IAs
+      const hasChildren =
+        (await prisma.tree.count({ where: { parentTreeId: treeId } })) > 0;
+      const isMultiTree = !!treeInfo.parentTreeId || hasChildren;
+      if (!isMultiTree) return content; // standalone → no prefix needed
+      
       const prefix = treeInfo.parentTreeId
         ? `🌿 ${treeInfo.name} (sub): `
         : `🌳 ${treeInfo.name}: `;
