@@ -1,0 +1,9 @@
+{
+  "postular_registered": "✅ Application registered. Results on {{endDate}}.",
+  "postular_closed": "Sorry, applications closed on {{endDate}}.",
+  "ignorar_discarded": "Notification dismissed.",
+  "callback_no_user": "⚠️ Could not identify your account.",
+  "callback_not_candidate": "⚠️ You are not in the candidate list for this task.",
+  "callback_already_applied": "⚠️ You already applied for this task.",
+  "callback_error": "⚠️ Error processing. Try again."
+}

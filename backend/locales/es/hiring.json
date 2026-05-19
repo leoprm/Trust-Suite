@@ -1,0 +1,9 @@
+{
+  "postular_registered": "✅ Postulación registrada. Resultados el {{endDate}}.",
+  "postular_closed": "Lo siento, las postulaciones cerraron el {{endDate}}.",
+  "ignorar_discarded": "Notificación descartada.",
+  "callback_no_user": "⚠️ No se pudo identificar tu cuenta.",
+  "callback_not_candidate": "⚠️ No estás en la lista de candidatos para esta tarea.",
+  "callback_already_applied": "⚠️ Ya te postulaste a esta tarea.",
+  "callback_error": "⚠️ Error al procesar. Intenta de nuevo."
+}

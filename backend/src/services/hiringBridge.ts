@@ -33,9 +33,9 @@ export interface HiringRequest {
   // 3 additional fields
   skill: string;
   treeId: string;
-  startDate: string; // ISO date
-  endDate: string;   // ISO date
-  location?: string;
+  startDate: string; // ISO 8601 date (YYYY-MM-DD)
+  endDate: string;   // ISO 8601 date (YYYY-MM-DD)
+  location: string;  // required, non-empty
 }
 
 export interface ApplicantRanking {

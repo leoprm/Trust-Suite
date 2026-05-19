@@ -3569,11 +3569,11 @@ export async function createBot(prisma: PrismaClient): Promise<Bot<BotContext> |
       return;
     }
 
-    // ── Hiring DM callbacks: Postular / Ignorar desde hiringBridge ──────────
-    // Callback format: hiring:apply:<taskId>  or  hiring:ignore:<taskId>
-    if (data.startsWith("hiring:apply:") || data.startsWith("hiring:ignore:")) {
-      const isApply = data.startsWith("hiring:apply:");
-      const prefix = isApply ? "hiring:apply:" : "hiring:ignore:";
+    // ── Hiring DM callbacks: Postular / Ignorar (D3) ──────────────────────
+    // Callback format: post_<taskId>  or  ignr_<taskId>
+    if (data.startsWith("post_") || data.startsWith("ignr_")) {
+      const isApply = data.startsWith("post_");
+      const prefix = isApply ? "post_" : "ignr_";
       const taskId = data.slice(prefix.length);
 
       if (!taskId) {
@@ -3583,7 +3583,7 @@ export async function createBot(prisma: PrismaClient): Promise<Bot<BotContext> |
 
       const tgUser = ctx.from;
       if (!tgUser) {
-        await ctx.answerCallbackQuery({ text: "⚠️ No se pudo identificar tu cuenta" });
+        await ctx.answerCallbackQuery({ text: t("hiring.callback_no_user", "es") });
         return;
       }
 
@@ -3596,14 +3596,59 @@ export async function createBot(prisma: PrismaClient): Promise<Bot<BotContext> |
         return;
       }
 
+      // Resolve language from the user or fallback to es
+      const userLang = (user as any).language ?? "es";
+      const lng = (userLang === "en" ? "en" : "es") as "es" | "en";
+
       // Check for duplicate
       const existing = await (prisma as any).hiringApplicant.findUnique({
         where: { taskId_userId: { taskId, userId: user.id } },
       });
       if (existing) {
-        const label = existing.status === "APPLIED" ? "Ya te postulaste" : "Ya respondiste";
-        await ctx.answerCallbackQuery({ text: `⚠️ ${label} a esta oferta` });
+        const label = existing.status === "APPLIED"
+          ? t("hiring.callback_already_applied", lng)
+          : t("hiring.ignorar_discarded", lng);
+        await ctx.answerCallbackQuery({ text: label });
         return;
+      }
+
+      // Look up the ExternalTask to get endDate and verify candidate list
+      const externalTask = await (prisma as any).externalTask.findFirst({
+        where: { kanbanTaskId: taskId },
+        select: { id: true, endDate: true, treeId: true },
+      });
+
+      // Format endDate for display
+      const endDate = externalTask?.endDate;
+      const endDateStr = endDate
+        ? new Date(endDate).toLocaleDateString(lng === "en" ? "en-US" : "es-CL", {
+            day: "numeric", month: "short", year: "numeric",
+          })
+        : "TBD";
+
+      // If applying, check deadline
+      if (isApply && endDate) {
+        const now = new Date();
+        if (now > new Date(endDate)) {
+          await ctx.answerCallbackQuery({
+            text: t("hiring.postular_closed", lng, { endDate: endDateStr }),
+            show_alert: true,
+          });
+          return;
+        }
+      }
+
+      if (isApply) {
+        // Verify user is in the filtered candidates list (ExternalTaskNotification)
+        if (externalTask) {
+          const notified = await (prisma as any).externalTaskNotification.findUnique({
+            where: { externalTaskId_userId: { externalTaskId: externalTask.id, userId: user.id } },
+          });
+          if (!notified) {
+            await ctx.answerCallbackQuery({ text: t("hiring.callback_not_candidate", lng) });
+            return;
+          }
+        }
       }
 
       const newStatus = isApply ? "APPLIED" : "IGNORED";
@@ -3613,33 +3658,42 @@ export async function createBot(prisma: PrismaClient): Promise<Bot<BotContext> |
           data: {
             taskId,
             userId: user.id,
-            treeId: "", // filled by hiringBridge on deadline close if needed
+            treeId: externalTask?.treeId ?? "",
             status: newStatus,
           },
         });
 
-        const msg = isApply
-          ? "✅ Te has postulado. El árbol revisará tu perfil cuando cierre la convocatoria."
-          : "👋 Oferta ignorada. No recibirás más notificaciones de esta búsqueda.";
+        // Edit the DM message and remove inline keyboard
+        const newText = isApply
+          ? t("hiring.postular_registered", lng, { endDate: endDateStr })
+          : t("hiring.ignorar_discarded", lng);
 
-        // Edit the inline keyboard to show confirmation (remove buttons)
         try {
-          await ctx.editMessageReplyMarkup({
-            reply_markup: {
-              inline_keyboard: [[
-                { text: isApply ? "✅ Postulado" : "❌ Ignorado", callback_data: "hiring:done" },
-              ]],
-            },
+          await ctx.editMessageText(newText, {
+            reply_markup: undefined,
           });
-        } catch { /* DM may not be editable */ }
+        } catch (editErr: any) {
+          // Fallback: edit only the reply markup, then answer with alert
+          console.error("[hiring callback] editMessageText failed:", editErr.message);
+          try {
+            await ctx.editMessageReplyMarkup({ reply_markup: undefined });
+          } catch { /* DM may not be editable at all */ }
+          await ctx.answerCallbackQuery({ text: newText, show_alert: true });
+          return;
+        }
 
-        await ctx.answerCallbackQuery({ text: msg, show_alert: true });
+        await ctx.answerCallbackQuery();
         console.log(
           `[hiring callback] User ${user.id} ${isApply ? "APPLIED" : "IGNORED"} to task ${taskId}`,
         );
       } catch (err: any) {
+        // Prisma unique constraint violation → race condition safety net
+        if (err?.code === "P2002") {
+          await ctx.answerCallbackQuery({ text: t("hiring.callback_already_applied", lng) });
+          return;
+        }
         console.error("[hiring callback] Error:", err.message);
-        await ctx.answerCallbackQuery({ text: "⚠️ Error al procesar. Intenta de nuevo." });
+        await ctx.answerCallbackQuery({ text: t("hiring.callback_error", lng) });
       }
       return;
     }
