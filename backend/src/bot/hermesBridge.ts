@@ -1240,6 +1240,39 @@ const timeoutId = setTimeout(() => controller.abort(), 420_000); // 7 min — co
  * @param chatHistory  Historial de mensajes previos (opcional)
  * @returns         { text: string }
  */
+/**
+ * Garantiza que la respuesta de Ari tenga el prefijo 🌳/🌿 aunque el modelo
+ * lo olvide. El system prompt ya lo exige, pero este es el safety net a nivel
+ * de bridge. Aplica en todos los return paths que tengan accumulatedContent
+ * (happy path + catch de stream interrumpido).
+ */
+async function enforcePrefix(
+  content: string,
+  treeId: string | null,
+  prisma: any,
+): Promise<string> {
+  if (!treeId || !content) return content;
+  const trimmed = content.trimStart();
+  const hasPrefix = trimmed.startsWith("🌳") || trimmed.startsWith("🌿");
+  if (hasPrefix) return content;
+  try {
+    const treeInfo = await prisma.tree.findUnique({
+      where: { id: treeId },
+      select: { name: true, parentTreeId: true },
+    });
+    if (treeInfo?.name) {
+      const prefix = treeInfo.parentTreeId
+        ? `🌿 ${treeInfo.name} (sub): `
+        : `🌳 ${treeInfo.name}: `;
+      console.log(`[hermesBridge] Prefix enforced: ${treeInfo.parentTreeId ? "🌿 sub" : "🌳 root"}`);
+      return prefix + content;
+    }
+  } catch {
+    // non-blocking: prefix enforcement must never break the flow
+  }
+  return content;
+}
+
 export async function routeToHermes(
   message: string,
   treeId: string | null,
@@ -1432,30 +1465,7 @@ export async function routeToHermes(
     console.log(`[hermesBridge] Response: ${accumulatedContent.length} chars`);
 
     // ── Prefix Enforcement ──────────────────────────────────────────────
-    // Garantiza que toda respuesta de Ari tenga el prefijo 🌳/🌿 aunque
-    // el modelo lo olvide. El system prompt ya lo exige, pero este es el
-    // safety net a nivel de bridge.
-    if (treeId && accumulatedContent) {
-      const trimmed = accumulatedContent.trimStart();
-      const hasPrefix = trimmed.startsWith("🌳") || trimmed.startsWith("🌿");
-      if (!hasPrefix) {
-        try {
-          const treeInfo = await (prisma as any).tree.findUnique({
-            where: { id: treeId },
-            select: { name: true, parentTreeId: true },
-          });
-          if (treeInfo?.name) {
-            const prefix = treeInfo.parentTreeId
-              ? `🌿 ${treeInfo.name} (sub): `
-              : `🌳 ${treeInfo.name}: `;
-            accumulatedContent = prefix + accumulatedContent;
-            console.log(`[hermesBridge] Prefix enforced: ${treeInfo.parentTreeId ? "🌿 sub" : "🌳 root"}`);
-          }
-        } catch {
-          // non-blocking: prefix enforcement must never break the flow
-        }
-      }
-    }
+    accumulatedContent = await enforcePrefix(accumulatedContent, treeId, prisma);
 
     // Increment task counter for skill auto-evaluation
     if (treeId) taskCounters.set(treeId, (taskCounters.get(treeId) ?? 0) + 1);
@@ -1465,6 +1475,7 @@ export async function routeToHermes(
     // If we accumulated partial content before the error, return it
     if (accumulatedContent) {
       console.warn(`[hermesBridge] Stream interrupted, returning ${accumulatedContent.length} partial chars`);
+      accumulatedContent = await enforcePrefix(accumulatedContent, treeId, prisma);
       if (treeId) taskCounters.set(treeId, (taskCounters.get(treeId) ?? 0) + 1);
       return { text: accumulatedContent };
     }
