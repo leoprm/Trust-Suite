@@ -23,8 +23,21 @@ function generateTreeCode(): string {
 
 export const createTree = async (req: any, res: Response) => {
   try {
-    const { name, icono, description, inviteUserIds, admissionPolicy, totalBudget } = req.body;
+    const { name, icono, description, inviteUserIds, admissionPolicy, totalBudget, parentTreeId } = req.body;
     const creatorId = req.user.id;
+
+    // ── B7: Validate parent tree membership before creating a sub-tree ──
+    if (parentTreeId) {
+      const parentTree = await prisma.tree.findUnique({ where: { id: parentTreeId } });
+      if (!parentTree) return res.status(404).json({ error: 'Parent tree not found' });
+
+      const isMember = await prisma.treeMember.findFirst({
+        where: { treeId: parentTreeId, userId: creatorId, status: 'ACTIVE' },
+      });
+      if (!isMember) {
+        return res.status(403).json({ error: 'Debes ser miembro del árbol padre para crear un sub-árbol' });
+      }
+    }
 
     // ── BigInt protection: validate inviteUserIds against numeric overflow ──
     // JSON.parse() loses precision for integers beyond Number.MAX_SAFE_INTEGER
@@ -73,6 +86,7 @@ export const createTree = async (req: any, res: Response) => {
         admissionPolicy: admissionPolicy || 'INVITE_ONLY',
         code,
         ...(totalBudget !== undefined && { totalBudget }),
+        ...(parentTreeId && { parentTreeId }),
       }
     });
 
@@ -204,7 +218,7 @@ export const getTechStack = async (req: any, res: Response) => {
 export const updateTree = async (req: any, res: Response) => {
   try {
     const { id } = req.params;
-    const { name, icono, description, admissionPolicy, totalBudget } = req.body;
+    const { name, icono, description, admissionPolicy, totalBudget, parentTreeId } = req.body;
 
     const tree = await prisma.tree.findUnique({ where: { id } });
     if (!tree) return res.status(404).json({ error: 'Tree not found' });
@@ -212,6 +226,19 @@ export const updateTree = async (req: any, res: Response) => {
     // Only creator can update
     if (tree.creatorId !== req.user.id) {
       return res.status(403).json({ error: 'Only the tree creator can update it' });
+    }
+
+    // ── B7: Validate parent tree membership before linking as sub-tree ──
+    if (parentTreeId) {
+      const parentTree = await prisma.tree.findUnique({ where: { id: parentTreeId } });
+      if (!parentTree) return res.status(404).json({ error: 'Parent tree not found' });
+
+      const isMember = await prisma.treeMember.findFirst({
+        where: { treeId: parentTreeId, userId: req.user.id, status: 'ACTIVE' },
+      });
+      if (!isMember) {
+        return res.status(403).json({ error: 'Debes ser miembro del árbol padre para crear un sub-árbol' });
+      }
     }
 
     const updated = await prisma.tree.update({
@@ -222,6 +249,7 @@ export const updateTree = async (req: any, res: Response) => {
         ...(description !== undefined && { description }),
         ...(admissionPolicy !== undefined && { admissionPolicy }),
         ...(totalBudget !== undefined && { totalBudget }),
+        ...(parentTreeId !== undefined && { parentTreeId }),
       }
     });
 
