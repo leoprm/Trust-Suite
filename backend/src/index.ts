@@ -101,6 +101,7 @@ import { createBot } from './bot/index';
 import { initTrustManagerBot } from './bot/trustManagerBot';
 import { startScheduler } from './bot/scheduler';
 import { initDisputeService } from './services/telegramBotService';
+import { startTreeCleanupCron } from './services/treeCleanupService';
 import { stripeWebhook, paddleWebhook, createCheckout, cancelSubscription, currentCost, mySubscription } from './controllers/billingController';
 import { whatsappReceive } from './controllers/whatsappController';
 import { getTreeAgents, assignTreeAgent } from './controllers/agentController';
@@ -124,6 +125,9 @@ let trustManagerBot: any = null;
 
   // ── Initialize dispute broadcast service ──────────────────────────────────────
   initDisputeService(prisma, telegramBot);
+
+  // ── Tree cleanup cron: procesa pendingDeletionAt expirados ───────────────────
+  startTreeCleanupCron(prisma);
 
   // ── Scheduler: cierre diario a medianoche ──────────────────────────────────────
   if (telegramBot) {

@@ -753,15 +753,15 @@ export async function createBot(prisma: PrismaClient): Promise<Bot<BotContext> |
     const newStatus = ctx.update.my_chat_member.new_chat_member.status;
 
     if (chat.type === "group" || chat.type === "supergroup") {
-      // ── Ari removed from group → schedule tree deletion in 30 min ──────
-      if (newStatus === "kicked" || newStatus === "left") {
+      // ── Ari removed from group → schedule tree deletion in 60 min ──────
+        if (newStatus === "kicked" || newStatus === "left") {
         const chatId = chat.id.toString();
         try {
           await (prisma as any).tree.updateMany({
             where: { telegramChatId: chatId },
-            data: { pendingDeletionAt: new Date(Date.now() + 30 * 60 * 1000) },
+            data: { pendingDeletionAt: new Date(Date.now() + 60 * 60 * 1000) },
           });
-          console.log(`[Telegram Bot] Ari removed from ${chatId}, tree scheduled for deletion in 30 min`);
+          console.log(`[Telegram Bot] Ari removed from ${chatId}, tree scheduled for deletion in 60 min`);
         } catch (err: any) {
           console.error(`[Telegram Bot] Error scheduling deletion for ${chatId}:`, err.message);
         }
@@ -1047,12 +1047,12 @@ export async function createBot(prisma: PrismaClient): Promise<Bot<BotContext> |
           where: { treeId: tree.id, status: "ACTIVE", isAI: false },
         });
         if (humanCount <= 1) {
-          // Last human leaving → schedule deletion in 30 min
+          // Last human leaving → schedule deletion in 60 min
           await (prisma as any).tree.update({
             where: { id: tree.id },
-            data: { pendingDeletionAt: new Date(Date.now() + 30 * 60 * 1000) },
+            data: { pendingDeletionAt: new Date(Date.now() + 60 * 60 * 1000) },
           });
-          console.log(`[Telegram Bot] Last human left ${chatId}, tree ${tree.id} scheduled for deletion in 30 min`);
+          console.log(`[Telegram Bot] Last human left ${chatId}, tree ${tree.id} scheduled for deletion in 60 min`);
         }
       } catch (err: any) {
         console.error(`[Telegram Bot] Error checking last-human for ${chat.id}:`, err.message);
