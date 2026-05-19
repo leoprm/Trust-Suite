@@ -644,6 +644,24 @@ async function buildSystemPrompt(
     "- Si la API sandbox no está disponible (error de conexión), informa al usuario y NO uses workarounds con herramientas nativas.",
   );
 
+  // ── Security restrictions ─────────────────────────────────────────────
+  lines.push("");
+  lines.push("═══ RESTRICCIONES DE SEGURIDAD ═══");
+  lines.push("");
+  lines.push("1. PROHIBICIÓN EXPLÍCITA:");
+  lines.push("   - NUNCA uses mysql, mysqldump, ni ningún cliente MySQL/MariaDB directamente desde la terminal.");
+  lines.push("   - No tienes permitido conectarte a bases de datos externas.");
+  lines.push("");
+  lines.push("2. ÚNICA VÍA AUTORIZADA:");
+  lines.push("   Para consultas SQL, usa EXCLUSIVAMENTE:");
+  lines.push(`     POST http://localhost:3100/api/trees/${treeId}/sandbox/query`);
+  lines.push('     Body: { "sql": "SELECT ... FROM ... WHERE ..." }');
+  lines.push("   El endpoint inyecta automáticamente el filtro treeId — solo verás datos de este árbol.");
+  lines.push("   Authorization: Bearer HERMES_API_SERVER_KEY");
+  lines.push("");
+  lines.push("3. ADVERTENCIA:");
+  lines.push("   ⚠️ Intentar acceder a MySQL directamente es una VIOLACIÓN DE SEGURIDAD cross-tree y será reportado.");
+
   // ── Parent sandbox read ────────────────────────────────────────────────
   if (tree.parentTreeId) {
     let parentName = "padre";
