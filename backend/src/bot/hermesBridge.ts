@@ -516,10 +516,24 @@ async function buildSystemPrompt(
   const members = await (prisma as any).treeMember.findMany({
     where: { treeId, status: "ACTIVE" },
     include: {
-      user: { select: { username: true, firstName: true, skills: true } },
+      user: { select: { id: true, username: true, firstName: true } },
     },
     take: 20,
   });
+
+  // Batch-fetch WorkerSkills for all members
+  const memberIds = members.map((m: any) => m.userId).filter(Boolean);
+  const allWorkerSkills: any[] = memberIds.length > 0
+    ? await (prisma as any).workerSkill.findMany({
+        where: { userId: { in: memberIds } },
+        orderBy: { xp: "desc" as const },
+      })
+    : [];
+  const skillsByUserId: Record<string, any[]> = {};
+  for (const ws of allWorkerSkills) {
+    if (!skillsByUserId[ws.userId]) skillsByUserId[ws.userId] = [];
+    skillsByUserId[ws.userId].push(ws);
+  }
 
   const memberCount = members.length;
   lines.push("");
@@ -531,24 +545,9 @@ async function buildSystemPrompt(
     for (const m of members) {
       const displayName = m.user?.firstName || m.user?.username || "(anónimo)";
       let skillsStr = "";
-      if (m.user?.skills) {
-        try {
-          const skills = JSON.parse(m.user.skills as string);
-          if (typeof skills === "object" && skills !== null) {
-            const entries = Object.entries(skills as Record<string, number>);
-            if (entries.length > 0) {
-              skillsStr =
-                " [" +
-                entries
-                  .slice(0, 5)
-                  .map(([k, v]) => `${k}(${v})`)
-                  .join(", ") +
-                "]";
-            }
-          }
-        } catch {
-          // ignore
-        }
+      const wsList = skillsByUserId[m.userId];
+      if (wsList && wsList.length > 0) {
+        skillsStr = " [" + wsList.slice(0, 5).map((ws: any) => `${ws.skill}(${ws.xp})`).join(", ") + "]";
       }
       lines.push(`  - ${displayName}${skillsStr}`);
     }

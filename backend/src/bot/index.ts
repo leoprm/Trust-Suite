@@ -28,6 +28,13 @@ import { parseDeadline } from "./deadlineParser";
 import { checkTodoReminders } from "./todoReminders";
 import { detectNaturalAddIntent } from "./todoNaturalAdd";
 import { NotebookLMBridge } from "../services/notebooklmBridge";
+import {
+  handleEncuestaCommand,
+  handleEncuestaCallback,
+  handleEncuestaText,
+  handleVotarCommand,
+  handleVotarCallback,
+} from "./encuesta";
 
 // ── NotebookLM Bridge singleton for bot commands ──────────────
 let _notebooklmBridge: NotebookLMBridge | null = null;
@@ -714,6 +721,16 @@ export async function createBot(prisma: PrismaClient): Promise<Bot<BotContext> |
         await ctx.reply(`❌ Error al iniciar podcast: ${msg.slice(0, 200)}`);
       }
     }
+  });
+
+  // ── /encuesta: admin only — crear encuesta de evaluación ──────────────
+  bot.command("encuesta", async (ctx) => {
+    await handleEncuestaCommand(prisma, ctx as BotContext);
+  });
+
+  // ── /votar: miembro — vota en encuestas abiertas ──────────────────────
+  bot.command("votar", async (ctx) => {
+    await handleVotarCommand(prisma, ctx as BotContext);
   });
 
   // ── Welcome / rejoin messages ─────────────────────────────────────────
@@ -3552,7 +3569,14 @@ export async function createBot(prisma: PrismaClient): Promise<Bot<BotContext> |
       return;
     }
 
-    const handled = await handleProfileCallback(prisma, ctx as BotContext);
+    // ── Encuesta callbacks (target selection, survey selector, voting) ──
+    let handled = await handleEncuestaCallback(prisma, bot, ctx as BotContext);
+    if (handled) return;
+
+    handled = await handleVotarCallback(prisma, bot, ctx as BotContext);
+    if (handled) return;
+
+    handled = await handleProfileCallback(prisma, ctx as BotContext);
     if (!handled) {
       // Unknown callback — acknowledge silently
       await ctx.answerCallbackQuery();

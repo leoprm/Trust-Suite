@@ -390,10 +390,10 @@ export const notebooklmListSources = async (req: Request, res: Response) => {
 // Creates a SatisfactionSurvey with announcedAt=now. Returns { surveyId }.
 // JWT required — creator must be a tree member.
 
-import crypto from 'crypto';
+import { createHash } from 'crypto';
 
 function voterHash(userId: string, surveyId: string): string {
-  return crypto.createHash('sha256').update(userId + surveyId).digest('hex');
+  return createHash('sha256').update(userId + surveyId).digest('hex');
 }
 
 export const createSurvey = async (req: Request, res: Response) => {
@@ -458,7 +458,7 @@ export const createSurvey = async (req: Request, res: Response) => {
 
 export const voteOnSurvey = async (req: Request, res: Response) => {
   try {
-    const surveyId = req.params.surveyId;
+    const surveyId = req.params.surveyId as string;
     const userId = (req as any).user!.id;
     const { score } = req.body;
 
@@ -525,7 +525,7 @@ export const voteOnSurvey = async (req: Request, res: Response) => {
 
 export const getSurveyResults = async (req: Request, res: Response) => {
   try {
-    const surveyId = req.params.surveyId;
+    const surveyId = req.params.surveyId as string;
 
     const survey = await prisma.satisfactionSurvey.findUnique({
       where: { id: surveyId },

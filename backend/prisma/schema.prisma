@@ -1336,3 +1336,26 @@ model SatisfactionScore {
 
   @@id([userId, skill])
 }
+
+// ── Hiring Pipeline ────────────────────────────────────────────────────────
+
+enum HiringApplicantStatus {
+  APPLIED
+  IGNORED
+  CLOSED
+}
+
+model HiringApplicant {
+  id        String                @id @default(uuid())
+  taskId    String
+  userId    String
+  treeId    String
+  status    HiringApplicantStatus @default(APPLIED)
+  appliedAt DateTime              @default(now())
+  closedAt  DateTime?
+
+  @@unique([taskId, userId])
+  @@index([taskId])
+  @@index([userId])
+  @@index([taskId, status])
+}
