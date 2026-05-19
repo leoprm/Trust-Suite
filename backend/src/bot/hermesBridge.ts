@@ -1398,6 +1398,7 @@ export async function routeToHermes(
     return null;
   }
 
+    let accumulatedContent = "";
   // ── Parse SSE stream ──────────────────────────────────────────────────
   try {
     const reader = response.body?.getReader();
@@ -1409,7 +1410,7 @@ export async function routeToHermes(
 
     const decoder = new TextDecoder();
     let buffer = "";
-    let accumulatedContent = "";
+    accumulatedContent = "";
 
     // Helper: create a promise that rejects when the AbortController fires
     const abortPromise = new Promise<never>((_, reject) => {
