@@ -13,20 +13,10 @@
 import { NotebookLMBridge } from './notebooklmBridge';
 
 let bridge: NotebookLMBridge | null = null;
-let startPromise: Promise<void> | null = null;
 
 function getBridge(): NotebookLMBridge {
   if (!bridge) {
     bridge = new NotebookLMBridge();
-    startPromise = bridge.start().catch((err) => {
-      console.error(
-        '[notebooklm] Bridge startup failed:',
-        err?.message || err
-      );
-      // Reset so next call retries
-      bridge = null;
-      startPromise = null;
-    });
   }
   return bridge;
 }
@@ -34,7 +24,6 @@ function getBridge(): NotebookLMBridge {
 export async function createNotebook(treeId: string): Promise<void> {
   try {
     const b = getBridge();
-    await startPromise;
     await b.createNotebook(treeId);
     console.log(`[notebooklm] Notebook created for tree ${treeId.slice(0, 8)}…`);
   } catch (err: any) {
@@ -48,7 +37,6 @@ export async function createNotebook(treeId: string): Promise<void> {
 export async function deleteNotebook(treeId: string): Promise<void> {
   try {
     const b = getBridge();
-    await startPromise;
     await b.deleteNotebook(treeId);
     console.log(`[notebooklm] Notebook deleted for tree ${treeId.slice(0, 8)}…`);
   } catch (err: any) {

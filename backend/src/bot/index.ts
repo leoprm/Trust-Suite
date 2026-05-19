@@ -35,8 +35,6 @@ let _notebooklmBridge: NotebookLMBridge | null = null;
 async function getBotNotebookLMBridge(): Promise<NotebookLMBridge> {
   if (!_notebooklmBridge) {
     _notebooklmBridge = new NotebookLMBridge();
-    await _notebooklmBridge.start();
-    console.log("[Bot] NotebookLM bridge started");
   }
   return _notebooklmBridge;
 }

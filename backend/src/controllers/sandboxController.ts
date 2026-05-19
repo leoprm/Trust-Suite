@@ -272,7 +272,6 @@ let notebooklmBridge: NotebookLMBridge | null = null;
 async function getNotebookLMBridge(): Promise<NotebookLMBridge> {
   if (!notebooklmBridge) {
     notebooklmBridge = new NotebookLMBridge();
-    await notebooklmBridge.start();
   }
   return notebooklmBridge;
 }
