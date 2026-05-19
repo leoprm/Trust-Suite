@@ -132,6 +132,13 @@ function retroInstructions(treeName: string, monthLabel: string): string {
     "",
     "Si no hay hallazgos significativos, responde EXACTAMENTE: NO_REPORT",
     "",
+    "📓 4. NOTEBOOKLM — Después del informe, usa el notebook del árbol para enriquecer el análisis:",
+    "   - Revisa los archivos en el sandbox del árbol y selecciona los más relevantes",
+    "   - Sube los archivos seleccionados al notebook via /notebooklm/source",
+    "   - Haz preguntas analíticas al notebook sobre los temas encontrados",
+    "   - Guarda el análisis enriquecido en monthly-presentation-MES.md en el sandbox",
+    "   - Publica un resumen en el grupo con los hallazgos principales",
+    "",
     "El registro de conversaciones:",
     "═══════════════════════════════",
   ].join("\n");
