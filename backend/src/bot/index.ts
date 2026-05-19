@@ -27,6 +27,20 @@ import { routeToHermes, shouldAriRespond } from "./hermesBridge";
 import { parseDeadline } from "./deadlineParser";
 import { checkTodoReminders } from "./todoReminders";
 import { detectNaturalAddIntent } from "./todoNaturalAdd";
+import { NotebookLMBridge } from "../services/notebooklmBridge";
+
+// ── NotebookLM Bridge singleton for bot commands ──────────────
+let _notebooklmBridge: NotebookLMBridge | null = null;
+
+async function getBotNotebookLMBridge(): Promise<NotebookLMBridge> {
+  if (!_notebooklmBridge) {
+    _notebooklmBridge = new NotebookLMBridge();
+    await _notebooklmBridge.start();
+    console.log("[Bot] NotebookLM bridge started");
+  }
+  return _notebooklmBridge;
+}
+
 import {
   handleTrabajar,
   handlePerfil,
@@ -190,6 +204,8 @@ export async function createBot(prisma: PrismaClient): Promise<Bot<BotContext> |
           "/trabajar — Registrarte como trabajador\n" +
           "/perfil — Editar tu perfil de trabajador\n" +
           "/tareas — Ver tareas disponibles\n" +
+          "/ask <pregunta> — Preguntar al NotebookLM del árbol\n" +
+          "/podcast — Generar podcast del árbol\n" +
           "/help — Mostrar esta ayuda\n\n" +
           "En grupos, menciona @TrustMakerBot:\n" +
           "  @TrustMakerBot /info\n" +
@@ -546,6 +562,160 @@ export async function createBot(prisma: PrismaClient): Promise<Bot<BotContext> |
   bot.command("hilt", async (ctx) => {
     const lng = ctx.from?.language_code === "en" ? "en" : "es";
     await ctx.reply(workerHelpMessage(lng));
+  });
+
+  // ── /ask: pregunta al NotebookLM del árbol ───────────────────────────
+  bot.command("ask", async (ctx) => {
+    const chatType = ctx.chat?.type;
+    if (chatType !== "group" && chatType !== "supergroup") {
+      await ctx.reply("🔍 /ask solo funciona en grupos vinculados a un árbol.");
+      return;
+    }
+
+    const chatId = ctx.chat?.id.toString();
+    if (!chatId) return;
+
+    // Extract question (everything after "/ask")
+    const raw = ctx.message?.text || "";
+    const question = raw.replace(/^\/ask(?:@\w+)?\s*/, "").trim();
+    if (!question) {
+      await ctx.reply("🔍 Uso: /ask <pregunta>\n\nEjemplo: /ask ¿Qué dice el documento sobre sostenibilidad?");
+      return;
+    }
+
+    const tree = await findTreeByChat(prisma, chatId);
+    if (!tree) {
+      await ctx.reply("⚠️ Este grupo no está vinculado a ningún árbol.");
+      return;
+    }
+
+    try {
+      await ctx.replyWithChatAction("typing");
+      const bridge = await getBotNotebookLMBridge();
+      const result = await bridge.ask(tree.id, question);
+
+      const citations = result.citations || [];
+      let reply = `📚 *Respuesta:*\n${result.answer}`;
+
+      if (citations.length > 0) {
+        reply += "\n\n📖 *Fuentes:*";
+        for (const c of citations.slice(0, 5)) {
+          const sourceLabel = c.text
+            ? (c.text.length > 80 ? c.text.slice(0, 80) + "..." : c.text)
+            : c.sourceId;
+          reply += `\n• ${sourceLabel}`;
+        }
+      } else {
+        reply += "\n\n⚠️ No hay fuentes en el notebook de este árbol.";
+      }
+
+      await ctx.reply(reply, { parse_mode: "Markdown" });
+    } catch (err: any) {
+      console.error("[Bot /ask] Error:", err?.message || err);
+      const msg = err?.message || "Error desconocido";
+      if (msg.includes("No notebook found")) {
+        await ctx.reply("⚠️ Este árbol no tiene un notebook creado aún. Añade fuentes primero con /source.");
+      } else {
+        await ctx.reply(`❌ Error al consultar NotebookLM: ${msg.slice(0, 200)}`);
+      }
+    }
+  });
+
+  // ── /podcast: genera un podcast del árbol ────────────────────────────
+  bot.command("podcast", async (ctx) => {
+    const chatType = ctx.chat?.type;
+    if (chatType !== "group" && chatType !== "supergroup") {
+      await ctx.reply("🎙️ /podcast solo funciona en grupos vinculados a un árbol.");
+      return;
+    }
+
+    const chatId = ctx.chat?.id.toString();
+    if (!chatId) return;
+
+    const tree = await findTreeByChat(prisma, chatId);
+    if (!tree) {
+      await ctx.reply("⚠️ Este grupo no está vinculado a ningún árbol.");
+      return;
+    }
+
+    try {
+      const bridge = await getBotNotebookLMBridge();
+      const genResult = await bridge.generatePodcast(tree.id);
+
+      await ctx.reply(
+        `🎙️ *Generando podcast...* te aviso cuando esté listo.\n\n` +
+        `⏳ Task: \`${genResult.taskId}\``,
+        { parse_mode: "Markdown" },
+      );
+
+      // Poll every 15s for up to 10 minutes
+      const MAX_POLLS = 40; // 10 min
+      const POLL_INTERVAL_MS = 15_000;
+      let pollCount = 0;
+
+      const pollInterval = setInterval(async () => {
+        pollCount++;
+        try {
+          const status = await bridge.pollPodcast(tree.id, genResult.taskId);
+
+          if (status.isFailed) {
+            clearInterval(pollInterval);
+            await ctx.reply("❌ La generación del podcast falló. Intenta de nuevo más tarde.");
+            return;
+          }
+
+          if (status.isComplete && status.url) {
+            clearInterval(pollInterval);
+            await ctx.replyWithChatAction("upload_document");
+
+            // Download the audio
+            const outputPath = `/tmp/tm-podcast-${tree.id}-${genResult.taskId}.mp3`;
+            const dl = await bridge.downloadPodcast(tree.id, genResult.taskId, outputPath);
+
+            try {
+              const { InputFile } = await import("grammy");
+              const audioFile = new InputFile(dl.path);
+              await ctx.replyWithAudio(audioFile, {
+                title: `Podcast: ${tree.name}`,
+                caption: `🎙️ Podcast generado para *${tree.name}*`,
+                parse_mode: "Markdown",
+              });
+              await ctx.reply("✅ ¡Podcast listo!");
+            } catch (sendErr: any) {
+              console.error("[Bot /podcast] Send error:", sendErr?.message || sendErr);
+              await ctx.reply(
+                `✅ Podcast generado pero no pude enviarlo.\n📁 Archivo: ${dl.path}`,
+              );
+            }
+            return;
+          }
+
+          if (pollCount >= MAX_POLLS) {
+            clearInterval(pollInterval);
+            await ctx.reply(
+              "⏰ El podcast está tardando más de lo esperado. " +
+              `Puedes verificarlo luego con la task \`${genResult.taskId}\`.`,
+              { parse_mode: "Markdown" },
+            );
+          }
+        } catch (pollErr: any) {
+          console.error("[Bot /podcast] Poll error:", pollErr?.message || pollErr);
+          // Don't clear interval on transient errors
+        }
+      }, POLL_INTERVAL_MS);
+
+      // Safety: clear interval after 12 min regardless
+      setTimeout(() => clearInterval(pollInterval), 12 * 60_000);
+
+    } catch (err: any) {
+      console.error("[Bot /podcast] Error:", err?.message || err);
+      const msg = err?.message || "Error desconocido";
+      if (msg.includes("No notebook found")) {
+        await ctx.reply("⚠️ Este árbol no tiene un notebook creado aún. Añade fuentes primero con /source.");
+      } else {
+        await ctx.reply(`❌ Error al iniciar podcast: ${msg.slice(0, 200)}`);
+      }
+    }
   });
 
   // ── Welcome / rejoin messages ─────────────────────────────────────────

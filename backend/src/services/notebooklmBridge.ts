@@ -77,6 +77,19 @@ export interface GeneratePodcastResult {
   status: string;
 }
 
+export interface PollPodcastResult {
+  taskId: string;
+  status: string;
+  isComplete: boolean;
+  isFailed: boolean;
+  url: string | null;
+}
+
+export interface DownloadPodcastResult {
+  path: string;
+  downloaded: boolean;
+}
+
 export interface SourceInfo {
   sourceId: string;
   title: string;
@@ -365,6 +378,21 @@ export class NotebookLMBridge {
     const resp = await this.send("generate_podcast", { treeId });
     if (!resp.ok) throw new NotebookLMBridgeError(resp.error || "unknown", "RPC_ERROR");
     return resp.data as unknown as GeneratePodcastResult;
+  }
+
+  async pollPodcast(treeId: string, taskId: string): Promise<PollPodcastResult> {
+    const resp = await this.send("poll_podcast", { treeId, taskId });
+    if (!resp.ok) throw new NotebookLMBridgeError(resp.error || "unknown", "RPC_ERROR");
+    return resp.data as unknown as PollPodcastResult;
+  }
+
+  async downloadPodcast(treeId: string, taskId?: string, outputPath?: string): Promise<DownloadPodcastResult> {
+    const params: Record<string, unknown> = { treeId };
+    if (taskId) params.taskId = taskId;
+    if (outputPath) params.outputPath = outputPath;
+    const resp = await this.send("download_podcast", params);
+    if (!resp.ok) throw new NotebookLMBridgeError(resp.error || "unknown", "RPC_ERROR");
+    return resp.data as unknown as DownloadPodcastResult;
   }
 
   async listSources(treeId: string): Promise<ListSourcesResult> {

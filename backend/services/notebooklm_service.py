@@ -16,6 +16,8 @@ Methods:
   ask(treeId, question)    → {answer, citations: [...]}
   add_source(treeId, input) → {sourceId, title, kind}
   generate_podcast(treeId) → {taskId}
+  poll_podcast(treeId, taskId) → {taskId, status, isComplete, isFailed, url}
+  download_podcast(treeId, taskId, outputPath?) → {path, downloaded}
   list_sources(treeId)     → {sources: [...]}
 """
 
@@ -229,6 +231,42 @@ async def handle_generate_podcast(params: dict) -> dict:
     }
 
 
+async def handle_poll_podcast(params: dict) -> dict:
+    tree_id = params["treeId"]
+    task_id = params["taskId"]
+    client = await get_client()
+
+    nb = await find_notebook_by_name(client, tree_id)
+    if not nb:
+        return {"error": f"No notebook found for tree {tree_id}"}
+
+    status = await client.artifacts.poll_status(nb.id, task_id)
+    return {
+        "taskId": status.task_id,
+        "status": status.status,
+        "isComplete": status.is_complete if hasattr(status, "is_complete") else False,
+        "isFailed": status.is_failed if hasattr(status, "is_failed") else False,
+        "url": getattr(status, "url", None),
+    }
+
+
+async def handle_download_podcast(params: dict) -> dict:
+    tree_id = params["treeId"]
+    task_id = params.get("taskId")
+    output_path = params.get("outputPath", f"/tmp/tm-podcast-{tree_id}.mp3")
+    client = await get_client()
+
+    nb = await find_notebook_by_name(client, tree_id)
+    if not nb:
+        return {"error": f"No notebook found for tree {tree_id}"}
+
+    await client.artifacts.download_audio(nb.id, output_path, artifact_id=task_id)
+    return {
+        "path": output_path,
+        "downloaded": True,
+    }
+
+
 async def handle_list_sources(params: dict) -> dict:
     tree_id = params["treeId"]
     client = await get_client()
@@ -258,6 +296,8 @@ DISPATCH = {
     "ask": handle_ask,
     "add_source": handle_add_source,
     "generate_podcast": handle_generate_podcast,
+    "poll_podcast": handle_poll_podcast,
+    "download_podcast": handle_download_podcast,
     "list_sources": handle_list_sources,
 }
 
