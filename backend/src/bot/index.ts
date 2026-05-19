@@ -115,6 +115,9 @@ function extractSimpleKeywords(text: string): string[] {
 // ── Message counter per tree: track intro message for new member welcomes ──
 const treeMessageCounter = new Map<string, number>();
 
+// T3: Parent tree selector state — maps "psel:<idx>" → {childId, parentId}
+const parentTreeSelectors = new Map<string, Map<string, string>>();
+
 async function trackBotMessage(
   prisma: PrismaClient,
   treeId: string,
@@ -988,11 +991,11 @@ export async function createBot(prisma: PrismaClient): Promise<Bot<BotContext> |
                     inline_keyboard: [[
                       {
                         text: "\uD83C\uDF3F Sí, es sub-árbol",
-                        callback_data: "onboarding:subtree_early_yes:" + tree.id,
+                        callback_data: "osub_y:" + tree.id,
                       },
                       {
                         text: "\uD83C\uDF33 No, es independiente",
-                        callback_data: "onboarding:subtree_early_no:" + tree.id,
+                        callback_data: "osub_n:" + tree.id,
                       },
                     ]],
                   },
@@ -2818,9 +2821,9 @@ export async function createBot(prisma: PrismaClient): Promise<Bot<BotContext> |
     }
 
     // T2: Early subtree question callbacks (group onboarding, before language selector)
-    if (data.startsWith("onboarding:subtree_early_yes:") || data.startsWith("onboarding:subtree_early_no:")) {
-      const isYes = data.startsWith("onboarding:subtree_early_yes:");
-      const treeId = data.split(":").slice(3).join(":"); // treeId may contain colons
+    if (data.startsWith("osub_y:") || data.startsWith("osub_n:")) {
+      const isYes = data.startsWith("osub_y:");
+      const treeId = data.split(":")[1]; // treeId follows the prefix
 
       // Validate treeId is present (session may not be available in my_chat_member context)
       if (!treeId) {
@@ -2890,7 +2893,7 @@ export async function createBot(prisma: PrismaClient): Promise<Bot<BotContext> |
         include: {
           tree: { select: { id: true, name: true, icono: true } },
         },
-        take: 10, // limit to avoid huge keyboards
+        take: 50, // show all trees
       });
 
       if (memberships.length === 0) {
@@ -2922,37 +2925,47 @@ export async function createBot(prisma: PrismaClient): Promise<Bot<BotContext> |
       }
 
       // T3: Parent tree selector — inline keyboard with tree icon + name
-      const keyboard = memberships.map((m) => [{
-        text: `${m.tree.icono || "\uD83C\uDF33"} ${m.tree.name}`,
-        callback_data: `onboarding:parent_select:${treeId}:${m.tree.id}`,
-      }]);
+      // Use short callback_data: "psel:<idx>" with idx referencing memberships array
+      const parentMap = new Map<string, string>();
+      const keyboard = memberships.map((m, i) => {
+        const key = `psel:${i}`;
+        parentMap.set(key, JSON.stringify({ childId: treeId, parentId: m.tree.id }));
+        return [{
+          text: `${m.tree.icono || "\uD83C\uDF33"} ${m.tree.name}`,
+          callback_data: key, // ~7 chars, well within 64-byte limit
+        }];
+      });
+      // Store mapping keyed by chatId for retrieval in callback handler
+      parentTreeSelectors.set(ctx.chat!.id.toString(), parentMap);
 
-      await ctx.api.sendMessage(
-        ctx.chat!.id,
-        "Selecciona el árbol padre:",
-        { reply_markup: { inline_keyboard: keyboard } },
-      );
+      try {
+        await ctx.api.sendMessage(
+          ctx.chat!.id,
+          "Selecciona el árbol padre:",
+          { reply_markup: { inline_keyboard: keyboard } },
+        );
+      } catch (err: any) {
+        console.error("[parent_selector] sendMessage error:", err.message);
+        await ctx.api.sendMessage(ctx.chat!.id, "⚠️ Error al mostrar el selector. Continuando con el idioma...");
+      }
       return;
     }
 
     // T3: Parent tree selection callback (subtree early onboarding)
-    if (data.startsWith("onboarding:parent_select:")) {
-      // data = onboarding:parent_select:<childTreeId>:<parentTreeId>
-      const parts = data.split(":");
-      if (parts.length < 5) {
-        await ctx.answerCallbackQuery();
+    if (data.startsWith("psel:")) {
+      const chatId = ctx.chat!.id.toString();
+      const chatMap = parentTreeSelectors.get(chatId);
+      if (!chatMap) {
+        await ctx.answerCallbackQuery({ text: "Selector expirado. Reintenta." });
         return;
       }
-      const childTreeId = parts[3];
-      const parentTreeId = parts.slice(4).join(":");
-
-      const session = (ctx as BotContext).session;
-      if (session.onboardingTreeId !== childTreeId) {
-        await ctx.answerCallbackQuery();
+      const payload = chatMap.get(data);
+      if (!payload) {
+        await ctx.answerCallbackQuery({ text: "Opción no encontrada." });
         return;
       }
+      const { childId, parentId } = JSON.parse(payload) as { childId: string; parentId: string };
 
-      // Verify user is an active member of the selected parent tree
       const tgId = ctx.from!.id;
       const user = await prisma.user.findUnique({
         where: { telegramUserId: BigInt(tgId) },
@@ -2961,7 +2974,7 @@ export async function createBot(prisma: PrismaClient): Promise<Bot<BotContext> |
 
       if (!user) {
         await ctx.editMessageText(
-          "⚠️ No se encontró tu cuenta. Continuando con el selector de idioma...",
+          "⚠️ No se encontró tu cuenta. Contacta a @TrustHelpDeskBot.",
           { reply_markup: undefined },
         );
         await ctx.answerCallbackQuery();
@@ -2971,7 +2984,7 @@ export async function createBot(prisma: PrismaClient): Promise<Bot<BotContext> |
       const parentMembership = await prisma.treeMember.findFirst({
         where: {
           userId: user.id,
-          treeId: parentTreeId,
+          treeId: parentId,
           status: "ACTIVE",
         },
       });
@@ -2988,17 +3001,17 @@ export async function createBot(prisma: PrismaClient): Promise<Bot<BotContext> |
       // Link child tree to parent
       try {
         await (prisma as any).tree.update({
-          where: { id: childTreeId },
-          data: { parentTreeId },
+          where: { id: childId },
+          data: { parentTreeId: parentId },
         });
 
         // T4: Notify parent chat about new sub-tree linkage
         const parentTree = await (prisma as any).tree.findUnique({
-          where: { id: parentTreeId },
+          where: { id: parentId },
           select: { telegramChatId: true, name: true },
         });
         const childTree = await (prisma as any).tree.findUnique({
-          where: { id: childTreeId },
+          where: { id: childId },
           select: { name: true },
         });
 
@@ -3029,17 +3042,17 @@ export async function createBot(prisma: PrismaClient): Promise<Bot<BotContext> |
             inline_keyboard: [[
               {
                 text: "\uD83C\uDDFA\uD83C\uDDF8 English",
-                callback_data: "lang_group:en:" + childTreeId,
+                callback_data: "lang_group:en:" + childId,
               },
               {
                 text: "\uD83C\uDDF2\uD83C\uDDFD Español",
-                callback_data: "lang_group:es:" + childTreeId,
+                callback_data: "lang_group:es:" + childId,
               },
             ]],
           },
         }
       );
-      trackBotMessage(prisma, childTreeId, langMsg.message_id);
+      trackBotMessage(prisma, childId, langMsg.message_id);
       return;
     }
 
