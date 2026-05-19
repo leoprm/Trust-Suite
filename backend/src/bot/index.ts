@@ -2969,9 +2969,26 @@ export async function createBot(prisma: PrismaClient): Promise<Bot<BotContext> |
           data: { parentTreeId },
         });
 
-        // T4: Notify parent chat — fetch parentTree.telegramChatId and childTree.name,
-        // send message "🌿 *Nuevo sub-árbol vinculado:* 🌳 Nombre\nAhora las IAs pueden colaborar."
-        // TODO(t_ec43f5a4): Implement parent chat notification
+        // T4: Notify parent chat about new sub-tree linkage
+        const parentTree = await (prisma as any).tree.findUnique({
+          where: { id: parentTreeId },
+          select: { telegramChatId: true, name: true },
+        });
+        const childTree = await (prisma as any).tree.findUnique({
+          where: { id: childTreeId },
+          select: { name: true },
+        });
+
+        if (parentTree?.telegramChatId && childTree) {
+          const bridgeMsg = `🌿 *Nuevo sub-árbol vinculado:* 🌳 ${childTree.name}\nAhora las IAs de ambos árboles pueden colaborar.`;
+          try {
+            await ctx.api.sendMessage(parentTree.telegramChatId, bridgeMsg, {
+              parse_mode: "Markdown",
+            });
+          } catch (sendErr: any) {
+            console.error("[parent_select] Failed to notify parent chat:", sendErr.message);
+          }
+        }
 
         await ctx.editMessageText("✅ Vinculado como sub-árbol.", { reply_markup: undefined });
       } catch (err: any) {
