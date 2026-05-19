@@ -1765,7 +1765,7 @@ export async function createBot(prisma: PrismaClient): Promise<Bot<BotContext> |
     // MINIMUM: only reply and @tag pass through; block everything else
     if (interactionMode === "MINIMUM") {
       const isTagged = /@Ari\b|@TrustMakerBot\b/i.test(msg.text || "");
-      if (!isReplyToBot && !isTagged) {
+      if (!isReplyToBot && !isTagged && !cmdText?.startsWith("/")) {
         cmdText = null;
       }
     }
