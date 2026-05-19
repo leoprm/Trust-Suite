@@ -1457,7 +1457,9 @@ export async function routeToHermes(
     } else {
       console.error("[hermesBridge] Hermes API fetch failed:", err);
     }
-    return null;
+    return {
+      text: "⚠️ No pude procesar tu mensaje a tiempo (el servidor de IA no respondió). ¿Podrías reformularlo de forma más concreta o dividirlo en partes más pequeñas?",
+    };
   }
 
   // ── Handle upstream errors ─────────────────────────────────────────────
@@ -1467,7 +1469,9 @@ export async function routeToHermes(
     console.error(
       `[hermesBridge] Hermes API returned ${response.status}: ${errorText.slice(0, 300)}`,
     );
-    return null;
+    return {
+      text: `⚠️ Error del servidor de IA (${response.status}). Intenta de nuevo en un momento.`,
+    };
   }
 
   let accumulatedContent = "";
@@ -1531,7 +1535,9 @@ export async function routeToHermes(
 
     if (!accumulatedContent) {
       console.error("[hermesBridge] Empty response from Hermes SSE stream");
-      return null;
+      return {
+        text: "⚠️ Procesé tu solicitud pero no pude generar una respuesta completa. ¿Podrías intentarlo de nuevo con una pregunta más específica?",
+      };
     }
 
     console.log(`[hermesBridge] Response: ${accumulatedContent.length} chars`);
