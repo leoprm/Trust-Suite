@@ -2066,7 +2066,6 @@ export async function createBot(prisma: PrismaClient): Promise<Bot<BotContext> |
             }
             if (response.text) {
               await sendTelegramMessage(ctx, response.text, "Markdown");
-              }
             }
           }
         } catch (err: any) {
