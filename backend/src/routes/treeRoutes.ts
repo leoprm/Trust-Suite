@@ -7,8 +7,8 @@ const router = Router();
 
 // Specific routes before generic /:id capture
 router.get('/global', authenticateJWT, getGlobalTrees);
-router.get('/network', optionalAuth, getNetworkGraph);
-router.get('/network/:centerId', optionalAuth, getNetworkGraph);
+router.get('/network', authenticateJWT, getNetworkGraph);
+router.get('/network/:centerId', authenticateJWT, getNetworkGraph);
 
 // Routes that can optionally be public
 router.get('/:id', optionalAuth, getTree);
