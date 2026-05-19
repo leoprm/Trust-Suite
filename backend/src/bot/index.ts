@@ -2002,6 +2002,7 @@ export async function createBot(prisma: PrismaClient): Promise<Bot<BotContext> |
     }
 
     // 3. Si no hay comando ni mención → verificar si es conversación 1:1
+    let isOneOnOne = false;
     if (cmdText === null || cmdText === "") {
       // One-on-one mode: if tree has only 1 active member, respond to everything
       if (chatId) {
@@ -2012,6 +2013,7 @@ export async function createBot(prisma: PrismaClient): Promise<Bot<BotContext> |
           });
           if (memberCount <= 1) {
             cmdText = msg.text.trim();
+            isOneOnOne = true;
           }
         }
       }
@@ -2040,8 +2042,8 @@ export async function createBot(prisma: PrismaClient): Promise<Bot<BotContext> |
       // ── Prepend display name so the agent knows who is speaking ──────
       const fullMessage = `${displayName}: ${cmdText}`;
 
-      // ── MEDIUM: skip shouldAriRespond, route directly to Hermes ──────
-      if (interactionMode === "MEDIUM") {
+      // ── MEDIUM or one-on-one: skip shouldAriRespond, route directly to Hermes ──────
+      if (interactionMode === "MEDIUM" || isOneOnOne) {
         const userId = ctx.from?.id.toString() || "0";
         const typingInterval = setInterval(() => {
           ctx.replyWithChatAction("typing").catch(() => {});
