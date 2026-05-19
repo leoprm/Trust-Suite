@@ -1246,7 +1246,7 @@ const timeoutId = setTimeout(() => controller.abort(), 420_000); // 7 min — co
  * de bridge. Aplica en todos los return paths que tengan accumulatedContent
  * (happy path + catch de stream interrumpido).
  */
-async function enforcePrefix(
+export async function enforcePrefix(
   content: string,
   treeId: string | null,
   prisma: any,
