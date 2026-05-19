@@ -702,15 +702,15 @@ export async function createBot(prisma: PrismaClient): Promise<Bot<BotContext> |
         } catch { /* not implemented yet */ }
       }
 
-      // Preguntar si es sub-árbol (Paso 2)
-      session.onboardingStep = 2;
+      // Paso 2 → payment mode (T7: subtree question movida al early pick)
+      session.onboardingStep = 3;
       await new Promise(r => setTimeout(r, 1000));
-      await ctx.reply(step1Msg + t('onboarding.subtree_question', lang), {
+      await ctx.reply(step1Msg + t('onboarding.payment_mode_question', lang), {
         parse_mode: 'Markdown',
         reply_markup: {
           inline_keyboard: [[
-            { text: t('onboarding.subtree_yes', lang), callback_data: 'onboarding:subtree_yes' },
-            { text: t('onboarding.subtree_no', lang), callback_data: 'onboarding:subtree_no' },
+            { text: t('onboarding.payment_mode_centralized', lang), callback_data: 'onboarding:payment_centralized' },
+            { text: t('onboarding.payment_mode_individual', lang), callback_data: 'onboarding:payment_individual' },
           ]],
         },
       });
@@ -718,56 +718,7 @@ export async function createBot(prisma: PrismaClient): Promise<Bot<BotContext> |
     }
 
     if (step === 4) {
-      // ── Paso 4: Código del árbol padre ─────────────────────────────────
-      if (!text || text === '/skip') {
-        // Skip parent tree linking
-        session.onboardingStep = 5;
-        await ctx.reply(
-          t('onboarding.parent_skipped', lang) + '\n\n' + t('onboarding.whatsapp_prompt', lang), {
-            parse_mode: 'Markdown',
-            reply_markup: { force_reply: true, input_field_placeholder: t('onboarding.whatsapp_placeholder', lang) },
-          }
-        );
-        return;
-      }
-
-      // Buscar árbol padre por código, id o nombre
-      const parentTree = await (prisma as any).tree.findFirst({
-        where: {
-          OR: [
-            { code: text },
-            { id: text },
-            { name: { contains: text } },
-          ],
-        },
-        select: { id: true, name: true, icono: true },
-      });
-
-      if (!parentTree) {
-        return ctx.reply(t('onboarding.parent_not_found', lang), {
-          reply_markup: { force_reply: true, input_field_placeholder: t('onboarding.parent_code_placeholder', lang) },
-        });
-      }
-
-      // Vincular como sub-árbol
-      await (prisma as any).tree.update({
-        where: { id: session.onboardingTreeId },
-        data: { parentTreeId: parentTree.id },
-      });
-
-      session.onboardingStep = 5;
-      await ctx.reply(
-        t('onboarding.parent_linked', lang, { treeName: (parentTree.icono || '🌳') + ' ' + parentTree.name }) + '\n\n' +
-        t('onboarding.whatsapp_prompt', lang), {
-          parse_mode: 'Markdown',
-          reply_markup: { force_reply: true, input_field_placeholder: t('onboarding.whatsapp_placeholder', lang) },
-        }
-      );
-      return;
-    }
-
-    if (step === 5) {
-      // ── Paso 5: WhatsApp group ID ──────────────────────────────────────
+      // ── Paso 4: WhatsApp group ID (T7: renumerado de step 5) ───────────
       if (!text || text === '/skip') {
         // Skip WhatsApp
         session.onboardingStep = null;
@@ -1801,40 +1752,66 @@ export async function createBot(prisma: PrismaClient): Promise<Bot<BotContext> |
       cmdText = extractCommandText(msg.text);
     }
 
+    // ── Interaction Mode Gate ─────────────────────────────────────────
+    // Reads tree.interactionMode to throttle proactive engagement.
+    // MINIMUM → only reply + @tag pass. MEDIUM → reply/tag/name pass
+    // but conversation window is skipped. MAXIMUM → full behavior.
+    let interactionMode = "MAXIMUM";
+    if (chatId) {
+      const modeTree = await findTreeByChat(prisma, chatId);
+      interactionMode = modeTree?.interactionMode || "MAXIMUM";
+    }
+
+    // MINIMUM: only reply and @tag pass through; block everything else
+    if (interactionMode === "MINIMUM") {
+      const isTagged = /@Ari\b|@TrustMakerBot\b/i.test(msg.text || "");
+      if (!isReplyToBot && !isTagged) {
+        cmdText = null;
+      }
+    }
+
+    // MEDIUM: detect name-mentions ("Ari" without @) alongside reply/tag
+    const isNamed = interactionMode === "MEDIUM" && /\bAri\b/i.test(msg.text || "");
+    if (isNamed && cmdText === null) {
+      cmdText = msg.text.trim();
+    }
+
     // ── Conversation Window: proactive engagement (Hermes Bridge) ────
     // Runs BEFORE the cmdText null gate to decide if Ari should join
     // ambient conversation via keyword scanning or active window state.
     // The LLM decides whether to actually respond — we just gate the routing.
     let isConversationWindow = false;
-    if (process.env.HERMES_BRIDGE_ENABLED === "true" && chatId) {
-      const {
-        conversationWindows,
-        scanForKeywordMatch: hbScan,
-      } = await import("./hermesBridge");
+    if (interactionMode !== "MINIMUM" && interactionMode !== "MEDIUM") {
+      if (process.env.HERMES_BRIDGE_ENABLED === "true" && chatId) {
+        const {
+          conversationWindows,
+          scanForKeywordMatch: hbScan,
+        } = await import("./hermesBridge");
 
-      // 1. Tagged/reply → open/renew window (Hermes Bridge routes it below)
-      if (isReplyToBot && cmdText !== null) {
-        conversationWindows.resetWindow(chatId);
-        isConversationWindow = true;
-      }
-
-      // 2. Active conversation window → always route to Ari (LLM decides)
-      if (!isConversationWindow && conversationWindows.hasActiveWindow(chatId) && cmdText === null) {
-        conversationWindows.tickWindow(chatId);
-        // Still active after tick? → route
-        if (conversationWindows.hasActiveWindow(chatId)) {
-          cmdText = msg.text.trim();
+        // 1. Tagged/reply → open/renew window (Hermes Bridge routes it below)
+        if (isReplyToBot && cmdText !== null) {
+          conversationWindows.resetWindow(chatId);
           isConversationWindow = true;
         }
-      }
 
-      // 3. No active window → scan for engagement keywords
-      if (!isConversationWindow && cmdText === null) {
-        const keyword = hbScan(msg.text);
-        if (keyword) {
-          conversationWindows.openWindow(chatId, keyword);
-          cmdText = msg.text.trim();
-          isConversationWindow = true;
+        // 2. Active conversation window → always route to Ari (LLM decides)
+        if (!isConversationWindow && conversationWindows.hasActiveWindow(chatId) && cmdText === null) {
+          conversationWindows.tickWindow(chatId);
+          // Still active after tick? → route
+          if (conversationWindows.hasActiveWindow(chatId)) {
+            cmdText = msg.text.trim();
+            isConversationWindow = true;
+          }
+        }
+
+        // 3. No active window → scan for engagement keywords
+        if (!isConversationWindow && cmdText === null) {
+          const keyword = hbScan(msg.text);
+          if (keyword) {
+            conversationWindows.openWindow(chatId, keyword);
+            cmdText = msg.text.trim();
+            isConversationWindow = true;
+          }
         }
       }
     }
@@ -3020,46 +2997,6 @@ export async function createBot(prisma: PrismaClient): Promise<Bot<BotContext> |
       return;
     }
 
-    // Onboarding multi-step callbacks (Paso 2: subárbol sí/no → Paso 3: payment mode)
-    if (data === "onboarding:subtree_yes" || data === "onboarding:subtree_no") {
-      const session = (ctx as BotContext).session;
-      if (!session.onboardingTreeId || session.onboardingStep !== 2) {
-        await ctx.answerCallbackQuery();
-        return;
-      }
-
-      // Resolve language: prefer tree.language for groups, user.language for DMs
-      let lang: string | null = null;
-      const chatType = ctx.chat?.type;
-      if ((chatType === "group" || chatType === "supergroup") && session.onboardingTreeId) {
-        lang = await resolveTreeLanguage(prisma, session.onboardingTreeId);
-      }
-      if (!lang) {
-        lang = await resolveUserLanguage(prisma, ctx);
-      }
-      if (!lang) lang = "es";
-
-      // Remove inline keyboard from the question message
-      try { await ctx.editMessageReplyMarkup({ reply_markup: undefined }); } catch { /* ok */ }
-
-      // Save subtree choice for step 3→4/5 routing
-      session.onboardingSubtree = (data === "onboarding:subtree_yes");
-      session.onboardingStep = 3;
-
-      // Present payment mode question
-      await ctx.reply(t("onboarding.payment_mode_question", lang), {
-        parse_mode: "Markdown",
-        reply_markup: {
-          inline_keyboard: [[
-            { text: t("onboarding.payment_mode_centralized", lang), callback_data: "onboarding:payment_centralized" },
-            { text: t("onboarding.payment_mode_individual", lang), callback_data: "onboarding:payment_individual" },
-          ]],
-        },
-      });
-      await ctx.answerCallbackQuery();
-      return;
-    }
-
     // Onboarding multi-step callbacks (Paso 3: payment mode)
     if (data === "onboarding:payment_centralized" || data === "onboarding:payment_individual") {
       const session = (ctx as BotContext).session;
@@ -3109,7 +3046,6 @@ export async function createBot(prisma: PrismaClient): Promise<Bot<BotContext> |
         // Centralized: done with onboarding (no parent code or WhatsApp for now)
         session.onboardingStep = null;
         session.onboardingTreeId = null;
-        session.onboardingSubtree = undefined;
         await new Promise(r => setTimeout(r, 500));
         await ctx.reply(t("onboarding.onboarding_complete", lang), {
           parse_mode: "Markdown",
@@ -3125,26 +3061,15 @@ export async function createBot(prisma: PrismaClient): Promise<Bot<BotContext> |
           parse_mode: "Markdown",
         });
 
-        // Route based on subtree choice
-        if (session.onboardingSubtree) {
-          // Sub-tree → go to step 4 (parent code)
-          session.onboardingStep = 4;
-          await new Promise(r => setTimeout(r, 600));
-          await ctx.reply(t("onboarding.parent_code_prompt", lang), {
+        // T7: Parent code step removed — both paths go directly to WhatsApp (step 4)
+        session.onboardingStep = 4;
+        await new Promise(r => setTimeout(r, 600));
+        await ctx.reply(
+          t("onboarding.whatsapp_prompt", lang), {
             parse_mode: "Markdown",
-            reply_markup: { force_reply: true, input_field_placeholder: t("onboarding.parent_code_placeholder", lang) },
-          });
-        } else {
-          // Independent → skip parent code, go to step 5 (WhatsApp)
-          session.onboardingStep = 5;
-          await new Promise(r => setTimeout(r, 600));
-          await ctx.reply(
-            t("onboarding.parent_skipped", lang) + "\n\n" + t("onboarding.whatsapp_prompt", lang), {
-              parse_mode: "Markdown",
-              reply_markup: { force_reply: true, input_field_placeholder: t("onboarding.whatsapp_placeholder", lang) },
-            }
-          );
-        }
+            reply_markup: { force_reply: true, input_field_placeholder: t("onboarding.whatsapp_placeholder", lang) },
+          }
+        );
       }
       await ctx.answerCallbackQuery();
       return;

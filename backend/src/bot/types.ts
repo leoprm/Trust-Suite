@@ -23,7 +23,7 @@ export interface BotSessionData {
   awaitingLinkFile: string | null;
   /** Tree ID for the file awaiting link (attach:link flow) */
   awaitingLinkTreeId: string | null;
-  /** Whether the user chose "subtree_yes" in onboarding step 2 (used for step 3->4/5 routing) */
+  /** Whether the user chose subtree in early onboarding pick (T7: parent code step removed, field retained for analytics) */
   onboardingSubtree?: boolean;
   /** Worker onboarding step: skills | hourlyRate | currency | location | confirm */
   workerOnboardingStep?: string;
