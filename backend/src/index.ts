@@ -273,8 +273,8 @@ app.use(globalLimiter);
 
 // ── Routes ────────────────────────────────────────────────────────────────────
 app.use('/api/auth', authRoutes);
+app.use('/api/trees', sandboxRoutes); // sandbox sub-routes: GET/DELETE /:id/sandbox (BEFORE treeRoutes to avoid JWT)
 app.use('/api/trees', treeRoutes);
-app.use('/api/trees', sandboxRoutes); // sandbox sub-routes: GET/DELETE /:id/sandbox
 app.use('/api/needs', needRoutes);
 app.use('/api/ideas', ideaRoutes);
 app.use('/api/results', resultRoutes);
