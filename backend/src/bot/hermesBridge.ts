@@ -281,6 +281,7 @@ async function buildSystemPrompt(
       description: true,
       objectives: true,
       admissionPolicy: true,
+      parentTreeId: true,
       createdAt: true,
     },
   });
@@ -510,6 +511,47 @@ async function buildSystemPrompt(
   lines.push(
     "- Si la API sandbox no está disponible (error de conexión), informa al usuario y NO uses workarounds con herramientas nativas.",
   );
+
+  // ── Parent sandbox read ────────────────────────────────────────────────
+  if (tree.parentTreeId) {
+    let parentName = "padre";
+    try {
+      const parent = await (prisma as any).tree.findUnique({
+        where: { id: tree.parentTreeId },
+        select: { name: true, icono: true },
+      });
+      if (parent) parentName = `"${parent.name}" ${parent.icono}`;
+    } catch { /* non-blocking */ }
+
+    lines.push("");
+    lines.push("═══ LECTURA DEL SANDBOX DEL ÁRBOL PADRE ═══");
+    lines.push("");
+    lines.push(`Tu árbol es un sub-árbol de ${parentName}. Tienes acceso de SOLO LECTURA al sandbox del árbol padre.`);
+    lines.push("");
+    lines.push("5. LEER ARCHIVOS DEL ÁRBOL PADRE:");
+    lines.push(`   POST /api/trees/${treeId}/sandbox/parent/read`);
+    lines.push('   Body: { "path": "obsidian/..." }');
+    lines.push('   Response: { "content": "...", "size": N }');
+    lines.push("");
+    lines.push("Úsalo para obtener contexto adicional antes de responder:");
+    lines.push("   - Decisiones del árbol padre que puedan afectar a tu sub-árbol.");
+    lines.push("   - Investigación o notas relacionadas en el vault del padre (obsidian/...).");
+    lines.push("   - Estrategia general o directrices del árbol raíz.");
+    lines.push("");
+    lines.push("Ejemplo de uso:");
+    lines.push("```javascript");
+    lines.push(`fetch("http://localhost:3100/api/trees/${treeId}/sandbox/parent/read", {`);
+    lines.push('  method: "POST",');
+    lines.push("  headers: {");
+    lines.push('    "Content-Type": "application/json",');
+    lines.push('    "Authorization": "Bearer HERMES_API_SERVER_KEY"');
+    lines.push("  },");
+    lines.push('  body: JSON.stringify({ path: "obsidian/decisions/estrategia-2026.md" })');
+    lines.push("});");
+    lines.push("```");
+    lines.push("");
+    lines.push("⚠️  SOLO LECTURA. No puedes escribir, modificar ni eliminar archivos del sandbox padre.");
+  }
 
   // ── Media search & iterative confirmation ─────────────────────────────
   lines.push("");
