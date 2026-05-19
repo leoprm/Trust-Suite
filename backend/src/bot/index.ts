@@ -23,7 +23,7 @@ import { formatForChannel, sendViaTelegram } from "./channelAdapter";
 import { textToSpeech } from "../services/ttsService";
 import { TreeSandbox } from "../services/treeSandbox";
 import { initI18n, t } from "./i18n";
-import { routeToHermes, shouldAriRespond } from "./hermesBridge";
+import { routeToHermes, shouldAriRespond, sendTelegramMessage } from "./hermesBridge";
 import { parseDeadline } from "./deadlineParser";
 import { checkTodoReminders } from "./todoReminders";
 import { detectNaturalAddIntent } from "./todoNaturalAdd";
@@ -1451,7 +1451,7 @@ export async function createBot(prisma: PrismaClient): Promise<Bot<BotContext> |
           );
           return;
         }
-        await ctx.reply(response.text!, { parse_mode: "Markdown" });
+        await sendTelegramMessage(ctx, response.text!, "Markdown");
 
         // TTS: only for voice messages (DM text → no audio)
       } else {
@@ -2065,18 +2065,7 @@ export async function createBot(prisma: PrismaClient): Promise<Bot<BotContext> |
               return;
             }
             if (response.text) {
-              let sentMsg: any;
-              try {
-                sentMsg = await ctx.reply(response.text, { parse_mode: "Markdown" });
-              } catch (markdownErr: any) {
-                if (markdownErr.message?.includes("can't parse entities")) {
-                  sentMsg = await ctx.reply(response.text);
-                } else {
-                  throw markdownErr;
-                }
-              }
-              if (sentMsg?.message_id) {
-                trackIntroMessage(prisma, tree.id, sentMsg.message_id).catch(() => {});
+              await sendTelegramMessage(ctx, response.text, "Markdown");
               }
             }
           }

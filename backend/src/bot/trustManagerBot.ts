@@ -2,7 +2,7 @@ import { Bot, InlineKeyboard } from "grammy";
 import { PrismaClient } from "@prisma/client";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { routeToHermes } from "./hermesBridge";
+import { routeToHermes, sendTelegramMessage } from "./hermesBridge";
 import { useTurn } from "../services/supportSessionService";
 
 // ── Onboarding session state ──────────────────────────────────────────────
@@ -588,7 +588,7 @@ export async function initTrustManagerBot(
       }
 
       if (response.text) {
-        await ctx.reply(response.text, { parse_mode: "Markdown" });
+        await sendTelegramMessage(ctx, response.text, "Markdown");
       }
     } catch (err: any) {
       console.error("[TrustHelpDeskBot] Error en supportMode:", err?.message || err);
