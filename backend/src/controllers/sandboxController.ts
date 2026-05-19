@@ -262,3 +262,126 @@ export const searchMediaInSandbox = async (req: Request, res: Response) => {
     res.status(500).json({ error: 'Media search failed', detail: error?.message });
   }
 };
+
+// ── NotebookLM Bridge Singleton ───────────────────────────────────────────────
+
+import { NotebookLMBridge } from '../services/notebooklmBridge';
+
+let notebooklmBridge: NotebookLMBridge | null = null;
+
+async function getNotebookLMBridge(): Promise<NotebookLMBridge> {
+  if (!notebooklmBridge) {
+    notebooklmBridge = new NotebookLMBridge();
+    await notebooklmBridge.start();
+  }
+  return notebooklmBridge;
+}
+
+// ── POST /api/trees/:id/notebooklm/ask ────────────────────────────────────────
+// Body: { question: string }
+// Returns: { answer: string, sources: [{ title, url }] }
+
+export const notebooklmAsk = async (req: Request, res: Response) => {
+  if (!checkApiKey(req, res)) return;
+
+  try {
+    const id = req.params.id as string;
+    const { question } = req.body;
+
+    if (!question || typeof question !== 'string' || question.trim().length === 0) {
+      return res.status(400).json({ error: 'question is required (non-empty string)' });
+    }
+
+    const bridge = await getNotebookLMBridge();
+    const result = await bridge.ask(id, question.trim());
+
+    const sources = (result.citations || []).map((c) => ({
+      title: c.sourceId,
+      url: c.text || '',
+    }));
+
+    res.json({ answer: result.answer, sources });
+  } catch (error: any) {
+    console.error('[notebooklmAsk] ERROR:', error?.message || error);
+    const status = error.code === 'TIMEOUT' ? 504 : 500;
+    res.status(status).json({ error: error.message || 'NotebookLM ask failed' });
+  }
+};
+
+// ── POST /api/trees/:id/notebooklm/podcast ────────────────────────────────────
+// Body: {} (empty)
+// Returns: { taskId: string, status: "generating" }
+
+export const notebooklmPodcast = async (req: Request, res: Response) => {
+  if (!checkApiKey(req, res)) return;
+
+  try {
+    const id = req.params.id as string;
+
+    const bridge = await getNotebookLMBridge();
+    const result = await bridge.generatePodcast(id);
+
+    res.json({ taskId: result.taskId, status: result.status });
+  } catch (error: any) {
+    console.error('[notebooklmPodcast] ERROR:', error?.message || error);
+    const status = error.code === 'TIMEOUT' ? 504 : 500;
+    res.status(status).json({ error: error.message || 'NotebookLM podcast failed' });
+  }
+};
+
+// ── POST /api/trees/:id/notebooklm/source ─────────────────────────────────────
+// Body: { url?: string, text?: string, filePath?: string }
+// Returns: { sourceId: string, status: string }
+
+export const notebooklmAddSource = async (req: Request, res: Response) => {
+  if (!checkApiKey(req, res)) return;
+
+  try {
+    const id = req.params.id as string;
+    const { url, text, filePath } = req.body;
+
+    // Determine input from the provided field
+    const input = url || text || filePath;
+    if (!input || typeof input !== 'string') {
+      return res.status(400).json({
+        error: 'One of url, text, or filePath is required (non-empty string)',
+      });
+    }
+
+    const bridge = await getNotebookLMBridge();
+    const result = await bridge.addSource(id, input.trim());
+
+    res.json({ sourceId: result.sourceId, status: 'created' });
+  } catch (error: any) {
+    console.error('[notebooklmAddSource] ERROR:', error?.message || error);
+    const status = error.code === 'TIMEOUT' ? 504 : 500;
+    res.status(status).json({ error: error.message || 'NotebookLM add source failed' });
+  }
+};
+
+// ── GET /api/trees/:id/notebooklm/sources ─────────────────────────────────────
+// Returns: { sources: [{ id, title, type, status }] }
+
+export const notebooklmListSources = async (req: Request, res: Response) => {
+  if (!checkApiKey(req, res)) return;
+
+  try {
+    const id = req.params.id as string;
+
+    const bridge = await getNotebookLMBridge();
+    const result = await bridge.listSources(id);
+
+    const sources = (result.sources || []).map((s) => ({
+      id: s.sourceId,
+      title: s.title,
+      type: s.kind,
+      status: s.status,
+    }));
+
+    res.json({ sources });
+  } catch (error: any) {
+    console.error('[notebooklmListSources] ERROR:', error?.message || error);
+    const status = error.code === 'TIMEOUT' ? 504 : 500;
+    res.status(status).json({ error: error.message || 'NotebookLM list sources failed' });
+  }
+};
