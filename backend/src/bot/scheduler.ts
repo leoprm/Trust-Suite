@@ -28,6 +28,7 @@ import { runProposalResolver } from "../cron/proposalResolverCron";
 import { runExternalTaskOrchestrator } from "../cron/externalTaskOrchestratorCron";
 import { runCandidateAnnouncementCron } from "../cron/candidateAnnouncementCron";
 import { runXpDecay } from "../cron/xpDecayCron";
+import { runNightlyResearch } from "../cron/nightlyResearchCron";
 import { nightlyScan } from "../services/skillEvolution";
 import { prisma } from "../index";
 
@@ -121,6 +122,7 @@ let monthlyRetroLastDayTask: ScheduledTask | null = null;
 let skillEvolutionTask: ScheduledTask | null = null;
 let externalTaskOrchestratorTask: ScheduledTask | null = null;
 let candidateAnnouncementTask: ScheduledTask | null = null;
+let nightlyResearchTask: ScheduledTask | null = null;
 let kanbanWatchdogInterval: NodeJS.Timeout | null = null;
 
 /**
@@ -263,6 +265,21 @@ export function startScheduler(
   });
   console.log("[Scheduler] 🧹 Limpieza de conversaciones programada a las 04:00 (diario)");
 
+  // ── Cron: 30 0 * * * (00:30 diario) — Nightly Research Pipeline ──
+  nightlyResearchTask = cron.schedule("30 0 * * *", async () => {
+    console.log("[Scheduler] 🌙 Iniciando pipeline de investigación nocturna…");
+    try {
+      const results = await runNightlyResearch(prismaClient);
+      const spawned = results.filter((r) => r.status === "spawned").length;
+      console.log(
+        `[Scheduler] 🌙 Nightly Research: ${spawned}/${results.length} árboles → tareas Kanban creadas.`,
+      );
+    } catch (err) {
+      console.error("[Scheduler] Error en Nightly Research:", err);
+    }
+  });
+  console.log("[Scheduler] 🌙 Nightly Research programado a las 00:30 (diario)");
+
   // ── Cron: */5 * * * * (cada 5 min) — ExternalTask Orchestrator ──
   externalTaskOrchestratorTask = cron.schedule("*/5 * * * *", async () => {
     try {
@@ -364,7 +381,7 @@ export async function triggerDailyClose(
  */
 export function stopScheduler(): void {
   let stopped = false;
-  for (const task of [midnightTask, decayTask, rotationTask, autoScaleTask, monthlyFeeTask, disputeResolutionTask, skillPricingTask, talentMigrationTask, healthCheckTask, proposalResolverTask, cleanupConversationsTask, monthlyRetroTask, monthlyRetroLastDayTask, skillEvolutionTask, externalTaskOrchestratorTask, candidateAnnouncementTask]) {
+  for (const task of [midnightTask, decayTask, rotationTask, autoScaleTask, monthlyFeeTask, disputeResolutionTask, skillPricingTask, talentMigrationTask, healthCheckTask, proposalResolverTask, cleanupConversationsTask, monthlyRetroTask, monthlyRetroLastDayTask, skillEvolutionTask, externalTaskOrchestratorTask, candidateAnnouncementTask, nightlyResearchTask]) {
     if (task) {
       task.stop();
       stopped = true;
@@ -387,6 +404,7 @@ export function stopScheduler(): void {
   skillEvolutionTask = null;
   externalTaskOrchestratorTask = null;
   candidateAnnouncementTask = null;
+  nightlyResearchTask = null;
   kanbanWatchdogInterval = null;
   if (stopped) {
     console.log("[Scheduler] ⏹️ Todos los schedulers detenidos.");
