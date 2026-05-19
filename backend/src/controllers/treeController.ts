@@ -1101,6 +1101,66 @@ export const getTreeServers = async (req: any, res: Response) => {
 // ── User-scoped tree queries ─────────────────────────────────────────────
 
 /** GET /api/users/:telegramUserId/trees — trees where a user is an active member */
+// ── Interaction Mode ───────────────────────────────────────────────────────
+
+export const changeInteractionMode = async (req: any, res: Response) => {
+  try {
+    const { treeId } = req.params;
+    const { mode } = req.body;
+
+    const validModes = ["MAXIMUM", "MEDIUM", "MINIMUM"];
+    if (!mode || !validModes.includes(mode)) {
+      return res.status(400).json({
+        error: `Invalid mode. Must be one of: ${validModes.join(", ")}`,
+      });
+    }
+
+    const tree = await prisma.tree.findUnique({ where: { id: treeId } });
+    if (!tree) return res.status(404).json({ error: "Tree not found" });
+
+    // Only tree creator or admin can change interaction mode
+    if (tree.creatorId !== req.user.id) {
+      const member = await prisma.treeMember.findUnique({
+        where: { userId_treeId: { userId: req.user.id, treeId } },
+      });
+      if (!member || member.role !== "ADMIN") {
+        return res.status(403).json({
+          error: "Only the tree creator or an admin can change interaction mode",
+        });
+      }
+    }
+
+    const updated = await prisma.tree.update({
+      where: { id: treeId },
+      data: { interactionMode: mode },
+    });
+
+    void logEvent({
+      ...getRequestContext(req),
+      treeId,
+      action: "TREE_INTERACTION_MODE_CHANGED",
+      entityType: "Tree",
+      entityId: treeId,
+      beforeJson: { interactionMode: tree.interactionMode },
+      afterJson: { interactionMode: mode },
+      source: "USER",
+    });
+
+    res.json({
+      treeId: updated.id,
+      interactionMode: updated.interactionMode,
+    });
+  } catch (error: any) {
+    console.error("[changeInteractionMode] ERROR:", error?.message || error);
+    res.status(500).json({
+      error: "Failed to change interaction mode",
+      detail: error?.message || String(error),
+    });
+  }
+};
+
+// ── User-scoped tree queries ─────────────────────────────────────────────
+
 export const getUserTrees = async (req: Request, res: Response) => {
   try {
     const { telegramUserId } = req.params;

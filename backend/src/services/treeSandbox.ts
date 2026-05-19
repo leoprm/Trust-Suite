@@ -129,6 +129,71 @@ export class TreeSandbox {
     // 2b. Scaffold obsidian vault
     scaffoldObsidianVault(workspacePath);
 
+    // 2b2. Scaffold skills directory with change-interaction-mode skill
+    const skillsDir = path.join(workspacePath, "skills");
+    fs.mkdirSync(skillsDir, { recursive: true });
+    const skillContent = [
+      "---",
+      "name: Change Interaction Mode",
+      "description: Instrucciones para que Ari ajuste su nivel de interacción según actividad del grupo",
+      "version: 1.0.0",
+      "createdBy: system",
+      "createdAt: " + new Date().toISOString(),
+      "treeId: " + treeId,
+      "---",
+      "",
+      "# Change Interaction Mode",
+      "",
+      "Como Ari, puedes ajustar autónomamente tu nivel de interacción en el grupo.",
+      "",
+      "## Modos disponibles",
+      "",
+      "- **MAXIMUM**: Participas libremente — respondes a keywords, @tags, replies, y te unes a conversaciones relevantes.",
+      "- **MEDIUM**: Solo respondes cuando te mencionan directamente (@tag), te responden, o te nombran. No te unes proactivamente.",
+      "- **MINIMUM**: Solo respondes cuando te etiquetan (@TrustMakerBot) o responden a tus mensajes. Silencio total.",
+      "",
+      "## Cuándo cambiar",
+      "",
+      "Evalúa la actividad del grupo y ajusta según estas reglas:",
+      "",
+      "| Situación | Acción |",
+      "|-----------|--------|",
+      "| Grupo muy activo, muchos mensajes por minuto | Bajar a MEDIUM para no saturar |",
+      "| Grupo callado, poca actividad | Subir a MAXIMUM para mantener engagement |",
+      "| Debate intenso entre miembros | Bajar a MINIMUM para no interrumpir |",
+      "| Te piden explícitamente que hables menos | Bajar a MEDIUM o MINIMUM |",
+      "| Te piden que participes más | Subir a MAXIMUM |",
+      "| Después de 24h en MINIMUM sin interacción | Volver a MEDIUM automáticamente |",
+      "",
+      "## Cómo cambiar el modo",
+      "",
+      "Usa el endpoint REST del backend:",
+      "",
+      "```javascript",
+      'fetch("http://localhost:3100/api/trees/' + treeId + '/interaction-mode", {',
+      '  method: "PATCH",',
+      "  headers: {",
+      '    "Content-Type": "application/json",',
+      '    "Authorization": "Bearer HERMES_API_SERVER_KEY"',
+      "  },",
+      '  body: JSON.stringify({ mode: "MEDIUM" })',
+      "})",
+      "```",
+      "",
+      "## Reglas importantes",
+      "",
+      "- NUNCA cambies el modo sin evaluar la actividad real del grupo.",
+      '- Antes de cambiar, anuncia el cambio brevemente: "Ajustando mi nivel de interacción a [MODO] por [razón]."',
+      "- No cambies el modo más de una vez cada 30 minutos.",
+      "- Si no estás segura, mantén el modo actual.",
+    ].join("\n");
+    fs.writeFileSync(
+      path.join(skillsDir, "change-interaction-mode.md"),
+      skillContent,
+      "utf-8",
+    );
+    console.log("[TreeSandbox] change-interaction-mode skill deployed");
+
     // 2c. Deploy keyword extractor into sandbox apps/
     const extractorSrc = path.resolve(__dirname, '../../lib/keyword_extractor.py');
     if (fs.existsSync(extractorSrc)) {

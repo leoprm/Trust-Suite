@@ -326,6 +326,28 @@ async function buildSystemPrompt(
     }
   }
 
+  // ── Interaction Mode Skill ─────────────────────────────────────────────
+  lines.push("");
+  lines.push("═══ SKILL: CHANGE INTERACTION MODE ═══");
+  lines.push("");
+  lines.push("Tienes una skill local `change-interaction-mode` en skills/change-interaction-mode.md (leída del sandbox).");
+  lines.push("Te permite ajustar autónomamente tu nivel de interacción en el grupo vía el siguiente endpoint:");
+  lines.push("");
+  lines.push(`  PATCH http://localhost:3100/api/trees/${treeId}/interaction-mode`);
+  lines.push('  Body: { "mode": "MAXIMUM"|"MEDIUM"|"MINIMUM" }');
+  lines.push("  Authorization: Bearer HERMES_API_SERVER_KEY");
+  lines.push("");
+  lines.push("Evalúa la actividad del grupo y ajusta el modo cuando sea necesario:");
+  lines.push("- Grupo muy activo (muchos mensajes/min) → MEDIUM para no saturar");
+  lines.push("- Grupo callado (poca actividad) → MAXIMUM para mantener engagement");
+  lines.push("- Debate intenso entre miembros → MINIMUM para no interrumpir");
+  lines.push("- Te piden más/menos participación → Ajusta en consecuencia");
+  lines.push("");
+  lines.push("REGLAS:");
+  lines.push("- Anuncia el cambio brevemente antes de hacerlo: 'Ajustando mi nivel de interacción a [MODO] por [razón].'");
+  lines.push("- No cambies el modo más de una vez cada 30 minutos.");
+  lines.push("- Si no estás segura, mantén el modo actual.");
+
   // ── Related Trees ──────────────────────────────────────────────────────
   const parentTreeId = tree.parentTreeId;
   let parentTreeName: string | null = null;
