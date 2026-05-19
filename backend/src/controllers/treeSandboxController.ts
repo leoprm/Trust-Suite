@@ -148,6 +148,19 @@ export const execTreeSandbox = async (req: Request, res: Response) => {
       return res.status(500).json({ error: 'Sandbox workspace directory not found' });
     }
 
+    // Validate command doesn't access paths outside sandbox
+    const absPathRegex = /(?:^|\s)(\/[^\s]*)/g;
+    let absMatch: RegExpExecArray | null;
+    while ((absMatch = absPathRegex.exec(command)) !== null) {
+      const absPath = absMatch[1];
+      const resolved = path.resolve(cwd, absPath);
+      if (!resolved.startsWith(cwd) && !resolved.startsWith(path.resolve(cwd))) {
+        return res.status(403).json({
+          error: `Access denied: path '${absPath}' is outside the sandbox`,
+        });
+      }
+    }
+
     const timeoutMs = typeof timeout === 'number' && timeout > 0
       ? Math.min(timeout, 300_000) // cap at 5 min
       : DEFAULT_TIMEOUT_MS;
