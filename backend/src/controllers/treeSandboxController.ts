@@ -149,14 +149,23 @@ export const execTreeSandbox = async (req: Request, res: Response) => {
     }
 
     // Validate command doesn't access paths outside sandbox
-    const absPathRegex = /(?:^|\s)(\/[^\s]*)/g;
-    let absMatch: RegExpExecArray | null;
-    while ((absMatch = absPathRegex.exec(command)) !== null) {
-      const absPath = absMatch[1];
-      const resolved = path.resolve(cwd, absPath);
-      if (!resolved.startsWith(cwd) && !resolved.startsWith(path.resolve(cwd))) {
+    // Split command into tokens and check every path-like argument
+    const tokens = command.split(/\s+/);
+    const resolvedCwd = path.resolve(cwd);
+    for (const token of tokens) {
+      // Skip flags/options (start with - or --)
+      if (token.startsWith('-')) continue;
+      // Check if this token is a path: absolute, contains '/', or is '.' / '..'
+      const isPath =
+        token.startsWith('/') ||
+        token.includes('/') ||
+        token === '.' ||
+        token === '..';
+      if (!isPath) continue;
+      const resolved = path.resolve(cwd, token);
+      if (!resolved.startsWith(resolvedCwd + path.sep) && resolved !== resolvedCwd) {
         return res.status(403).json({
-          error: `Access denied: path '${absPath}' is outside the sandbox`,
+          error: `Access denied: path '${token}' is outside the sandbox`,
         });
       }
     }
