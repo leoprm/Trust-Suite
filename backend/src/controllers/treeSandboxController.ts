@@ -589,6 +589,60 @@ print(json.dumps({"ok": True, "size": __import__('os').path.getsize(output_path)
   }
 };
 
+// ── POST /api/trees/:id/sandbox/save-skill ─────────────────────────────────
+// Body: { userId: string, skill: string, xp?: number, level?: number }
+// Saves or updates a TreeSkill record for a user in a tree.
+// Idempotent: INSERT … ON DUPLICATE KEY UPDATE via Prisma upsert.
+// Returns: { status: "saved", skill: { id, treeId, userId, skill, xp, level } }
+
+export const saveTreeSkill = async (req: Request, res: Response) => {
+  if (!checkApiKey(req, res)) return;
+
+  try {
+    const treeId = req.params.id as string;
+    const { userId, skill, xp = 1, level = 1 } = req.body;
+
+    if (!userId || typeof userId !== 'string') {
+      return res.status(400).json({ error: 'userId is required (string)' });
+    }
+    if (!skill || typeof skill !== 'string') {
+      return res.status(400).json({ error: 'skill is required (string)' });
+    }
+
+    // Verify tree exists
+    const tree = await prisma.tree.findUnique({ where: { id: treeId } });
+    if (!tree) return res.status(404).json({ error: 'Tree not found' });
+
+    // Verify user exists
+    const user = await prisma.user.findUnique({ where: { id: userId } });
+    if (!user) return res.status(404).json({ error: 'User not found' });
+
+    // Upsert TreeSkill (idempotent)
+    const result = await (prisma as any).treeSkill.upsert({
+      where: {
+        userId_treeId_skill: { userId, treeId, skill },
+      },
+      update: { xp, level, updatedAt: new Date() },
+      create: { userId, treeId, skill, xp, level },
+    });
+
+    void logEvent({
+      ...getRequestContext(req),
+      treeId,
+      action: 'TREE_SKILL_SAVED',
+      entityType: 'TreeSkill',
+      entityId: result.id,
+      source: 'SYSTEM',
+      metadataJson: { userId, skill, xp, level },
+    });
+
+    res.status(201).json({ status: 'saved', skill: result });
+  } catch (error: any) {
+    console.error('[saveTreeSkill] ERROR:', error?.message || error);
+    res.status(500).json({ error: 'Failed to save tree skill', detail: error?.message });
+  }
+};
+
 // ── POST /api/trees/:id/sandbox/parent/read ────────────────────────────────
 // Body: { path: string }
 // Reads a file from the parent tree's sandbox. No write, no delete.
