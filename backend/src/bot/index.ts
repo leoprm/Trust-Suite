@@ -2004,7 +2004,9 @@ export async function createBot(prisma: PrismaClient): Promise<Bot<BotContext> |
     // 3. Si no hay comando ni mención → verificar si es conversación 1:1
     let isOneOnOne = false;
     if (cmdText === null || cmdText === "") {
-      // One-on-one mode: if tree has only 1 active member, respond to everything
+      // One-on-one mode: if tree has only 1 active member, respond to everything.
+      // BUT only bypass the shouldAriRespond filter if the tree is standalone
+      // (no parent and no children) — sub-trees with multiple IAs need the filter.
       if (chatId) {
         const soloTree = await findTreeByChat(prisma, chatId!);
         if (soloTree) {
@@ -2013,7 +2015,12 @@ export async function createBot(prisma: PrismaClient): Promise<Bot<BotContext> |
           });
           if (memberCount <= 1) {
             cmdText = msg.text.trim();
-            isOneOnOne = true;
+            // Only bypass filter for standalone trees (no sub-tree relationships)
+            const hasParent = !!soloTree.parentTreeId;
+            const childCount = await (prisma as any).tree.count({
+              where: { parentTreeId: soloTree.id },
+            });
+            isOneOnOne = !hasParent && childCount === 0;
           }
         }
       }
