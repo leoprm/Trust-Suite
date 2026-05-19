@@ -30,6 +30,7 @@ import { runCandidateAnnouncementCron } from "../cron/candidateAnnouncementCron"
 import { runXpDecay } from "../cron/xpDecayCron";
 import { runNightlyResearch } from "../cron/nightlyResearchCron";
 import { nightlyScan } from "../services/skillEvolution";
+import { startHiringBridge, stopHiringBridge } from "../services/hiringBridge";
 import { prisma } from "../index";
 
 // ── Constantes ─────────────────────────────────────────────────────────────────
@@ -342,6 +343,9 @@ export function startScheduler(
   // ── Kanban Watchdog: 150s interval ──
   kanbanWatchdogInterval = startKanbanWatchdog(prismaClient, bot);
 
+  // ── Hiring Bridge: watcher para hiring-request-*.json en sandboxes ──
+  startHiringBridge();
+
   // ── Dev mode hint ──
   if (process.env.NODE_ENV !== "production") {
     console.log(
@@ -373,6 +377,7 @@ export function stopScheduler(): void {
     }
   }
   stopKanbanWatchdog(kanbanWatchdogInterval);
+  stopHiringBridge();
   midnightTask = null;
   decayTask = null;
   rotationTask = null;
