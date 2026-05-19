@@ -282,6 +282,7 @@ async function buildSystemPrompt(
       objectives: true,
       admissionPolicy: true,
       parentTreeId: true,
+      interactionMode: true,
       createdAt: true,
     },
   });
@@ -307,6 +308,22 @@ async function buildSystemPrompt(
   lines.push(`  Admission: ${tree.admissionPolicy}`);
   if (tree.objectives) {
     lines.push(`  Objectives: ${tree.objectives}`);
+  }
+
+  // ── Interaction Mode ────────────────────────────────────────────────────
+  if (tree.interactionMode && tree.interactionMode !== "MAXIMUM") {
+    lines.push("");
+    lines.push("═══ INTERACTION MODE ═══");
+    lines.push("");
+    if (tree.interactionMode === "MEDIUM") {
+      lines.push(
+        "Only respond when directly mentioned, replied to, or named. Do not proactively join.",
+      );
+    } else if (tree.interactionMode === "MINIMUM") {
+      lines.push(
+        "Only respond when tagged (@TrustMakerBot) or replied to. Stay silent otherwise.",
+      );
+    }
   }
 
   // ── Related Trees ──────────────────────────────────────────────────────

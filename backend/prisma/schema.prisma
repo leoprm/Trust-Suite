@@ -89,6 +89,12 @@ enum EventSource {
   AUTOMATION
 }
 
+enum InteractionMode {
+  MAXIMUM
+  MEDIUM
+  MINIMUM
+}
+
 enum AssignmentReason {
   EXPLORATION
   EXPLOITATION
@@ -249,6 +255,7 @@ model Tree {
   externalTasks           ExternalTask[]
   paused                  Boolean                @default(false)
   voteThreshold           Int                    @default(20)
+  interactionMode         InteractionMode        @default(MAXIMUM)
 }
 
 model TreeTechStack {
