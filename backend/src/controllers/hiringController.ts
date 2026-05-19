@@ -16,6 +16,21 @@ const SANDBOX_BASE =
  * Auth: x-api-key header must match INTERNAL_API_KEY env var.
  * Security: NUNCA acepta lista de candidatos — solo resultado agregado.
  */
+/**
+ * POST /api/internal/hiring-scan
+ * Debug: manually trigger hiringBridge scan (no auth for local dev).
+ */
+export const triggerHiringScan = async (_req: Request, res: Response) => {
+  try {
+    const { scanAndProcess } = await import("../services/hiringBridge");
+    const result = await scanAndProcess();
+    return res.json({ ok: true, ...result });
+  } catch (err: any) {
+    console.error("[hiringScan] Error:", err?.message || err);
+    return res.status(500).json({ error: err?.message || "scan failed" });
+  }
+};
+
 export const receiveHiringResult = async (req: Request, res: Response) => {
   try {
     // ── Auth ──────────────────────────────────────────────────────────────

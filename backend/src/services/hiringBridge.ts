@@ -366,8 +366,8 @@ async function notifyCandidate(
   const inlineKeyboard = {
     inline_keyboard: [
       [
-        { text: "✅ Postular", callback_data: `hiring:apply:${taskId}` },
-        { text: "❌ Ignorar", callback_data: `hiring:ignore:${taskId}` },
+        { text: "✅ Postular", callback_data: `post_${taskId}` },
+        { text: "❌ Ignorar", callback_data: `ignr_${taskId}` },
       ],
     ],
   };
@@ -612,7 +612,7 @@ function saveResult(
 
 // ── Main processing ─────────────────────────────────────────────────────────
 
-async function scanAndProcess(): Promise<{ processed: number; errors: number }> {
+export async function scanAndProcess(): Promise<{ processed: number; errors: number }> {
   const requests = scanSandboxes();
   let processed = 0;
   let errors = 0;
