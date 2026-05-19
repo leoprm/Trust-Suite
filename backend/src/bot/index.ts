@@ -2890,9 +2890,10 @@ export async function createBot(prisma: PrismaClient): Promise<Bot<BotContext> |
           status: "ACTIVE",
           treeId: { not: treeId }, // exclude current tree
         },
-        include: {
-          tree: { select: { id: true, name: true, icono: true } },
-        },
+          include: {
+            tree: { select: { id: true, name: true, icono: true, createdAt: true } },
+          },
+          orderBy: { tree: { createdAt: 'desc' } },
         take: 50, // show all trees
       });
 
