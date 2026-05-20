@@ -657,6 +657,14 @@ async function buildSystemPrompt(
   lines.push(`   POST /api/trees/${treeId}/sandbox/write`);
   lines.push('   Body: { "path": "archivo.txt", "content": "contenido..." }');
   lines.push('   Response: { "success": true }');
+  lines.push('   ⚠️  Solo para texto/JSON que quepa en memoria. Para archivos binarios');
+  lines.push('      (videos, imágenes, documentos >1 MB), usa el endpoint upload (#4).');
+  lines.push("");
+  lines.push("4. SUBIR ARCHIVOS BINARIOS AL SANDBOX:");
+  lines.push(`   POST /api/trees/${treeId}/sandbox/upload`);
+  lines.push('   Usa multipart/form-data con campo "file". Límite: 50 MB.');
+  lines.push('   Ejemplo: fetch con FormData — fd.append("file", blob, "video.mp4").');
+  lines.push('   Response: { "path": "video.mp4", "size": 12400000 }');
   lines.push("");
   lines.push(
     "Formato de solicitud HTTP — usa fetch con tu TREE_API_KEY:",

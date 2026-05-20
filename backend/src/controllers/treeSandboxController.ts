@@ -130,10 +130,12 @@ export const uploadTreeSandbox = async (req: Request, res: Response) => {
 async function execBwrap(
   command: string,
   treeId: string,
+  workspacePath: string,
 ): Promise<{ stdout: string; stderr: string; exitCode: number }> {
-  const SANDBOX_BASE =
-    process.env.SANDBOX_BASE_DIR || '/home/trustmaker/trees';
-  const sandboxPath = `${SANDBOX_BASE}/${treeId}`;
+  // Use workspacePath from DB — the single source of truth.
+  // Do NOT recalculate from env var; if SANDBOX_BASE_DIR changes
+  // between creation and execution, the DB record is still correct.
+  const sandboxPath = workspacePath;
 
   const bwrapCmd = [
     'bwrap',
@@ -188,8 +190,8 @@ export const execTreeSandbox = async (req: Request, res: Response) => {
       return res.status(404).json({ error: 'Sandbox not found for this tree' });
     }
 
-    // bwrap handles isolation — no need for manual path validation
-    const result = await execBwrap(command, id);
+    // bwrap handles isolation — pass workspacePath from DB as single source of truth
+    const result = await execBwrap(command, id, sb.workspacePath);
 
     void logEvent({
       ...getRequestContext(req),
