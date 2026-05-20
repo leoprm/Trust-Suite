@@ -64,6 +64,8 @@
   "informe_child_not_found": "⚠️ Tree `{{treeId}}` doesn't exist or is not a direct child of this tree.",
   "informe_child_not_direct": "⚠️ `{{name}}` is not a direct child of this tree. Use /informe todas to include all descendants.",
   "informe_error": "⚠️ Error creating report tasks. Try again.",
+  "informe_activado": "✅ Monthly reports enabled for this tree.",
+  "informe_desactivado": "🔕 Monthly reports disabled for this tree.",
   "todo_already_claimed_self": "👀 You already claimed that task",
   "todo_unclaimed": "🔄 {{name}} dropped '*{{summary}}*'",
   "todo_unclaimed_not_assigned": "🤷 That task isn't assigned to anyone",
@@ -71,5 +73,7 @@
   "todo_urgency_escalation": "🚨 Urgent! {{name}} can't do '*{{summary}}*' by {{time}} ({{remaining}}). Who can take it?",
   "todo_urgency_group": "🚨 Urgent! {{name}} can't do '*{{summary}}*' by {{time}} ({{remaining}}). Anyone from the group?",
   "todo_added_nl": "Added to list: {{summary}}",
-  "todo_duplicate": "📋 That task is already on the list"
+  "todo_duplicate": "📋 That task is already on the list",
+  "informe_activado": "✅ Monthly reports enabled. Members will receive a report on the first Monday of each month.",
+  "informe_desactivado": "❌ Monthly reports disabled. You can re-enable them with /informe activar."
 }

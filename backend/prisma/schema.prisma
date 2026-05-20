@@ -257,6 +257,7 @@ model Tree {
   satisfactionSurveys     SatisfactionSurvey[]
   treeSkills              TreeSkill[]
   paused                  Boolean                @default(false)
+  monthlyReportsEnabled   Boolean                @default(true)
   voteThreshold           Int                    @default(20)
   interactionMode         InteractionMode        @default(MAXIMUM)
   classification          Json?

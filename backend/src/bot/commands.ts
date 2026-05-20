@@ -55,6 +55,7 @@ export type ParsedCommand =
   | { type: "help" }
   | { type: "todo"; text?: string }
   | { type: "informe"; target?: string } // /informe, /informe <treeId>, /informe todas
+  | { type: "informe"; action: "activar" | "desactivar" } // /informe activar, /informe desactivar
   | { type: "unknown" };
 
 // ── Parser ─────────────────────────────────────────────────────────────────
@@ -103,14 +104,19 @@ export function parseCommand(raw: string): ParsedCommand {
   const todoMatch = cmd.match(/^todo(?:\s+(.+))?$/i);
   if (todoMatch) return { type: "todo", text: todoMatch[1]?.trim() };
 
-  // ── informe [treeId|todas] ──
-  // /informe         → branch-job for immediate children
-  // /informe <id>    → branch-job for specific child
-  // /informe todas   → branch-job for all descendants
+  // ── informe [treeId|todas|activar|desactivar] ──
+  // /informe            → branch-job for immediate children
+  // /informe <id>       → branch-job for specific child
+  // /informe todas      → branch-job for all descendants
+  // /informe activar    → enable monthly reports for this tree (admin)
+  // /informe desactivar → disable monthly reports for this tree (admin)
   const informeMatch = cmd.match(/^informe(?:\s+(.+))?$/i);
   if (informeMatch) {
-    const target = informeMatch[1]?.trim();
-    return { type: "informe", target };
+    const arg = informeMatch[1]?.trim().toLowerCase();
+    if (arg === "activar" || arg === "desactivar") {
+      return { type: "informe", action: arg };
+    }
+    return { type: "informe", target: arg };
   }
 
   // ── lista necesidades ──
@@ -597,6 +603,53 @@ async function handleTodo(
   });
 }
 
+// ── informe toggle (activar/desactivar) ──
+
+/** Toggle para activar/desactivar informes mensuales del árbol (admin only). */
+async function handleInformeToggle(
+  prisma: PrismaClient,
+  ctx: Context,
+  tree: TreeInfo | null,
+  action: "activar" | "desactivar",
+  lng: string,
+): Promise<string> {
+  if (!tree) return noTreeError(lng);
+
+  const chatId = ctx.chat?.id.toString();
+  if (!chatId) return t("errors:no_chat_id", lng);
+
+  // Admin check
+  const tgUser = ctx.from;
+  if (!tgUser) return t("common:not_identified", lng);
+
+  const user = await (prisma as any).user.findUnique({
+    where: { telegramUserId: BigInt(tgUser.id) },
+    select: { id: true },
+  });
+  if (!user) return t("common:no_account", lng);
+
+  const adminMember = await (prisma as any).treeMember.findFirst({
+    where: { userId: user.id, treeId: tree.id, role: "ADMIN", status: "ACTIVE" },
+  });
+  if (!adminMember) return t("common:informe_no_admin", lng);
+
+  const enabled = action === "activar";
+
+  try {
+    await (prisma as any).tree.update({
+      where: { id: tree.id },
+      data: { monthlyReportsEnabled: enabled },
+    });
+
+    return enabled
+      ? t("common:informe_activado", lng)
+      : t("common:informe_desactivado", lng);
+  } catch (err: any) {
+    console.error("[handleInformeToggle] Error:", err.message);
+    return t("common:informe_error", lng);
+  }
+}
+
 // ── informe ──
 
 const KANBAN_TASK_ID_REGEX = /t_[a-f0-9]+/;
@@ -873,6 +926,9 @@ export async function handleMessage(
       return { text: await handleTodo(prisma, ctx, tree, parsed.text, lng) };
 
     case "informe":
+      if ("action" in parsed) {
+        return { text: await handleInformeToggle(prisma, ctx, tree, parsed.action, lng) };
+      }
       return { text: await handleInforme(prisma, ctx, tree, parsed.target, lng) };
 
     case "help":

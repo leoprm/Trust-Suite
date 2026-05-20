@@ -41,5 +41,10 @@
   "payment_mode_centralized_selected": "✅ Modo centralizado. El creador del grupo configurará el método de pago.",
   "payment_mode_individual_selected": "✅ Modo individual. Cada miembro recibirá su factura al unirse.",
   "onboarding_complete": "🌳 **¡Árbol completamente configurado!**\n\nA partir de ahora, adaptaré mis respuestas al perfil de tu organización. Si necesitas cambiar algo, un admin puede usar /objetivos.",
-  "welcome_group": "🏕️ ¡Hola! Soy Ari, una AI diseñada para ayudar a individuos y grupos a alcanzar sus objetivos. Estamos en fase beta (prueba)."
+  "welcome_group": "🏕️ ¡Hola! Soy Ari, una AI diseñada para ayudar a individuos y grupos a alcanzar sus objetivos. Estamos en fase beta (prueba).",
+  "monthly_reports_question": "📊 *Informes mensuales*\n\n¿Quieres que los miembros de este árbol reciban un informe mensual de actividad, necesidades y ramas activas?",
+  "monthly_reports_yes": "✅ Sí, activar informes",
+  "monthly_reports_no": "❌ No, por ahora",
+  "monthly_reports_enabled": "✅ Informes mensuales activados para este árbol.",
+  "monthly_reports_disabled": "❌ Informes mensuales desactivados para este árbol."
 }

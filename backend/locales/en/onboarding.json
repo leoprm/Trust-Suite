@@ -41,5 +41,10 @@
   "payment_mode_centralized_selected": "✅ Centralized mode. The group creator will set up the payment method.",
   "payment_mode_individual_selected": "✅ Individual mode. Each member will receive their invoice upon joining.",
   "onboarding_complete": "🌳 **Tree fully configured!**\n\nFrom now on, I'll tailor my responses to your organization's profile. If you need to change anything, an admin can use /objectives.",
-  "welcome_group": "🏕️ Hello! I'm Ari, an AI designed to help individuals and groups achieve their goals. We're in beta (testing)."
+  "welcome_group": "🏕️ Hello! I'm Ari, an AI designed to help individuals and groups achieve their goals. We're in beta (testing).",
+  "monthly_reports_question": "📊 *Monthly reports*\n\nWould you like this tree's members to receive a monthly activity report covering needs and active branches?",
+  "monthly_reports_yes": "✅ Yes, enable reports",
+  "monthly_reports_no": "❌ No, not now",
+  "monthly_reports_enabled": "✅ Monthly reports enabled for this tree.",
+  "monthly_reports_disabled": "❌ Monthly reports disabled for this tree."
 }

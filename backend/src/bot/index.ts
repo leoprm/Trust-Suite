@@ -234,9 +234,11 @@ export async function createBot(prisma: PrismaClient): Promise<Bot<BotContext> |
           "  @TrustMakerBot /crea necesidad \"título\" — descripción\n" +
           "  @TrustMakerBot /ideas para \"título\"\n" +
           "  @TrustMakerBot /vota <id>\n\n" +
-          "Admin:\n" +
-          "  /informe — generar informes de subárboles\n" +
-          "  /pause — pausar la IA del grupo\n" +
+          "Admin:\\n" +
+          "  /informe — generar informes de subárboles\\n" +
+          "  /informe activar — activar informes mensuales\\n" +
+          "  /informe desactivar — desactivar informes mensuales\\n" +
+          "  /pause — pausar la IA del grupo\\n" +
           "  /modo máxima|media|mínima — cambiar modo de IA\n\n" +
           "También puedes conversar naturalmente mencionando al bot."
       );
@@ -3032,6 +3034,27 @@ export async function createBot(prisma: PrismaClient): Promise<Bot<BotContext> |
           });
           trackBotMessage(prisma, treeId, welcomeMsg.message_id);
 
+          // Send monthly reports question
+          await new Promise(r => setTimeout(r, 1200));
+          await ctx.reply(
+            t("onboarding.monthly_reports_question", lang),
+            {
+              parse_mode: "Markdown",
+              reply_markup: {
+                inline_keyboard: [[
+                  {
+                    text: t("onboarding.monthly_reports_yes", lang),
+                    callback_data: "informe_si:" + treeId,
+                  },
+                  {
+                    text: t("onboarding.monthly_reports_no", lang),
+                    callback_data: "informe_no:" + treeId,
+                  },
+                ]],
+              },
+            }
+          );
+
           // Send subtree question after brief pause
           await new Promise(r => setTimeout(r, 1500));
           await ctx.reply(
@@ -3075,6 +3098,47 @@ export async function createBot(prisma: PrismaClient): Promise<Bot<BotContext> |
           }
         }
       }
+      return;
+    }
+
+    // XR-7: Monthly reports toggle callbacks (onboarding Si/No)
+    if (data.startsWith("informe_si:") || data.startsWith("informe_no:")) {
+      const enabled = data.startsWith("informe_si:");
+      const treeId = data.split(":")[1];
+
+      if (!treeId) {
+        await ctx.answerCallbackQuery();
+        return;
+      }
+
+      try {
+        await (prisma as any).tree.update({
+          where: { id: treeId },
+          data: { monthlyReportsEnabled: enabled },
+        });
+      } catch (err: any) {
+        console.error("[informe_si/no] Failed to update tree:", err.message);
+      }
+
+      // Remove inline keyboard
+      try { await ctx.editMessageReplyMarkup({ reply_markup: undefined }); } catch { /* ok */ }
+
+      // Load tree language for confirmation message
+      let lang = "es";
+      try {
+        const t = await (prisma as any).tree.findUnique({
+          where: { id: treeId },
+          select: { language: true },
+        });
+        if (t?.language) lang = t.language;
+      } catch { /* default es */ }
+
+      await ctx.answerCallbackQuery({
+        text: enabled
+          ? t("onboarding.monthly_reports_enabled", lang)
+          : t("onboarding.monthly_reports_disabled", lang),
+      });
+
       return;
     }
 

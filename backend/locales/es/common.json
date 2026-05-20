@@ -64,6 +64,8 @@
   "informe_child_not_found": "⚠️ El árbol `{{treeId}}` no existe o no es un hijo directo de este árbol.",
   "informe_child_not_direct": "⚠️ `{{name}}` no es hijo directo de este árbol. Usa /informe todas para incluir todos los descendientes.",
   "informe_error": "⚠️ Error al crear las tareas de informe. Intenta de nuevo.",
+  "informe_activado": "✅ Informes mensuales activados para este árbol.",
+  "informe_desactivado": "🔕 Informes mensuales desactivados para este árbol.",
   "todo_already_claimed_self": "👀 Ya te habías apuntado a esa tarea",
   "todo_unclaimed": "🔄 {{name}} se bajó de '*{{summary}}*'",
   "todo_unclaimed_not_assigned": "🤷 Esa tarea no está asignada a nadie",
@@ -71,5 +73,7 @@
   "todo_urgency_escalation": "🚨 ¡Urgente! {{name}} no puede '*{{summary}}*' para {{time}} ({{remaining}}). ¿Quién puede hacerla?",
   "todo_urgency_group": "🚨 ¡Urgente! {{name}} no puede '*{{summary}}*' para {{time}} ({{remaining}}). ¿Alguien del grupo puede hacerla?",
   "todo_added_nl": "Agregado a la lista: {{summary}}",
-  "todo_duplicate": "📋 Esa tarea ya está en la lista"
+  "todo_duplicate": "📋 Esa tarea ya está en la lista",
+  "informe_activado": "✅ Informes mensuales activados. Los miembros recibirán un reporte el primer lunes de cada mes.",
+  "informe_desactivado": "❌ Informes mensuales desactivados. Puedes reactivarlos con /informe activar."
 }
