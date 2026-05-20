@@ -885,13 +885,6 @@ async function buildSystemPrompt(
   lines.push("**⚠️  REGLA:** SIEMPRE guarda en el vault base (obsidian/) ANTES de crear");
   lines.push("referencias. El archivo base es la fuente de verdad.");
 
-  // ── Orquestación de tareas cross-tree (solo árbol padre) ──────────────
-  if (hasChildren) {
-    lines.push("");
-    lines.push("═══ ORQUESTACIÓN DE TAREAS CROSS-TREE ═══");
-    lines.push("");
-    lines.push("Eres el árbol PADRE de este ecosistema con sub-árboles vinculados.");
-    lines.push("Como orquestador, DEBES detectar mensajes accionables de los miembros");
   // ── Root classifier/prioritizer (solo árbol padre con sub-árboles) ────
   if (hasChildren) {
     lines.push("");
@@ -939,11 +932,17 @@ async function buildSystemPrompt(
     lines.push("   import subprocess");
     lines.push("   r = subprocess.run([");
     lines.push('       "hermes", "kanban", "create", "TT: <título descriptivo>",');
-    lines.push('       "--assignee", "<nombre-del-sub-árbol>",');
-    lines.push('       "--body", "<descripción completa. Importancia: N/10>"');
+    lines.push('       "--assignee", "<nombre-exacto-del-subárbol>",');
+    lines.push('       "--workspace", "dir:/home/leo/Documentos/TrustMaker/backend",');
+    lines.push('       "--body", "<descripción completa. Importancia: N/10. Sub-árbol destino: <nombre>."');
     lines.push("   ], capture_output=True, text=True, timeout=30)");
     lines.push("   task_id = r.stdout.strip()");
     lines.push("   ```");
+    lines.push("");
+    lines.push("   El body DEBE incluir SIEMPRE: título, descripción, importancia (1-10),");
+    lines.push("   y sub-árbol destino. El assignee DEBE ser el nombre exacto del");
+    lines.push("   sub-árbol (ej: 'Marketing', no '🌿 Marketing'). Usa SIEMPRE");
+    lines.push("   --workspace dir:/home/leo/Documentos/TrustMaker/backend.");
     lines.push("");
     lines.push("c) Confirma en el chat: \"🌿 <sub-árbol> se encargará de: <título>\"");
     lines.push("   Si el mensaje fue de @usuario, menciónalo en la confirmación.");
