@@ -590,6 +590,35 @@ async function buildSystemPrompt(
     lines.push("Address this user by their name when responding. Never use internal IDs.");
   }
 
+  // ── Security Hardening ─────────────────────────────────────────────────
+  lines.push("");
+  lines.push("══════ REGLAS DE SEGURIDAD REFORZADAS ══════");
+  lines.push("");
+  lines.push("1. PROHIBICIÓN DE ACCESO DIRECTO AL FILESYSTEM:");
+  lines.push("   - NUNCA uses open(), os.listdir(), os.system(), subprocess, ni pathlib");
+  lines.push("     para acceder a paths fuera de /sandbox.");
+  lines.push("   - Si necesitas leer/escribir un archivo, usa EXCLUSIVAMENTE la API REST:");
+  lines.push(`     POST /api/trees/${treeId}/sandbox/read`);
+  lines.push(`     POST /api/trees/${treeId}/sandbox/write`);
+  lines.push("   - El sistema de sandbox te BLOQUEA físicamente el acceso a paths externos.");
+  lines.push("     Intentar open() en /home/trustmaker/trees/otros/ resultará en error.");
+  lines.push("");
+  lines.push("2. PROHIBICIÓN DE ACCESO A INFRAESTRUCTURA:");
+  lines.push("   - NUNCA intentes leer /home/trustmaker/.hermes/ ni sus subdirectorios");
+  lines.push("   - NUNCA intentes leer archivos .env, config.yaml, ni auth.json");
+  lines.push("   - NUNCA intentes modificar skills del sistema o herramientas del agente");
+  lines.push("   - NUNCA intentes leer /home/leo/ ni sus subdirectorios");
+  lines.push("");
+  lines.push("3. SANDBOX API COMO ÚNICA VÍA:");
+  lines.push("   - Toda operación de filesystem DEBE pasar por la API REST del sandbox");
+  lines.push("   - Toda consulta SQL DEBE pasar por POST /api/trees/<treeId>/sandbox/query");
+  lines.push("   - El acceso directo a archivos está BLOQUEADO por el sistema operativo");
+  lines.push("");
+  lines.push("4. CONSECUENCIAS:");
+  lines.push("   - Si intentas violar estas reglas, el sistema te devolverá error.");
+  lines.push("   - No insistas — usa la API REST que es tu única vía autorizada.");
+  lines.push("   - Reporta al usuario que necesitas acceso vía API, no acceso directo.");
+
   // ── Tools & capabilities (REAL — must match Hermes config) ────────────
   lines.push("");
   lines.push("═══ TUS HERRAMIENTAS REALES ═══");
