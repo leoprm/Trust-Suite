@@ -2194,13 +2194,36 @@ export async function createBot(prisma: PrismaClient): Promise<Bot<BotContext> |
         conversationWindows.resetWindow(tree.id);
       } catch { /* best-effort */ }
 
-      // ── Ari responded — send the text ───────────────────────────────
-      if (decision.text) {
-        try {
-          await sendTelegramMessage(ctx, decision.text, "Markdown");
-        } catch (markdownErr: any) {
-          console.error("[HermesBridge] Failed to send decision.text:", markdownErr.message);
+      // ── Ari should respond — route to Hermes for actual response ────
+      const userId = ctx.from?.id.toString() || "0";
+      const typingInterval3 = setInterval(() => {
+        ctx.replyWithChatAction("typing").catch(() => {});
+      }, 4000);
+      ctx.replyWithChatAction("typing").catch(() => {});
+      try {
+        const response = await routeToHermes(
+          fullMessage, tree.id, userId, undefined, displayName,
+          ctx.chat?.id, msg.message_id,
+        );
+        clearInterval(typingInterval3);
+        if (response) {
+          if (response.saturationMessage) {
+            await ctx.reply(response.saturationMessage);
+            return;
+          }
+          if (response.queued) {
+            await ctx.reply(
+              `🔄 Ari está procesando otro mensaje. Estás en la posición ${response.queuePosition} de la cola.`,
+            );
+            return;
+          }
+          if (response.text) {
+            await sendTelegramMessage(ctx, response.text, "Markdown");
+          }
         }
+      } catch (err: any) {
+        clearInterval(typingInterval3);
+        console.error("[HermesBridge] routeToHermes threw:", err.message);
       }
       return;
     }

@@ -110,7 +110,6 @@ export interface HermesBridgeResponse {
 
 export interface ShouldRespondResult {
   shouldRespond: boolean;
-  text?: string;
 }
 
 interface RecentMessage {
@@ -1170,7 +1169,8 @@ export async function shouldAriRespond(
     "",
     "RESPONSE FORMAT:",
     '- If Ari should stay silent: respond with exactly "NO_RESPONSE" (no quotes, no punctuation, no explanation)',
-    "- If Ari should respond: write the response Ari would give (in neutral Spanish, concise, helpful, use \"tú\")",
+    '- If Ari should respond: respond with exactly "RESPOND" (no quotes, no punctuation, no explanation)',
+    "- NEVER write the actual response text. ONLY output the decision word.",
     "",
     "You are deciding for the MOST RECENT message in the context below.",
   ].join("\n");
@@ -1295,13 +1295,21 @@ const timeoutId = setTimeout(() => controller.abort(), 420_000); // 7 min — co
 
     const trimmed = content.trim();
 
-    // Check for silence signal
+    // Check for RESPOND signal
+    if (trimmed === "RESPOND" || trimmed === '"RESPOND"') {
+      return { shouldRespond: true };
+    }
+
+    // Check for NO_RESPONSE signal
     if (trimmed === "NO_RESPONSE" || trimmed === '"NO_RESPONSE"') {
       return { shouldRespond: false };
     }
 
-    // Anything else is a real response
-    return { shouldRespond: true, text: trimmed };
+    // Safe default: anything else → silent (avoid generating text here)
+    console.warn(
+      `[shouldAriRespond] Unexpected response: "${trimmed.slice(0, 80)}" — defaulting to silent`,
+    );
+    return { shouldRespond: false };
   } catch (err) {
     clearTimeout(timeoutId);
     if (err instanceof Error && err.name === "AbortError") {
