@@ -250,6 +250,41 @@ export const readTreeSandbox = async (req: Request, res: Response) => {
     // ── Directory listing ──
     if (isDir) {
       if (!fs.existsSync(safePath)) {
+        // Lazy-init: if the requested directory is the obsidian vault root
+        // (or a subdirectory inside obsidian/), scaffold it on demand.
+        if (cleanPath === 'obsidian' || cleanPath.startsWith('obsidian/')) {
+          const vaultRoot = cleanPath === 'obsidian'
+            ? path.join(sb.workspacePath, 'obsidian')
+            : path.join(sb.workspacePath, cleanPath);
+          try {
+            fs.mkdirSync(vaultRoot, { recursive: true });
+            // If it's the vault root, also create standard directories
+            if (cleanPath === 'obsidian') {
+              fs.mkdirSync(path.join(vaultRoot, 'assets'), { recursive: true });
+              fs.mkdirSync(path.join(vaultRoot, 'decisions'), { recursive: true });
+              fs.mkdirSync(path.join(vaultRoot, 'people'), { recursive: true });
+              const indexPath = path.join(vaultRoot, 'index.md');
+              if (!fs.existsSync(indexPath)) {
+                fs.writeFileSync(indexPath, [
+                  '# 🌳 Tree Vault',
+                  '',
+                  '- [[assets/|Assets]]',
+                  '- [[decisions/|Decisions]]',
+                  '- [[people/|People]]',
+                  '',
+                ].join('\n'), 'utf-8');
+              }
+              console.log(`[readTreeSandbox] Lazy-init obsidian vault at ${vaultRoot}`);
+            }
+            // Re-read after creation
+            const entries = fs.readdirSync(vaultRoot);
+            const mdFiles = entries.filter(f => f.endsWith('.md')).sort();
+            return res.json({ files: mdFiles });
+          } catch (initErr: any) {
+            console.error('[readTreeSandbox] Lazy-init failed:', initErr?.message || initErr);
+            return res.json({ files: [] });
+          }
+        }
         return res.json({ files: [] });
       }
 

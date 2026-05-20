@@ -828,6 +828,12 @@ async function buildSystemPrompt(
   lines.push("═══ BÚSQUEDA EN OBSIDIAN VAULT ═══");
   lines.push("");
   lines.push("Tienes un vault Obsidian en obsidian/ dentro de tu sandbox. Úsalo como memoria.");
+  lines.push("El vault se auto-inicializa al primer acceso — no necesitas crearlo manualmente.");
+  lines.push("");
+  lines.push("Cuándo guardar en el vault:");
+  lines.push("  - Después de cada conversación relevante: decisiones, acuerdos, ideas, datos clave.");
+  lines.push("  - Usa POST .../sandbox/write → { \"path\": \"obsidian/decisiones/tema.md\", \"content\": \"...\" }");
+  lines.push("  - Usa subdirectorios: personas/, decisiones/, assets/, o crea los que necesites.");
   lines.push("");
   lines.push("ANTES de responder, busca en el vault cuando el mensaje:");
   lines.push('  - Menciona archivos, decisiones pasadas, o personas ("el documento de...", "la decisión sobre...")');
