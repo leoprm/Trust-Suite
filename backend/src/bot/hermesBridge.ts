@@ -1691,7 +1691,16 @@ export async function sendTelegramMessage(
   if (!text) return;
 
   if (text.length <= TELEGRAM_MAX_CHARS) {
-    await ctx.reply(text, { parse_mode: parseMode });
+    try {
+      await ctx.reply(text, { parse_mode: parseMode });
+    } catch (err: any) {
+      if (err?.message?.includes("can't parse entities")) {
+        console.warn("[hermesBridge] Markdown parse error, retrying without parse_mode");
+        await ctx.reply(text);
+      } else {
+        throw err;
+      }
+    }
     return;
   }
 
