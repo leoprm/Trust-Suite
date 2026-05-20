@@ -28,7 +28,7 @@ export function deriveTreeApiKey(treeId: string): string {
 
 // ── Auth helper ─────────────────────────────────────────────────────────────
 
-function checkApiKey(req: Request, res: Response): boolean {
+export function checkApiKey(req: Request, res: Response): boolean {
   const authHeader = req.headers.authorization;
   if (!authHeader) {
     res.status(401).json({ error: 'Authorization header missing' });
@@ -1140,5 +1140,120 @@ export const memoryTreeSandbox = async (req: Request, res: Response) => {
   } catch (error: any) {
     console.error('[memoryTreeSandbox] ERROR:', error?.message || error);
     res.status(500).json({ error: 'Memory operation failed', detail: error?.message });
+  }
+};
+
+// ── POST /api/trees/:id/vault/report ──────────────────────────────────────────
+// Body: { treeId: string, reportDate: string, content: string, childrenReports?: string[], force?: boolean }
+// Deposits a child tree's report into the parent tree's vault.
+// Auth: API key (master or tree-specific). The caller (child Ari) sends the master key.
+// Rules:
+//   1. body.treeId must be a direct child of params.id (parentTreeId match)
+//   2. File deposited at <SANDBOX_BASE>/<parentTreeId>/reports/<reportDate>.md
+//   3. If childrenReports has IDs, they are saved in metadata
+//   4. Returns 409 if report already exists (use force=true to overwrite)
+
+export const postVaultReport = async (req: Request, res: Response) => {
+  if (!checkApiKey(req, res)) return;
+
+  try {
+    const parentTreeId = req.params.id as string;
+    const { treeId: childTreeId, reportDate, content, childrenReports, force } = req.body;
+
+    // ── Validation ──
+    if (!childTreeId || typeof childTreeId !== 'string') {
+      return res.status(400).json({ error: 'treeId is required (string)' });
+    }
+    if (!reportDate || typeof reportDate !== 'string') {
+      return res.status(400).json({ error: 'reportDate is required (string)' });
+    }
+    if (!content || typeof content !== 'string') {
+      return res.status(400).json({ error: 'content is required (string)' });
+    }
+
+    // ── Verify child-parent relationship ──
+    const childTree = await prisma.tree.findUnique({ where: { id: childTreeId } });
+    if (!childTree) {
+      return res.status(404).json({ error: 'Publishing tree not found' });
+    }
+    if (childTree.parentTreeId !== parentTreeId) {
+      return res.status(403).json({
+        error: 'Publishing tree is not a direct child of the destination tree',
+        expectedParent: parentTreeId,
+        actualParent: childTree.parentTreeId,
+      });
+    }
+
+    // ── Verify parent tree exists ──
+    const parentTree = await prisma.tree.findUnique({ where: { id: parentTreeId } });
+    if (!parentTree) {
+      return res.status(404).json({ error: 'Destination tree not found' });
+    }
+
+    // ── Build sandbox path ──
+    const SANDBOX_BASE = process.env.SANDBOX_BASE_DIR || '/home/trustmaker/trees';
+    const reportsDir = path.join(SANDBOX_BASE, parentTreeId, 'reports');
+    const reportPath = path.join(reportsDir, `${reportDate}.md`);
+
+    // ── Don't overwrite without confirmation ──
+    if (fs.existsSync(reportPath) && !force) {
+      return res.status(409).json({
+        error: 'Report already exists for this date. Use force=true to overwrite.',
+        path: reportPath,
+      });
+    }
+
+    // ── Prepare content with metadata header ──
+    const metadataHeader = [
+      '<!--',
+      `  publisher: ${childTreeId}`,
+      `  reportDate: ${reportDate}`,
+      `  depositedAt: ${new Date().toISOString()}`,
+      childrenReports && Array.isArray(childrenReports) && childrenReports.length > 0
+        ? `  childrenReports: [${childrenReports.join(', ')}]`
+        : '',
+      '-->',
+      '',
+    ].filter(l => l !== '').join('\n');
+
+    // Append children reports section if provided
+    let bodyContent = content;
+    if (childrenReports && Array.isArray(childrenReports) && childrenReports.length > 0) {
+      bodyContent += `\n\n---\n## Children Reports\n\n`;
+      for (const childId of childrenReports) {
+        bodyContent += `- ${childId}\n`;
+      }
+    }
+
+    const finalContent = metadataHeader + bodyContent;
+
+    // ── Write file ──
+    fs.mkdirSync(reportsDir, { recursive: true });
+    fs.writeFileSync(reportPath, finalContent, 'utf-8');
+
+    // ── Log event ──
+    void logEvent({
+      ...getRequestContext(req),
+      treeId: parentTreeId,
+      action: 'VAULT_REPORT_DEPOSIT',
+      entityType: 'TreeVault',
+      entityId: parentTreeId,
+      source: 'SYSTEM',
+      metadataJson: {
+        publisherTreeId: childTreeId,
+        reportDate,
+        childrenReportsCount: childrenReports?.length || 0,
+        overwritten: !!force && fs.existsSync(reportPath),
+      },
+    });
+
+    res.status(201).json({
+      success: true,
+      path: reportPath,
+      reportDate,
+    });
+  } catch (error: any) {
+    console.error('[postVaultReport] ERROR:', error?.message || error);
+    res.status(500).json({ error: 'Report deposit failed', detail: error?.message });
   }
 };

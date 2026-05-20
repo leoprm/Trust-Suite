@@ -66,7 +66,39 @@ Cada tarea `human-worker` tiene un deadline de 24h desde su creación. Si el hum
 - La tarea `generate-report` queda como plantilla latente
 - Solo se ejecuta cuando el padre la gatilla vía `branch-job`
 
-### Flujo Bottom-Up (por capas)
+### Vault Centralizado (Raíz)
+
+**Todos** los informes — de árboles y de personas — se depositan en el vault del **árbol raíz**, no en vaults intermedios.
+
+- La raíz se descubre caminando `parentId` hacia arriba hasta encontrar `parentId = null`
+- El endpoint publica al raíz: `POST /api/trees/:rootTreeId/vault/report`
+- Ventaja: un solo lugar de consulta, sin dispersión por vaults intermedios
+- La raíz agrega todo desde su propio vault — no necesita recolectar de múltiples fuentes
+
+### Formato: Markdown + Pandoc → PDF final
+
+**Pipeline de formato:**
+
+1. **Trabajo:** Markdown (`.md`) — Ari genera nativo, fácil de concatenar/agregar
+2. **Normalización:** Pandoc convierte cualquier formato de entrada (`.docx`, `.txt`, mensaje Telegram) → `.md`
+3. **Entrega:** Solo el informe final de la raíz se convierte a PDF (`.pdf`) vía pandoc
+
+**Para el humano:**
+- No escribe en markdown — entrega en su formato natural
+- Pandoc normaliza a `.md` al entrar a la pipeline
+- El humano ni se entera del formato interno
+
+**Archivos en vault raíz:**
+```
+<SANDBOX_BASE>/<rootTreeId>/reports/
+  ├── 2026-05/
+  │   ├── tree_<id1>.md          # informe de subárbol
+  │   ├── tree_<id2>.md
+  │   ├── persona_<userId1>.md   # informe de persona
+  │   ├── persona_<userId2>.md
+  │   └── informe_final.md       # agregado unificado
+  └── 2026-05.pdf                # PDF final (solo raíz)
+```
 
 ```
 Capa 0 (raíz):    [Raíz]          ← cron dispara, crea branch-jobs para hijos
