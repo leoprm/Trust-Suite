@@ -198,3 +198,93 @@ export const sendMessage = async (req: Request, res: Response) => {
     res.status(500).json({ error: "Failed to send message", detail: error?.message });
   }
 };
+
+// ── POST /api/bot/trigger-comment-review ──────────────────────────────────────
+// Body: { treeId?: string }
+// Triggers Ari to review pendientes in comments.md. If treeId is omitted,
+// scans all parent trees (trees with children) and triggers each one.
+// Called by the 3h cron job (09:00-21:00 Chile).
+export const triggerCommentReview = async (req: Request, res: Response) => {
+  if (!checkApiKey(req, res)) return;
+
+  try {
+    const { treeId } = req.body;
+
+    const { prisma } = await import("../index");
+    const { telegramBot } = await import("../index");
+
+    if (!telegramBot) {
+      return res.status(503).json({ error: "Telegram bot not available" });
+    }
+
+    let targetTreeIds: string[] = [];
+
+    if (treeId && typeof treeId === "string") {
+      // Specific tree requested
+      targetTreeIds = [treeId];
+    } else {
+      // Scan all parent trees: trees that have children (other trees referencing them as parent)
+      const parentTrees = await (prisma as any).tree.findMany({
+        where: {
+          childTrees: { some: {} },  // has at least one child
+          telegramChatId: { not: null },
+        },
+        select: { id: true, name: true, telegramChatId: true },
+      });
+      targetTreeIds = parentTrees.map((t: any) => t.id);
+    }
+
+    if (targetTreeIds.length === 0) {
+      return res.json({ triggered: 0, message: "No parent trees with Telegram groups found" });
+    }
+
+    const results: { treeId: string; treeName: string; chatId: string; messageId?: number; error?: string }[] = [];
+    const TRIGGER_TEXT = "Ari, revisa los comentarios pendientes en obsidian/comentarios.md";
+
+    for (const tid of targetTreeIds) {
+      try {
+        const tree = await (prisma as any).tree.findUnique({
+          where: { id: tid },
+          select: { id: true, name: true, telegramChatId: true },
+        });
+
+        if (!tree || !tree.telegramChatId) {
+          results.push({ treeId: tid, treeName: tree?.name || "unknown", chatId: "", error: "No Telegram group" });
+          continue;
+        }
+
+        const sent = await telegramBot.api.sendMessage(tree.telegramChatId, TRIGGER_TEXT, {
+          parse_mode: "Markdown",
+        });
+
+        void logEvent({
+          ...getRequestContext(req),
+          treeId: tid,
+          action: "TRIGGER_COMMENT_REVIEW",
+          entityType: "Tree",
+          entityId: tid,
+          source: "AUTOMATION",
+          metadataJson: { chatId: tree.telegramChatId, messageId: sent.message_id },
+        });
+
+        results.push({ treeId: tid, treeName: tree.name, chatId: tree.telegramChatId, messageId: sent.message_id });
+
+        // Brief delay to avoid rate limiting if multiple trees
+        if (targetTreeIds.length > 1) {
+          await new Promise(r => setTimeout(r, 200));
+        }
+      } catch (err: any) {
+        console.error(`[triggerCommentReview] Failed for tree ${tid}:`, err?.message || err);
+        results.push({ treeId: tid, treeName: "unknown", chatId: "", error: err?.message });
+      }
+    }
+
+    res.json({
+      triggered: results.filter(r => !r.error).length,
+      results,
+    });
+  } catch (error: any) {
+    console.error("[triggerCommentReview] ERROR:", error?.message || error);
+    res.status(500).json({ error: "Trigger failed", detail: error?.message });
+  }
+};

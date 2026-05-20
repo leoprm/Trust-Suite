@@ -311,6 +311,34 @@ export const readTreeSandbox = async (req: Request, res: Response) => {
 
     // ── File read mode ──
     if (!fs.existsSync(safePath)) {
+      // Lazy-init: auto-create comentarios.md with header if it doesn't exist
+      if (cleanPath === 'obsidian/comentarios.md') {
+        try {
+          const dir = path.dirname(safePath);
+          fs.mkdirSync(dir, { recursive: true });
+          const header = [
+            '# Comentarios del árbol',
+            '',
+            'Registro de mensajes accionables del grupo.',
+            '',
+          ].join('\n');
+          fs.writeFileSync(safePath, header, 'utf-8');
+          console.log(`[readTreeSandbox] Lazy-init comentarios.md at ${safePath}`);
+          void logEvent({
+            ...getRequestContext(req),
+            treeId: id,
+            action: 'SANDBOX_LAZY_INIT',
+            entityType: 'TreeSandbox',
+            entityId: id,
+            source: 'SYSTEM',
+            metadataJson: { file: 'obsidian/comentarios.md' },
+          });
+          return res.json({ content: header, size: Buffer.byteLength(header, 'utf-8') });
+        } catch (initErr: any) {
+          console.error('[readTreeSandbox] Lazy-init comentarios.md failed:', initErr?.message || initErr);
+          return res.status(500).json({ error: 'Failed to initialize comentarios.md', detail: initErr?.message });
+        }
+      }
       return res.status(404).json({ error: 'File not found', path: requestedPath });
     }
 
@@ -374,7 +402,20 @@ export const writeTreeSandbox = async (req: Request, res: Response) => {
     const dir = path.dirname(safePath);
     fs.mkdirSync(dir, { recursive: true });
 
-    fs.writeFileSync(safePath, content, 'utf-8');
+    // Lazy-init: if writing to comentarios.md for the first time, prepend header
+    let finalContent = content;
+    if (requestedPath === 'obsidian/comentarios.md' && !fs.existsSync(safePath)) {
+      const header = [
+        '# Comentarios del árbol',
+        '',
+        'Registro de mensajes accionables del grupo.',
+        '',
+      ].join('\n');
+      finalContent = header + content;
+      console.log(`[writeTreeSandbox] Lazy-init comentarios.md with header at ${safePath}`);
+    }
+
+    fs.writeFileSync(safePath, finalContent, 'utf-8');
 
     void logEvent({
       ...getRequestContext(req),
