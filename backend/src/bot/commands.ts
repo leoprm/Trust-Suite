@@ -695,6 +695,10 @@ async function handleInforme(
   try {
     // ── /informe <treeId> — child specific ──
     if (target && target !== "todas") {
+      // Guard: can't /informe own tree (self-reference)
+      if (target === tree.id) {
+        return t("common:informe_child_not_found", lng, { treeId: target });
+      }
       // Validate it's a direct child
       const child = await (prisma as any).tree.findUnique({
         where: { id: target },
