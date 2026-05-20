@@ -29,14 +29,31 @@ Cron: 0 9 1 * * (día 1 de cada mes, 9 AM)
 Job: generate-monthly-report
 ```
 
-**Qué hace el job:**
+**Qué hace el job (flujo completo por árbol):**
+
+**Fase 1 — Recopilar informes de hijos (subárboles):**
 1. Verifica `SELECT COUNT(*) FROM Tree WHERE parentId = <self.treeId>`
 2. Si hay hijos → crea tareas Kanban `branch-job` para cada hijo inmediato (paralelo, vía `--parent` a la tarea propia)
 3. Espera a que todos los hijos completen (dependencias Kanban)
-4. Lee los informes del vault propio (depositados por los hijos)
-5. Genera informe propio agregando los de los hijos
-6. Si tiene padre → publica el informe en el vault del padre vía `POST /api/trees/:parentId/vault/report`
-7. Si es raíz → el informe final queda en su propio vault
+4. Los informes de los hijos se depositan en el vault vía `POST /api/trees/:treeId/vault/report`
+
+**Fase 2 — Recopilar informes de personas (internos):**
+5. Verifica `SELECT * FROM TreeMember WHERE treeId = <self.treeId>` — lista de personas en el árbol
+6. Revisa el vault: `ls <SANDBOX>/<treeId>/reports/personas/<mes>.md` — ¿quién ya entregó?
+7. Para cada persona que **falta** → crea tarea Kanban `human-worker` con notificación a Telegram:
+   - Título: `Falta informe mensual de <nombre> para <treeName>`
+   - La tarea llega vía `_dispatch_to_trustmaker()` → notifica al humano por Telegram
+   - El humano entrega su informe (mecanismo a definir: ¿responder al bot? ¿formulario?)
+8. Espera a que todos los `human-worker` completen
+
+**Fase 3 — Agregación (Ari):**
+9. Con TODOS los informes reunidos (hijos + personas internas) en el vault, Ari genera el informe unificado
+10. El informe se guarda en `<SANDBOX>/<treeId>/reports/<mes>.md` (carpeta específica, lista para Kanban)
+
+**Fase 4 — Entrega hacia arriba:**
+11. Completa la tarea Kanban (`kanban_complete`)
+12. Si tiene padre → la dependencia Kanban automáticamente desbloquea la tarea del padre (el padre ve que este hijo ya terminó)
+13. Si NO tiene padre (raíz) → no gatilla nada más. El informe final queda en su vault.
 
 **Subárboles:** Al crearse un árbol y marcarse como subárbol (`parentId != null`):
 - El cron se **desactiva** (no se elimina)
