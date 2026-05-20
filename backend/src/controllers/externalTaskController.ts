@@ -146,6 +146,31 @@ export const createExternalTask = async (req: Request, res: Response) => {
       }
     });
 
+    // ── Notify sub-tree chat when Kanban task is created ───────────────
+    if (kanbanTaskId) {
+      prisma.tree.findUnique({
+        where: { id: treeId },
+        select: { parentTreeId: true },
+      }).then(treeData => {
+        if (treeData?.parentTreeId) {
+          const apiKey = process.env.HERMES_API_SERVER_KEY || '';
+          const msgText = `📋 *Nueva tarea Kanban*\n\n*${task.title}*\n\n_${task.description.slice(0, 250)}${task.description.length > 250 ? '...' : ''}_`;
+          return fetch(`http://localhost:${process.env.PORT || 3100}/api/bot/send-message`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${apiKey}`,
+            },
+            body: JSON.stringify({ treeId, text: msgText, kanbanTaskId }),
+          });
+        }
+      }).then(() => {
+        if (kanbanTaskId) console.log(`[externalTask] Notified sub-tree ${treeId} about Kanban task ${kanbanTaskId}`);
+      }).catch((err: any) => {
+        console.error(`[externalTask] Failed to notify sub-tree ${treeId}:`, err.message || err);
+      });
+    }
+
     res.status(201).json(task);
   } catch (error: any) {
     console.error('[externalTask] create error:', error.message || error);
