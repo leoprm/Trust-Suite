@@ -85,6 +85,7 @@ import stripeRoutes from './routes/stripeRoutes';
 import whatsappRoutes from './routes/whatsappRoutes';
 import audioRoutes from './routes/audioRoutes';
 import sandboxRoutes from './routes/sandboxRoutes';
+import vaultRoutes from './routes/vaultRoutes';
 import costRoutes from './routes/costRoutes';
 import solutionRoutes from './routes/solutionRoutes';
 import serverRoutes from './routes/serverRoutes';
@@ -274,9 +275,7 @@ app.use(globalLimiter);
 // ── Routes ────────────────────────────────────────────────────────────────────
 app.use('/api/auth', authRoutes);
 app.use('/api/trees', sandboxRoutes); // sandbox sub-routes: GET/DELETE /:id/sandbox (BEFORE treeRoutes to avoid JWT)
-// Vault endpoint: direct mount (not via sub-router) to avoid treeRoutes JWT middleware chain
-import { submitVaultReport } from './controllers/vaultController';
-app.post('/api/trees/:treeId/vault/report', submitVaultReport);
+app.use('/api/trees', vaultRoutes); // vault sub-routes: POST /:id/vault/report
 app.use('/api/trees', treeRoutes);
 app.use('/api/needs', needRoutes);
 app.use('/api/ideas', ideaRoutes);

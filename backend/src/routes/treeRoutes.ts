@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { createTree, joinTree, getMyTrees, getGlobalTrees, getTreeMembers, getTree, leaveTree, inviteMember, removeMember, generateGuestToken, consumeGuestToken, updateTree, deleteTree, getNetworkGraph, getPendingEvidence, toggleCrisisMode, broadcastCrisisSignal, updateMemberPower, inviteAI, getMyLevel, getTreeLedger, createSubTree, getTreeHierarchy, suggestStructure, setBudgetAllocation, getBudgetOverview, getSkillPricing, getMigrationSuggestions, getTechStack, getTreeServers, changeInteractionMode, unlinkChildTree } from '../controllers/treeController';
+import { submitVaultReport } from '../controllers/vaultController';
 import { upsertInvestmentProfileHandler, getInvestmentProfileHandler } from '../controllers/investmentController';
 import { authenticateJWT, optionalAuth } from '../middleware/authMiddleware';
 
@@ -18,6 +19,9 @@ router.get('/:id/skill-pricing', optionalAuth, getSkillPricing);
 router.get('/:id/tech-stack', optionalAuth, getTechStack);
 router.get('/:id/budget-overview', optionalAuth, getBudgetOverview);
 router.get('/:id/migration-suggestions', optionalAuth, getMigrationSuggestions);
+
+// Vault report endpoint (API key-protected, Hermes agent calls from child trees)
+router.post('/:id/vault/report', submitVaultReport);
 
 // All other tree actions require being logged in
 router.use(authenticateJWT);
