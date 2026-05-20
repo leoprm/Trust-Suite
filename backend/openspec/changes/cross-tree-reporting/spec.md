@@ -136,7 +136,11 @@ El admin del árbol puede gatillar reportes manualmente:
 /informe              → pide informe a todos los hijos inmediatos (default)
 /informe <treeId>    → pide informe a un hijo específico
 /informe todas       → pide informe a todos los hijos inmediatos
+/informe activar     → activa el cronjob de informes mensuales
+/informe desactivar  → desactiva el cronjob de informes mensuales
 ```
+
+**Onboarding:** Al agregar a Ari a un grupo nuevo, pregunta si se quieren exigir informes mensuales (botones Sí/No) y activa/desactiva el cronjob según la respuesta.
 
 **Restricciones:**
 - Solo admins del árbol pueden usar estos comandos
@@ -176,6 +180,18 @@ El admin del árbol puede gatillar reportes manualmente:
 - Generar markdown agregado
 - Publicar hacia arriba si tiene padre
 
+### XR-6: Vault centralizado + pipeline markdown/pandoc/PDF
+**Archivo:** vaultController.ts, aggregator script
+- Centralizar TODOS los informes en vault del árbol raíz
+- Pipeline pandoc: normalizar .docx/.txt → .md
+- PDF solo para informe final de la raíz
+
+### XR-7: Onboarding + toggle de informes mensuales
+**Archivo:** src/bot/index.ts, src/bot/commands.ts
+- Onboarding: al agregar a Ari a un grupo, preguntar si se exigen informes mensuales (botones Sí/No)
+- `/informe activar` — activa el cronjob
+- `/informe desactivar` — desactiva el cronjob
+
 ## Dependencies
 
 ```
@@ -184,6 +200,8 @@ XR-3 (endpoint) → required by XR-2
 XR-2 (cron job) → depends on XR-1, XR-3
 XR-4 (telegram) → depends on XR-1
 XR-5 (aggregation) → depends on XR-2, XR-3
+XR-6 (vault+pandoc) → depends on XR-3, XR-5
+XR-7 (onboarding toggle) → depends on XR-2, XR-4
 ```
 
 ## Open Questions
