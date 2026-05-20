@@ -1378,14 +1378,8 @@ export async function createBot(prisma: PrismaClient): Promise<Bot<BotContext> |
     const bctx = ctx as BotContext;
     const text = ctx.message?.text?.trim();
     if (text) {
-      // Worker text continuation (perfil edit flow: steps 100-102)
+      // Worker text continuation (only if already in a worker flow)
       if (await handleWorkerTextContinuation(prisma, bctx)) return;
-      // Worker onboarding flow (trabajar steps: 1-5)
-      if (await handleTrabajar(prisma, bctx)) return;
-      // Worker profile command
-      if (await handlePerfil(prisma, bctx)) return;
-      // Worker tasks command
-      if (await handleTareas(prisma, bctx)) return;
     }
 
     if (process.env.HERMES_BRIDGE_ENABLED === "true") {
