@@ -378,73 +378,64 @@ async function buildSystemPrompt(
   const isSubTree = !!parentTreeName;
   const hasChildren = childTrees.length > 0;
 
-  if (isSubTree || hasChildren) {
+  // ── Sub-tree: parent awareness + sandbox read, NO multi-IA rules ──
+  if (isSubTree) {
+    lines.push("");
+    lines.push("═══ PARENT TREE CONTEXT ═══");
+    lines.push("");
+    lines.push(`Eres un SUB-ÁRBOL de ${parentDisplayName || parentTreeName} (id: ${parentTreeId}).`);
+    lines.push(`Formas parte de la comunidad "${parentTreeName}".`);
+    lines.push("");
+    lines.push("Como sub-árbol, DEBES:");
+    lines.push("- Reconocer al árbol padre como autoridad estratégica del ecosistema");
+    lines.push("- Leer el sandbox del padre antes de decisiones que afecten a todo el ecosistema");
+    lines.push("- No hablar en nombre del árbol padre ni tomar decisiones que le competan");
+    lines.push("- No uses prefijos como 🌿 Nombre (sub): en tus respuestas. Responde normalmente.");
+    lines.push("");
+    lines.push("SANDBOX PADRE (solo lectura):");
+    lines.push(`  POST http://localhost:3100/api/trees/${treeId}/sandbox/parent/read`);
+    lines.push('  Body: { "path": "obsidian/decisiones/ejemplo.md" }');
+    lines.push("  Authorization: Bearer HERMES_API_SERVER_KEY");
+    lines.push("");
+    lines.push("⚠️  SOLO LECTURA. No puedes escribir, modificar ni borrar en el sandbox padre.");
+  }
+
+  // ── Root tree with children: multi-IA coordination rules ──
+  if (hasChildren) {
     lines.push("");
     lines.push("═══════ ÁRBOLES RELACIONADOS ═══════");
     lines.push("");
-
-    if (isSubTree) {
-      lines.push("═══ PARENT TREE CONTEXT ═══");
-      lines.push("");
-      lines.push(`Eres un SUB-ÁRBOL de ${parentDisplayName || parentTreeName} (id: ${parentTreeId}).`);
-      lines.push(`Debes presentarte SIEMPRE como parte de la comunidad "${parentTreeName}".`);
-      lines.push("");
-      lines.push("Como sub-árbol, DEBES:");
-      lines.push("- Reconocer al árbol padre como autoridad estratégica del ecosistema");
-      lines.push("- Leer el sandbox del padre antes de decisiones que afecten a todo el ecosistema");
-      lines.push("- No hablar en nombre del árbol padre ni tomar decisiones que le competan");
-      lines.push("");
-      lines.push("SANDBOX PADRE (solo lectura):");
-      lines.push(`  POST http://localhost:3100/api/trees/${treeId}/sandbox/parent/read`);
-      lines.push('  Body: { "path": "obsidian/decisiones/ejemplo.md" }');
-      lines.push("  Authorization: Bearer HERMES_API_SERVER_KEY");
-      lines.push("");
-      lines.push("⚠️  SOLO LECTURA. No puedes escribir, modificar ni borrar en el sandbox padre.");
-      lines.push("");
-      lines.push(`En grupos multi-IA, tu prefijo obligatorio es: 🌿 ${tree.name} (sub):`);
-    } else {
-      lines.push(`Eres un ÁRBOL RAÍZ. En grupos multi-IA, tu prefijo es: 🌳 ${tree.name}:`);
-    }
-
+    lines.push(`Eres un ÁRBOL RAÍZ. En grupos multi-IA, tu prefijo es: 🌳 ${tree.name}:`);
     lines.push("");
-
-    if (hasChildren) {
-      lines.push(`Sub-árboles vinculados (${childTrees.length}):`);
-      for (const child of childTrees) {
-        lines.push(`  - 🌿 ${child.name} (id: ${child.id})`);
-      }
-      lines.push("");
+    lines.push(`Sub-árboles vinculados (${childTrees.length}):`);
+    for (const child of childTrees) {
+      lines.push(`  - 🌿 ${child.name} (id: ${child.id})`);
     }
+    lines.push("");
 
     lines.push("═══ REGLAS DE COMUNICACIÓN MULTI-IA (grupos Telegram) ═══");
     lines.push("");
     lines.push("1. PREFIJO OBLIGATORIO:");
-    lines.push(`   ${isSubTree ? `🌿 ${tree.name} (sub):` : `🌳 ${tree.name}:`} → TODA respuesta en grupo empieza con esto.`);
+    lines.push(`   🌳 ${tree.name}: → TODA respuesta en grupo multi-IA empieza con esto.`);
     lines.push("   No es opcional. Si lo olvidas, el bridge lo agrega, pero hazlo siempre.");
     lines.push("");
     lines.push("2. CUÁNDO RESPONDER:");
     lines.push("   - @TuNombre → mención directa. Responder SIEMPRE.");
     lines.push("   - El mensaje contiene keywords de tu objetivo (ver 'Objectives' arriba).");
     lines.push("   - 'todos:' → broadcast a todos los árboles.");
-    lines.push("   - Un árbol padre menciona algo relevante para tu sub-árbol.");
+    lines.push("   - Un sub-árbol menciona algo que requiere tu atención como padre.");
     lines.push("");
     lines.push("3. CUÁNDO CALLAR (NO_RESPONSE):");
     lines.push("   - El mensaje es para otro árbol (contiene @OtroArbol).");
     lines.push("   - No tiene keywords de tu objetivo ni te menciona.");
     lines.push("   - No tienes nada útil que agregar. El silencio es correcto.");
-    lines.push("   - El grupo no es un chatbot — es un puente de coordinación.");
     lines.push("");
     lines.push("4. RESPUESTAS CRUZADAS (cross-tree):");
-    lines.push("   - Si un árbol padre responde con algo relevante para ti, puedes complementar.");
+    lines.push("   - Si un sub-árbol responde con algo relevante para ti, puedes complementar.");
     lines.push("   - Respuestas breves (1-3 líneas), con tu prefijo, complementarias no repetitivas.");
     lines.push("");
-    lines.push("5. SANDBOX PADRE (solo sub-árboles):");
-    if (isSubTree) {
-      lines.push("   - POST .../sandbox/parent/read → contexto del padre.");
-      lines.push("   - NUNCA intentes escribir en el sandbox del padre.");
-    } else {
-      lines.push("   - No aplica (eres árbol raíz).");
-    }
+    lines.push("5. SANDBOX SUB-ÁRBOLES:");
+    lines.push("   - No aplica (eres árbol raíz, los sub-árboles leen tu sandbox).");
   }
 
   // ── Global skills ──────────────────────────────────────────────────────
@@ -1595,17 +1586,15 @@ export async function enforcePrefix(
       select: { name: true, parentTreeId: true },
     });
     if (treeInfo?.name) {
-      // Only enforce prefix when tree is part of a multi-tree setup
-      // (has parent OR has children) — to distinguish multiple IAs
+      // Only enforce prefix when tree HAS children (root coordinating with sub-trees).
+      // Sub-trees (with parentTreeId) do NOT get a prefix — they respond normally.
       const hasChildren =
         (await prisma.tree.count({ where: { parentTreeId: treeId } })) > 0;
-      const isMultiTree = !!treeInfo.parentTreeId || hasChildren;
-      if (!isMultiTree) return content; // standalone → no prefix needed
+      const isMultiTree = hasChildren; // root trees only — sub-trees never get prefix
+      if (!isMultiTree) return content; // sub-tree or standalone → no prefix needed
       
-      const prefix = treeInfo.parentTreeId
-        ? `🌿 ${treeInfo.name} (sub): `
-        : `🌳 ${treeInfo.name}: `;
-      console.log(`[hermesBridge] Prefix enforced: ${treeInfo.parentTreeId ? "🌿 sub" : "🌳 root"}`);
+      const prefix = `🌳 ${treeInfo.name}: `;
+      console.log(`[hermesBridge] Prefix enforced: 🌳 root`);
       return prefix + content;
     }
   } catch {
