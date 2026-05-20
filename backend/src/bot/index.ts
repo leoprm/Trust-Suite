@@ -137,6 +137,22 @@ const treeMessageCounter = new Map<string, number>();
 // T3: Parent tree selector state — maps "psel:<idx>" → {childId, parentId}
 const parentTreeSelectors = new Map<string, Map<string, string>>();
 
+// RG5: Compute tree depth by walking parentTreeId chain (root = depth 0)
+async function getTreeDepth(prisma: PrismaClient, treeId: string): Promise<number> {
+  let depth = 0;
+  let currentId: string | null = treeId;
+  while (currentId) {
+    const tree = await (prisma as any).tree.findUnique({
+      where: { id: currentId },
+      select: { parentTreeId: true },
+    });
+    if (!tree?.parentTreeId) break;
+    currentId = tree.parentTreeId;
+    depth++;
+  }
+  return depth;
+}
+
 async function trackBotMessage(
   prisma: PrismaClient,
   treeId: string,
@@ -3271,6 +3287,15 @@ export async function createBot(prisma: PrismaClient): Promise<Bot<BotContext> |
         }
 
         await ctx.editMessageText("✅ Vinculado como sub-árbol.", { reply_markup: undefined });
+
+        // RG5: Warning for deep sub-trees (depth ≥ 2)
+        const parentDepth = await getTreeDepth(prisma, parentId);
+        const childDepth = parentDepth + 1;
+        if (childDepth >= 2) {
+          await ctx.reply(
+            `⚠️ Este sub-árbol tendrá ${childDepth} niveles de profundidad. La latencia de coordinación entre Aris aumenta con cada nivel.`,
+          );
+        }
       } catch (err: any) {
         console.error("[parent_select] Failed to link parent tree:", err.message);
         await ctx.editMessageText("❌ Error al vincular. Intenta de nuevo.", { reply_markup: undefined });
