@@ -847,6 +847,53 @@ async function buildSystemPrompt(
   lines.push("");
   lines.push("⚠️  NUNCA respondas de memoria si el vault puede tener la respuesta. Busca primero.");
 
+  // ── Referencias por subárbol ──────────────────────────────────────────
+  lines.push("");
+  lines.push("═══ REFERENCIAS POR SUBÁRBOL ═══");
+  lines.push("");
+  lines.push("Cuando alguien suba un archivo al grupo y mencione hashtags de subárboles");
+  lines.push("(ej: #Marketing, #Ventas, #Finanzas), DEBES:");
+  lines.push("");
+  lines.push("1. Guardar el archivo en el vault base (obsidian/) — SIEMPRE.");
+  lines.push(`   POST .../sandbox/write → { "path": "obsidian/<nombre-archivo>", "content": "..." }`);
+  lines.push("");
+  lines.push("2. Parsear los hashtags del caption del archivo o del mensaje que lo acompaña.");
+  lines.push("   - Hashtags tienen formato #NombreSubarbol (pueden estar separados por espacio o coma)");
+  lines.push("   - Ignorar #hashtags genéricos que no correspondan a subárboles");
+  lines.push("");
+  lines.push("3. Para cada hashtag, buscar el subárbol por nombre:");
+  lines.push(`   GET http://localhost:3100/api/trees/${treeId}/hierarchy`);
+  lines.push("   - La respuesta incluye childTrees[] con id, name, description, objectives, icono");
+  lines.push("   - Buscar case-insensitive: name.toLowerCase().includes(hashtag.toLowerCase())");
+  lines.push("   - Si un hashtag no coincide con ningún subárbol, ignorarlo silenciosamente");
+  lines.push("");
+  lines.push("4. Para cada subárbol encontrado, crear/actualizar una nota en:");
+  lines.push("   obsidian/references/<NombreSubarbol>/<nombre-archivo>.md");
+  lines.push("   con el siguiente formato:");
+  lines.push("");
+  lines.push("   ---");
+  lines.push("   treeId: <id del subárbol>");
+  lines.push("   treeName: <nombre del subárbol>");
+  lines.push("   sourceFile: <ruta del archivo en vault base>");
+  lines.push("   uploadedBy: <nombre de quien subió>");
+  lines.push("   uploadedAt: YYYY-MM-DD");
+  lines.push("   hashtags: [#original1, #original2]");
+  lines.push("   ---");
+  lines.push("");
+  lines.push("   # 📄 <nombre del archivo>");
+  lines.push("");
+  lines.push("   - **Archivo original:** [[ruta al archivo en vault base]]");
+  lines.push("   - **Subido por:** <nombre>");
+  lines.push("   - **Fecha:** YYYY-MM-DD");
+  lines.push("   - **Hashtags:** #original1, #original2");
+  lines.push("   - **Árbol:** [[<id del subárbol>|<nombre del subárbol>]]");
+  lines.push("");
+  lines.push("**Lazy-init:** El directorio obsidian/references/ se crea automáticamente al");
+  lines.push("primer uso (via sandbox/write con recursive: true).");
+  lines.push("");
+  lines.push("**⚠️  REGLA:** SIEMPRE guarda en el vault base (obsidian/) ANTES de crear");
+  lines.push("referencias. El archivo base es la fuente de verdad.");
+
   // ── Office skills ─────────────────────────────────────────────────────
   lines.push("");
   lines.push("═══════ HABILIDADES DE OFIMÁTICA ═══════");

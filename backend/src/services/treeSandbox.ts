@@ -67,6 +67,7 @@ function scaffoldObsidianVault(workspacePath: string) {
   fs.mkdirSync(path.join(obsidianDir, 'assets'), { recursive: true });
   fs.mkdirSync(path.join(obsidianDir, 'decisions'), { recursive: true });
   fs.mkdirSync(path.join(obsidianDir, 'people'), { recursive: true });
+  fs.mkdirSync(path.join(obsidianDir, 'references'), { recursive: true });
 
   const appDir = path.join(obsidianDir, '.obsidian');
   fs.mkdirSync(appDir, { recursive: true });

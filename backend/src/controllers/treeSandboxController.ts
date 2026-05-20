@@ -263,6 +263,7 @@ export const readTreeSandbox = async (req: Request, res: Response) => {
               fs.mkdirSync(path.join(vaultRoot, 'assets'), { recursive: true });
               fs.mkdirSync(path.join(vaultRoot, 'decisions'), { recursive: true });
               fs.mkdirSync(path.join(vaultRoot, 'people'), { recursive: true });
+              fs.mkdirSync(path.join(vaultRoot, 'references'), { recursive: true });
               const indexPath = path.join(vaultRoot, 'index.md');
               if (!fs.existsSync(indexPath)) {
                 fs.writeFileSync(indexPath, [
