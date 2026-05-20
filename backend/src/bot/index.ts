@@ -2071,12 +2071,7 @@ export async function createBot(prisma: PrismaClient): Promise<Bot<BotContext> |
           });
           if (memberCount <= 1) {
             cmdText = msg.text.trim();
-            // Only bypass filter for standalone trees (no sub-tree relationships)
-            const hasParent = !!soloTree.parentTreeId;
-            const childCount = await (prisma as any).tree.count({
-              where: { parentTreeId: soloTree.id },
-            });
-            isOneOnOne = !hasParent && childCount === 0;
+            isOneOnOne = true;
           }
         }
       }
