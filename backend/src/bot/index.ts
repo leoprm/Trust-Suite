@@ -3779,6 +3779,115 @@ export async function createBot(prisma: PrismaClient): Promise<Bot<BotContext> |
       return;
     }
 
+    // ── Unlink child tree callback (🗑️ Desvincular button) ──
+    if (data.startsWith("unlink_child:")) {
+      const childTreeId = data.slice("unlink_child:".length);
+      if (!childTreeId) {
+        await ctx.answerCallbackQuery();
+        return;
+      }
+
+      // Find parent tree by telegramChatId
+      const parentTree = await (prisma as any).tree.findFirst({
+        where: { telegramChatId: ctx.chat!.id.toString() },
+        select: { id: true, name: true },
+      });
+      if (!parentTree) {
+        await ctx.answerCallbackQuery();
+        return;
+      }
+
+      // Verify user exists
+      const tgUser = ctx.from;
+      if (!tgUser) {
+        await ctx.answerCallbackQuery();
+        return;
+      }
+      const user = await prisma.user.findUnique({
+        where: { telegramUserId: BigInt(tgUser.id) },
+        select: { id: true },
+      });
+      if (!user) {
+        await ctx.answerCallbackQuery({ text: "⚠️ Sin cuenta" });
+        return;
+      }
+
+      // Check admin role
+      const isAdmin = await prisma.treeMember.findFirst({
+        where: { treeId: parentTree.id, userId: user.id, role: "ADMIN" },
+      });
+      if (!isAdmin) {
+        await ctx.answerCallbackQuery({
+          text: "Solo los administradores pueden desvincular subárboles",
+        });
+        return;
+      }
+
+      // Verify child tree exists and is actually a child of this parent
+      const childTree = await (prisma as any).tree.findFirst({
+        where: { id: childTreeId, parentTreeId: parentTree.id },
+        select: { id: true, name: true, telegramChatId: true },
+      });
+      if (!childTree) {
+        await ctx.answerCallbackQuery({
+          text: "Este subárbol ya no existe o ya fue desvinculado.",
+        });
+        return;
+      }
+
+      // Unlink: set parentTreeId to null
+      try {
+        await (prisma as any).tree.update({
+          where: { id: childTreeId },
+          data: { parentTreeId: null },
+        });
+
+        // Notify child group
+        if (childTree.telegramChatId) {
+          try {
+            await ctx.api.sendMessage(
+              childTree.telegramChatId,
+              `Tu árbol ha sido desvinculado de *${parentTree.name}*.`,
+              { parse_mode: "Markdown" },
+            );
+          } catch (tgErr: any) {
+            console.error(
+              `[unlink_child] Telegram notify failed for child ${childTreeId}:`,
+              tgErr.message,
+            );
+          }
+        }
+
+        // Edit the original message to show confirmation
+        const userName = tgUser.first_name || tgUser.username || `tg${tgUser.id}`;
+        try {
+          const originalText = ctx.callbackQuery?.message?.text ?? "";
+          await ctx.editMessageText(
+            `${originalText}\n\n✅ Desvinculado por ${userName}`,
+            { reply_markup: undefined },
+          );
+        } catch (editErr: any) {
+          // Fallback: answer with alert if message can't be edited
+          console.error("[unlink_child] editMessageText failed:", editErr.message);
+          await ctx.answerCallbackQuery({
+            text: `✅ Desvinculado por ${userName}`,
+          });
+          return;
+        }
+
+        await ctx.answerCallbackQuery();
+        console.log(
+          `[unlink_child] ${userName} unlinked child ${childTreeId} from parent ${parentTree.id}`,
+        );
+      } catch (err: any) {
+        console.error("[unlink_child] Error:", err.message);
+        await ctx.answerCallbackQuery({
+          text: "Error al desvincular. Intenta de nuevo.",
+        });
+      }
+      return;
+    }
+
     // ── Encuesta callbacks (target selection, survey selector, voting) ──
     let handled = await handleEncuestaCallback(prisma, bot, ctx as BotContext);
     if (handled) return;
