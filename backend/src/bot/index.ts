@@ -234,6 +234,10 @@ export async function createBot(prisma: PrismaClient): Promise<Bot<BotContext> |
           "  @TrustMakerBot /crea necesidad \"título\" — descripción\n" +
           "  @TrustMakerBot /ideas para \"título\"\n" +
           "  @TrustMakerBot /vota <id>\n\n" +
+          "Admin:\n" +
+          "  /informe — generar informes de subárboles\n" +
+          "  /pause — pausar la IA del grupo\n" +
+          "  /modo máxima|media|mínima — cambiar modo de IA\n\n" +
           "También puedes conversar naturalmente mencionando al bot."
       );
   });

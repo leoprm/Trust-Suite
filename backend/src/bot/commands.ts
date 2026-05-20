@@ -18,6 +18,7 @@
 
 import { Context } from "grammy";
 import { PrismaClient } from "@prisma/client";
+import { exec } from "child_process";
 import { findTreeByChat, TreeInfo } from "./treeResolver";
 import { t } from "./i18n";
 import {
@@ -53,6 +54,7 @@ export type ParsedCommand =
   | { type: "pagar" }
   | { type: "help" }
   | { type: "todo"; text?: string }
+  | { type: "informe"; target?: string } // /informe, /informe <treeId>, /informe todas
   | { type: "unknown" };
 
 // ── Parser ─────────────────────────────────────────────────────────────────
@@ -100,6 +102,16 @@ export function parseCommand(raw: string): ParsedCommand {
   // ── todo [texto] ──
   const todoMatch = cmd.match(/^todo(?:\s+(.+))?$/i);
   if (todoMatch) return { type: "todo", text: todoMatch[1]?.trim() };
+
+  // ── informe [treeId|todas] ──
+  // /informe         → branch-job for immediate children
+  // /informe <id>    → branch-job for specific child
+  // /informe todas   → branch-job for all descendants
+  const informeMatch = cmd.match(/^informe(?:\s+(.+))?$/i);
+  if (informeMatch) {
+    const target = informeMatch[1]?.trim();
+    return { type: "informe", target };
+  }
 
   // ── lista necesidades ──
   if (/^lista\s+necesidades$/i.test(cmd)) return { type: "lista" };
@@ -585,6 +597,199 @@ async function handleTodo(
   });
 }
 
+// ── informe ──
+
+const KANBAN_TASK_ID_REGEX = /t_[a-f0-9]+/;
+const EXEC_TIMEOUT_MS = 10_000;
+
+/**
+ * Crea una tarea kanban branch-job para un árbol hijo.
+ * Retorna el kanban taskId o null si falla.
+ */
+async function createBranchJobTask(
+  childTreeId: string,
+  childTreeName: string,
+  parentTreeId: string,
+  chatId: string,
+): Promise<string | null> {
+  const title = `Informe: ${childTreeName}`;
+  const body = [
+    `**Tipo:** branch-job informe`,
+    `**Tree:** ${childTreeId}`,
+    `**Parent:** ${parentTreeId}`,
+    `**Chat:** ${chatId}`,
+  ].join("\n");
+
+  const safeTitle = title.replace(/'/g, "'\\''");
+  const safeBody = body.replace(/'/g, "'\\''");
+
+  const command =
+    `hermes kanban create '${safeTitle}' ` +
+    `--assignee branch-job ` +
+    `--body '${safeBody}'`;
+
+  let stdout: string;
+  try {
+    stdout = await new Promise<string>((resolve, reject) => {
+      exec(command, { timeout: EXEC_TIMEOUT_MS }, (error, stdout, stderr) => {
+        if (error) { resolve(""); return; }
+        resolve(stdout);
+      });
+    });
+  } catch {
+    return null;
+  }
+
+  if (!stdout) return null;
+  const match = stdout.match(KANBAN_TASK_ID_REGEX);
+  return match ? match[0] : null;
+}
+
+/**
+ * Obtiene recursivamente todos los IDs de árboles descendientes.
+ */
+async function getAllDescendantIds(
+  prisma: PrismaClient,
+  treeId: string,
+): Promise<string[]> {
+  const children = await (prisma as any).tree.findMany({
+    where: { parentTreeId: treeId },
+    select: { id: true },
+  });
+  const ids: string[] = [];
+  for (const child of children) {
+    ids.push(child.id);
+    const subIds = await getAllDescendantIds(prisma, child.id);
+    ids.push(...subIds);
+  }
+  return ids;
+}
+
+async function handleInforme(
+  prisma: PrismaClient,
+  ctx: Context,
+  tree: TreeInfo | null,
+  target: string | undefined,
+  lng: string,
+): Promise<string> {
+  if (!tree) return noTreeError(lng);
+
+  const chatId = ctx.chat?.id.toString();
+  if (!chatId) return t("errors:no_chat_id", lng);
+
+  // ── Admin check ──
+  const tgUser = ctx.from;
+  if (!tgUser) return t("common:not_identified", lng);
+
+  const user = await (prisma as any).user.findUnique({
+    where: { telegramUserId: BigInt(tgUser.id) },
+    select: { id: true },
+  });
+  if (!user) return t("common:no_account", lng);
+
+  const adminMember = await (prisma as any).treeMember.findFirst({
+    where: { userId: user.id, treeId: tree.id, role: "ADMIN", status: "ACTIVE" },
+  });
+  if (!adminMember) return t("common:informe_no_admin", lng);
+
+  try {
+    // ── /informe <treeId> — child specific ──
+    if (target && target !== "todas") {
+      // Validate it's a direct child
+      const child = await (prisma as any).tree.findUnique({
+        where: { id: target },
+        select: { id: true, name: true, parentTreeId: true },
+      });
+
+      if (!child) {
+        return t("common:informe_child_not_found", lng, { treeId: target });
+      }
+
+      if (child.parentTreeId !== tree.id) {
+        // It might be a descendant but not a direct child
+        const isDescendant = child.parentTreeId
+          ? await isDescendantOf(prisma, child.id, tree.id)
+          : false;
+        if (isDescendant) {
+          return t("common:informe_child_not_direct", lng, { name: child.name });
+        }
+        return t("common:informe_child_not_found", lng, { treeId: target });
+      }
+
+      const taskId = await createBranchJobTask(child.id, child.name, tree.id, chatId);
+      if (!taskId) return t("common:informe_error", lng);
+
+      return t("common:informe_processing_child", lng, {
+        name: child.name,
+        taskId,
+      });
+    }
+
+    // ── /informe todas — all descendants ──
+    if (target === "todas") {
+      const allIds = await getAllDescendantIds(prisma, tree.id);
+      if (allIds.length === 0) return t("common:informe_no_children", lng);
+
+      const trees = await (prisma as any).tree.findMany({
+        where: { id: { in: allIds } },
+        select: { id: true, name: true },
+      });
+
+      let ok = 0;
+      for (const t of trees) {
+        const taskId = await createBranchJobTask(t.id, t.name, tree.id, chatId);
+        if (taskId) ok++;
+      }
+
+      if (ok === 0) return t("common:informe_error", lng);
+      return t("common:informe_processing_all", lng, { count: ok });
+    }
+
+    // ── /informe (no args) — immediate children ──
+    const children = await (prisma as any).tree.findMany({
+      where: { parentTreeId: tree.id },
+      select: { id: true, name: true },
+    });
+
+    if (children.length === 0) return t("common:informe_no_children", lng);
+
+    let ok = 0;
+    for (const child of children) {
+      const taskId = await createBranchJobTask(child.id, child.name, tree.id, chatId);
+      if (taskId) ok++;
+    }
+
+    if (ok === 0) return t("common:informe_error", lng);
+    return t("common:informe_processing_all", lng, { count: ok });
+  } catch (err: any) {
+    console.error("[handleInforme] Error:", err.message);
+    return t("common:informe_error", lng);
+  }
+}
+
+/**
+ * Verifica si `descendantId` es descendiente de `ancestorId` (recorriendo parentTreeId).
+ */
+async function isDescendantOf(
+  prisma: PrismaClient,
+  descendantId: string,
+  ancestorId: string,
+): Promise<boolean> {
+  let current = descendantId;
+  const visited = new Set<string>();
+  while (current && !visited.has(current)) {
+    visited.add(current);
+    if (current === ancestorId) return true;
+    const tree = await (prisma as any).tree.findUnique({
+      where: { id: current },
+      select: { parentTreeId: true },
+    });
+    if (!tree?.parentTreeId) return false;
+    current = tree.parentTreeId;
+  }
+  return false;
+}
+
 // ── Dispatcher ─────────────────────────────────────────────────────────────
 
 /**
@@ -627,7 +832,7 @@ export async function handleMessage(
 
   // Only look up tree for commands that need it
   const needsTree: ParsedCommand["type"][] = [
-    "info", "lista", "crea", "vota", "ideas", "cuota", "pagar", "todo",
+    "info", "lista", "crea", "vota", "ideas", "cuota", "pagar", "todo", "informe",
   ];
 
   if (needsTree.includes(parsed.type)) {
@@ -662,6 +867,9 @@ export async function handleMessage(
 
     case "todo":
       return { text: await handleTodo(prisma, ctx, tree, parsed.text, lng) };
+
+    case "informe":
+      return { text: await handleInforme(prisma, ctx, tree, parsed.target, lng) };
 
     case "help":
       return { text: helpMessage(lng) };
