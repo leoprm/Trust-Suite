@@ -94,7 +94,6 @@ import adminRoutes from './routes/adminRoutes';
 import structureRoutes from './routes/structureRoutes';
 import investmentRoutes from './routes/investmentRoutes';
 import externalTaskRoutes from './routes/externalTasks';
-import vaultRoutes from './routes/vaultRoutes';
 import hooksRoutes from './routes/hooks';
 import candidatesRoutes from './routes/candidatesRoutes';
 import cancelledPlansRoutes from './routes/cancelledPlansRoutes';
@@ -275,7 +274,9 @@ app.use(globalLimiter);
 // ── Routes ────────────────────────────────────────────────────────────────────
 app.use('/api/auth', authRoutes);
 app.use('/api/trees', sandboxRoutes); // sandbox sub-routes: GET/DELETE /:id/sandbox (BEFORE treeRoutes to avoid JWT)
-app.use('/api/trees', vaultRoutes);   // vault sub-routes: POST /:treeId/vault/report (BEFORE treeRoutes)
+// Vault endpoint: direct mount (not via sub-router) to avoid treeRoutes JWT middleware chain
+import { submitVaultReport } from './controllers/vaultController';
+app.post('/api/trees/:treeId/vault/report', submitVaultReport);
 app.use('/api/trees', treeRoutes);
 app.use('/api/needs', needRoutes);
 app.use('/api/ideas', ideaRoutes);
