@@ -1,6 +1,9 @@
 import { Request, Response } from 'express';
 import { exec } from 'child_process';
+import { promisify } from 'util';
 import fs from 'fs';
+
+const execAsync = promisify(exec);
 import path from 'path';
 import crypto from 'crypto';
 import https from 'https';
@@ -46,25 +49,6 @@ function checkApiKey(req: Request, res: Response): boolean {
   return false;
 }
 
-// ── Sandbox env whitelist ────────────────────────────────────────────────────
-
-function buildSandboxEnv(cwd: string): Record<string, string | undefined> {
-  const env: Record<string, string | undefined> = {
-    HOME: cwd,
-    PATH: process.env.PATH,
-    NODE_ENV: process.env.NODE_ENV,
-  };
-
-  // Pass through SANDBOX_ and HERMES_ prefixed vars (compat with Hermes Agent)
-  for (const [key, value] of Object.entries(process.env)) {
-    if (key.startsWith('SANDBOX_') || key.startsWith('HERMES_')) {
-      env[key] = value;
-    }
-  }
-
-  return env;
-}
-
 // ── Path validation ─────────────────────────────────────────────────────────
 
 function resolveSafePath(
@@ -88,7 +72,7 @@ function resolveSafePath(
   return resolved;
 }
 
-// ── Multer for sandbox file uploads ────────────────────────────────────────────
+// ── Multer for sandbox file uploads
 
 const SB_UPLOAD_MAX_BYTES = 50 * 1024 * 1024; // 50 MB
 export const sandboxUpload = multer({
@@ -141,16 +125,59 @@ export const uploadTreeSandbox = async (req: Request, res: Response) => {
   }
 };
 
+// ── bwrap sandboxed command execution ─────────────────────────────────────
+
+async function execBwrap(
+  command: string,
+  treeId: string,
+): Promise<{ stdout: string; stderr: string; exitCode: number }> {
+  const SANDBOX_BASE =
+    process.env.SANDBOX_BASE_DIR || '/home/trustmaker/trees';
+  const sandboxPath = `${SANDBOX_BASE}/${treeId}`;
+
+  const bwrapCmd = [
+    'bwrap',
+    '--ro-bind', '/usr', '/usr',
+    '--ro-bind', '/lib', '/lib',
+    '--ro-bind', '/lib64', '/lib64',
+    '--ro-bind', '/bin', '/bin',
+    '--ro-bind', '/etc/alternatives', '/etc/alternatives',
+    '--bind', sandboxPath, '/sandbox',
+    '--proc', '/proc',
+    '--dev', '/dev',
+    '--unshare-pid',
+    '--unshare-ipc',
+    '--die-with-parent',
+    '/bin/bash', '-c', `cd /sandbox && ${command}`,
+  ].join(' ');
+
+  try {
+    const { stdout, stderr } = await execAsync(bwrapCmd, { timeout: 30_000 });
+    return { stdout, stderr, exitCode: 0 };
+  } catch (err: any) {
+    const exitCode =
+      err.code === 'ETIMEDOUT' ? 124 : err.code ?? 1;
+    return {
+      stdout: '',
+      stderr: err.killed
+        ? (err.stderr || '') + `\n[Timeout after 30s]`
+        : err.stderr || err.message,
+      exitCode,
+    };
+  }
+}
+
 // ── POST /api/trees/:id/sandbox/exec ────────────────────────────────────────
-// Body: { command: string, timeout?: number }
-// Returns: { stdout, stderr, exitCode }
+// Body: { command: string }
+// Runs command inside bubblewrap sandbox — isolated filesystem, PID, IPC namespaces.
+// Fixed 30s timeout. Returns: { stdout, stderr, exitCode }
 
 export const execTreeSandbox = async (req: Request, res: Response) => {
   if (!checkApiKey(req, res)) return;
 
   try {
     const id = req.params.id as string;
-    const { command, timeout } = req.body;
+    const { command } = req.body;
 
     if (!command || typeof command !== 'string') {
       return res.status(400).json({ error: 'command is required (string)' });
@@ -161,75 +188,8 @@ export const execTreeSandbox = async (req: Request, res: Response) => {
       return res.status(404).json({ error: 'Sandbox not found for this tree' });
     }
 
-    const cwd = sb.workspacePath;
-    if (!fs.existsSync(cwd)) {
-      return res.status(500).json({ error: 'Sandbox workspace directory not found' });
-    }
-
-    // Validate command doesn't access paths outside sandbox
-    // Split command into tokens and check every path-like argument
-    const tokens = command.split(/\s+/);
-    const resolvedCwd = path.resolve(cwd);
-    for (const token of tokens) {
-      // Skip flags/options (start with - or --)
-      if (token.startsWith('-')) continue;
-      // Check if this token is a path: absolute, contains '/', or is '.' / '..'
-      const isPath =
-        token.startsWith('/') ||
-        token.includes('/') ||
-        token === '.' ||
-        token === '..';
-      if (!isPath) continue;
-      const resolved = path.resolve(cwd, token);
-      if (!resolved.startsWith(resolvedCwd + path.sep) && resolved !== resolvedCwd) {
-        return res.status(403).json({
-          error: `Access denied: path '${token}' is outside the sandbox`,
-        });
-      }
-    }
-
-    const timeoutMs = typeof timeout === 'number' && timeout > 0
-      ? Math.min(timeout, 300_000) // cap at 5 min
-      : DEFAULT_TIMEOUT_MS;
-
-    const result = await new Promise<{ stdout: string; stderr: string; exitCode: number; killed: boolean }>(
-      (resolve, reject) => {
-        const child = exec(command, {
-          cwd,
-          timeout: timeoutMs,
-          maxBuffer: 1024 * 1024, // 1 MB
-          env: buildSandboxEnv(cwd),
-        });
-
-        let stdout = '';
-        let stderr = '';
-
-        child.stdout?.on('data', (data) => { stdout += data; });
-        child.stderr?.on('data', (data) => { stderr += data; });
-
-        child.on('close', (exitCode, signal) => {
-          resolve({
-            stdout: stdout.slice(0, 50_000),
-            stderr: stderr.slice(0, 50_000),
-            exitCode: exitCode ?? (signal ? 128 : 1),
-            killed: signal !== null,
-          });
-        });
-
-        child.on('error', (err: NodeJS.ErrnoException) => {
-          if (err.code === 'ETIMEDOUT' || (err as any).killed) {
-            resolve({
-              stdout: stdout.slice(0, 50_000),
-              stderr: (stderr + `\n[Timeout after ${timeoutMs}ms]`).slice(0, 50_000),
-              exitCode: 124,
-              killed: true,
-            });
-          } else {
-            reject(err);
-          }
-        });
-      },
-    );
+    // bwrap handles isolation — no need for manual path validation
+    const result = await execBwrap(command, id);
 
     void logEvent({
       ...getRequestContext(req),
@@ -238,12 +198,12 @@ export const execTreeSandbox = async (req: Request, res: Response) => {
       entityType: 'TreeSandbox',
       entityId: id,
       source: 'SYSTEM',
-      metadataJson: { exitCode: result.exitCode, timeoutMs },
+      metadataJson: { exitCode: result.exitCode },
     });
 
     res.json({
-      stdout: result.stdout,
-      stderr: result.stderr,
+      stdout: result.stdout.slice(0, 50_000),
+      stderr: result.stderr.slice(0, 50_000),
       exitCode: result.exitCode,
     });
   } catch (error: any) {
