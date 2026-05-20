@@ -605,6 +605,12 @@ export async function initTrustManagerBot(
     onStart: () => {
       console.log("[TrustHelpDeskBot] Bot iniciado en modo polling ✅");
     },
+  }).catch((err: any) => {
+    if (err?.error_code === 409) {
+      console.warn("[TrustHelpDeskBot] ⚠️ 409 Conflict — otra instancia ya hace polling. Bot deshabilitado, API REST sigue funcionando.");
+    } else {
+      console.error("[TrustHelpDeskBot] Error al iniciar:", err?.message || err);
+    }
   });
 
   return bot;
