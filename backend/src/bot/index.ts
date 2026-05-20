@@ -2079,6 +2079,13 @@ export async function createBot(prisma: PrismaClient): Promise<Bot<BotContext> |
     // ── Hermes Bridge: si está habilitado, enrutar al agente con decisión previa ──
     if (process.env.HERMES_BRIDGE_ENABLED === "true") {
       const tree = await findTreeByChat(prisma, chatId!);
+      // DEBUG: log resolved tree
+      await fsPromises.appendFile("/tmp/tm_tree_resolve.log", JSON.stringify({
+        ts: new Date().toISOString(),
+        chatId,
+        resolvedTreeId: tree?.id,
+        resolvedTreeName: tree?.name,
+      }) + "\n").catch(() => {});
       if (!tree) {
         await ctx.reply("⚠️ Este grupo no está vinculado a ningún árbol de Trust Maker.");
         return;
