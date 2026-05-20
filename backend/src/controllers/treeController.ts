@@ -683,10 +683,37 @@ export const createSubTree = async (req: any, res: Response) => {
     // ── B5: Notify parent tree via Telegram ───────────────────────────────
     if (parentTree.telegramChatId && telegramBot) {
       try {
+        const MAX_LEN = 200;
+
+        const desc = subTree.description
+          ? subTree.description.length > MAX_LEN
+            ? subTree.description.slice(0, MAX_LEN) + '...'
+            : subTree.description
+          : null;
+
+        const objectivesText = ancestorObjectives.join('\n');
+        const objs = objectivesText
+          ? objectivesText.length > MAX_LEN
+            ? objectivesText.slice(0, MAX_LEN) + '...'
+            : objectivesText
+          : null;
+
+        let message = `🌿 *Nuevo sub-árbol vinculado*\n\n`;
+        message += `*${subTree.name}* ${subTree.icono}\n`;
+        if (desc) message += `\n_${desc}_\n`;
+        if (objs) message += `\nObjetivos: ${objs}\n`;
+
         await telegramBot.api.sendMessage(
           parentTree.telegramChatId,
-          `🌿 Nuevo sub-árbol vinculado: *${subTree.name}*`,
-          { parse_mode: 'Markdown' },
+          message,
+          {
+            parse_mode: 'Markdown',
+            reply_markup: {
+              inline_keyboard: [[
+                { text: '🗑️ Desvincular', callback_data: `unlink_child:${subTree.id}` },
+              ]],
+            },
+          },
         );
       } catch (tgErr: any) {
         console.error(`[createSubTree] Telegram notify failed for parent ${parentTreeId}:`, tgErr.message);
