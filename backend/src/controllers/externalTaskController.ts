@@ -491,6 +491,31 @@ export const approveTask = async (req: Request, res: Response) => {
       }
     }
 
+    // ── Fire-and-forget webhook to Hermes Kanban ──────────────────────────────
+    // Notify the Kanban dispatcher that this ExternalTask reached APPROVED,
+    // so it can transition the linked Kanban task from running → done.
+    if (task.kanbanTaskId) {
+      const webhookUrl = `http://localhost:${process.env.PORT || 3100}/api/hooks/external-task-completed`;
+      const internalApiKey = process.env.INTERNAL_API_KEY || '';
+      fetch(webhookUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-key': internalApiKey,
+        },
+        body: JSON.stringify({
+          externalTaskId: taskId,
+          status: 'APPROVED',
+          kanbanTaskId: task.kanbanTaskId,
+          kanbanBoard: task.kanbanBoard || 'main',
+        }),
+      }).then(() => {
+        console.log(`[externalTask] Webhook sent: task ${taskId} APPROVED → Kanban ${task.kanbanTaskId}`);
+      }).catch((err: any) => {
+        console.error(`[externalTask] Webhook failed for task ${taskId}:`, err.message || err);
+      });
+    }
+
     res.json(updated);
   } catch (error: any) {
     console.error('[externalTask] approve error:', error.message || error);
@@ -535,6 +560,29 @@ export const rejectTask = async (req: Request, res: Response) => {
         ...(reason && { rejectReason: String(reason).slice(0, 2000) }),
       },
     });
+
+    // ── Fire-and-forget webhook to Hermes Kanban ──────────────────────────────
+    if (task.kanbanTaskId) {
+      const webhookUrl = `http://localhost:${process.env.PORT || 3100}/api/hooks/external-task-completed`;
+      const internalApiKey = process.env.INTERNAL_API_KEY || '';
+      fetch(webhookUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-key': internalApiKey,
+        },
+        body: JSON.stringify({
+          externalTaskId: taskId,
+          status: 'REJECTED',
+          kanbanTaskId: task.kanbanTaskId,
+          kanbanBoard: task.kanbanBoard || 'main',
+        }),
+      }).then(() => {
+        console.log(`[externalTask] Webhook sent: task ${taskId} REJECTED → Kanban ${task.kanbanTaskId}`);
+      }).catch((err: any) => {
+        console.error(`[externalTask] Webhook failed for task ${taskId}:`, err.message || err);
+      });
+    }
 
     res.json(updated);
   } catch (error: any) {
