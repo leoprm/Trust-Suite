@@ -21,6 +21,28 @@ function generateTreeCode(): string {
   return code;
 }
 
+/**
+ * Recorre parentTreeId hacia arriba y retorna la profundidad del árbol.
+ * 0 = raíz (sin parentTreeId), 1 = hijo directo, 2 = nieto, etc.
+ */
+async function getTreeDepth(treeId: string): Promise<number> {
+  let depth = 0;
+  let current = await prisma.tree.findUnique({
+    where: { id: treeId },
+    select: { parentTreeId: true },
+  });
+
+  while (current?.parentTreeId) {
+    depth++;
+    current = await prisma.tree.findUnique({
+      where: { id: current.parentTreeId },
+      select: { parentTreeId: true },
+    });
+  }
+
+  return depth;
+}
+
 // ── Tree CRUD ────────────────────────────────────────────────────────────────
 
 export const createTree = async (req: any, res: Response) => {
