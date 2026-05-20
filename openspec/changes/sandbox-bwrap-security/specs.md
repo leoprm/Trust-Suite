@@ -65,6 +65,39 @@ bwrap \
    - El acceso directo a archivos está BLOQUEADO por el sistema
 ```
 
-## Spec 3: Permisos /home/leo/ (DONE)
-- `chmod 700 /home/leo/` → trustmaker bloqueado
-- Verificado: `sudo -u trustmaker ls /home/leo/` → "Permiso denegado"
+## Spec 3: Permisos cross-user (DONE)
+
+### Objetivo
+3 usuarios con acceso escalonado: leo (admin), support (Hermes Agent support), trustmaker (Ari).
+
+### Matriz final
+| Puede leer → | `/home/leo` | `/home/support` | `/home/trustmaker` |
+|---|---|---|---|
+| **leo** | ✓ (700, owner) | ✓ (750, en grupo `support`) | ✓ (750, en grupo `trustmaker`) |
+| **support** | ✗ (700, others=0) | ✓ (750, owner) | ✓ (750, en grupo `trustmaker`) |
+| **trustmaker** | ✗ (700, others=0) | ✗ (750, solo group) | ✓ (750, owner) |
+
+### Configuración aplicada
+```bash
+# /home/leo → 700 (owner only)
+sudo chmod 700 /home/leo
+sudo chown leo:leo /home/leo
+
+# /home/support → 750 (owner=support, group=support)
+sudo chown support:support /home/support
+sudo chmod 750 /home/support
+sudo usermod -a -G support leo
+
+# /home/trustmaker → 750 (owner=trustmaker, group=trustmaker)  
+sudo chown trustmaker:trustmaker /home/trustmaker
+sudo chmod 750 /home/trustmaker
+sudo usermod -a -G trustmaker leo
+sudo usermod -a -G trustmaker support
+```
+
+### Verificación
+- `sudo -u trustmaker test -r /home/leo` → BLOCKED ✓
+- `sudo -u trustmaker test -r /home/support` → BLOCKED ✓  
+- `sudo -u support test -r /home/leo` → BLOCKED ✓
+- `sudo -u support test -r /home/trustmaker` → CAN READ ✓
+- `test -r /home/trustmaker` (leo) → CAN READ ✓
