@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { createTree, joinTree, getMyTrees, getGlobalTrees, getTreeMembers, getTree, leaveTree, inviteMember, removeMember, generateGuestToken, consumeGuestToken, updateTree, deleteTree, getNetworkGraph, getPendingEvidence, toggleCrisisMode, broadcastCrisisSignal, updateMemberPower, inviteAI, getMyLevel, getTreeLedger, createSubTree, getTreeHierarchy, suggestStructure, setBudgetAllocation, getBudgetOverview, getSkillPricing, getMigrationSuggestions, getTechStack, getTreeServers, changeInteractionMode } from '../controllers/treeController';
+import { createTree, joinTree, getMyTrees, getGlobalTrees, getTreeMembers, getTree, leaveTree, inviteMember, removeMember, generateGuestToken, consumeGuestToken, updateTree, deleteTree, getNetworkGraph, getPendingEvidence, toggleCrisisMode, broadcastCrisisSignal, updateMemberPower, inviteAI, getMyLevel, getTreeLedger, createSubTree, getTreeHierarchy, suggestStructure, setBudgetAllocation, getBudgetOverview, getSkillPricing, getMigrationSuggestions, getTechStack, getTreeServers, changeInteractionMode, unlinkChildTree } from '../controllers/treeController';
 import { upsertInvestmentProfileHandler, getInvestmentProfileHandler } from '../controllers/investmentController';
 import { authenticateJWT, optionalAuth } from '../middleware/authMiddleware';
 
@@ -31,6 +31,7 @@ router.get('/:id/my-level', getMyLevel);
 router.get('/:id/pending-evidence', getPendingEvidence);
 router.post('/:id/invite', inviteMember);
 router.post('/:treeId/subtree', createSubTree);
+router.post('/:treeId/unlink-child', unlinkChildTree);
 router.put('/:treeId/budget-allocation', setBudgetAllocation);
 router.post('/:id/guest-token', generateGuestToken);
 router.post('/:id/crisis', toggleCrisisMode);

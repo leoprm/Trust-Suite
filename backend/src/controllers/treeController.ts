@@ -738,6 +738,86 @@ export const createSubTree = async (req: any, res: Response) => {
   }
 };
 
+export const unlinkChildTree = async (req: any, res: Response) => {
+  try {
+    const parentTreeId = req.params.treeId;
+    const { childTreeId } = req.body;
+    const userId = req.user!.id;
+
+    // 1. Validar body
+    if (!childTreeId || typeof childTreeId !== 'string') {
+      return res.status(400).json({ error: 'childTreeId (string) is required' });
+    }
+
+    // 2. Verificar árbol padre existe
+    const parentTree = await prisma.tree.findUnique({ where: { id: parentTreeId } });
+    if (!parentTree) return res.status(404).json({ error: 'Parent tree not found' });
+
+    // 3. Verificar user es admin del padre
+    const isAdmin = await prisma.treeMember.findFirst({
+      where: { treeId: parentTreeId, userId, role: 'ADMIN' },
+    });
+    if (!isAdmin) return res.status(403).json({ error: 'Must be admin of parent tree' });
+
+    // 4. Verificar childTreeId es hijo del padre
+    const childTree = await prisma.tree.findFirst({
+      where: { id: childTreeId, parentTreeId },
+    });
+    if (!childTree) {
+      return res.status(404).json({ error: 'Child tree not found or is not a child of this parent' });
+    }
+
+    // 5. Quitar parentTreeId del hijo (lo convierte en árbol raíz independiente)
+    await prisma.tree.update({
+      where: { id: childTreeId },
+      data: { parentTreeId: null },
+    });
+
+    // 6. Notificar a ambos grupos si tienen telegramChatId
+    if (childTree.telegramChatId && telegramBot) {
+      try {
+        await telegramBot.api.sendMessage(
+          childTree.telegramChatId,
+          `Tu árbol ha sido desvinculado de *${parentTree.name}*.`,
+          { parse_mode: 'Markdown' },
+        );
+      } catch (tgErr: any) {
+        console.error(`[unlinkChildTree] Telegram notify failed for child ${childTreeId}:`, tgErr.message);
+      }
+    }
+
+    if (parentTree.telegramChatId && telegramBot) {
+      try {
+        await telegramBot.api.sendMessage(
+          parentTree.telegramChatId,
+          `✅ *${childTree.name}* ha sido desvinculado.`,
+          { parse_mode: 'Markdown' },
+        );
+      } catch (tgErr: any) {
+        console.error(`[unlinkChildTree] Telegram notify failed for parent ${parentTreeId}:`, tgErr.message);
+      }
+    }
+
+    // 7. Log del evento
+    void logEvent({
+      ...getRequestContext(req),
+      treeId: parentTreeId,
+      action: 'CHILD_UNLINKED',
+      entityType: 'Tree',
+      entityId: childTreeId,
+      afterJson: { parentTreeId: null, childTreeId, childName: childTree.name },
+      metadataJson: getRequestMetadata(req, { parentTreeId, childTreeId, result: 'success' }),
+      source: 'USER',
+    });
+
+    // 8. Responder
+    res.json({ message: 'Child tree unlinked successfully', childTreeId, parentTreeId });
+  } catch (error: any) {
+    console.error('[unlinkChildTree] ERROR:', error?.message || error);
+    res.status(500).json({ error: 'Failed to unlink child tree', detail: error?.message || String(error) });
+  }
+};
+
 export const getTreeHierarchy = async (req: any, res: Response) => {
   try {
     const treeId = req.params.id;
