@@ -25,7 +25,7 @@ Ambos perfiles son necesarios y coexisten. El dispatcher debe reconocer `branch-
 Cada árbol que **no es subárbol** (raíz o independiente) tiene un cron mensual:
 
 ```
-Cron: 0 9 1 * * (día 1 de cada mes, 9 AM)
+Cron: 0 9 1-7 * 1 (primer lunes de cada mes, 9 AM)
 Job: generate-monthly-report
 ```
 
@@ -45,6 +45,12 @@ Job: generate-monthly-report
    - La tarea llega vía `_dispatch_to_trustmaker()` → notifica al humano por Telegram
    - El humano entrega su informe (mecanismo a definir: ¿responder al bot? ¿formulario?)
 8. Espera a que todos los `human-worker` completen
+
+**Plazo de 24 horas para human-worker:**
+Cada tarea `human-worker` tiene un deadline de 24h desde su creación. Si el humano no completa su informe en ese plazo:
+- La Ari cancela la tarea (o la completa con `metadata: {status: "missed"}`)
+- En el informe unificado, esa persona aparece como **"Fulanito: informe no entregado"**
+- La Ari NO espera indefinidamente — tras 24h, sigue con los informes que tenga
 
 **Fase 3 — Agregación (Ari):**
 9. Con TODOS los informes reunidos (hijos + personas internas) en el vault, Ari genera el informe unificado
