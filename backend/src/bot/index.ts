@@ -1466,7 +1466,8 @@ export async function createBot(prisma: PrismaClient): Promise<Bot<BotContext> |
         ctx.chat?.id, msg.message_id,
       );
       if (response && !response.saturationMessage && !response.queued) {
-        await sendTelegramMessage(ctx, response.text, tree.id);
+        // Send WITHOUT Markdown — media responses may contain paths/characters that break parse_mode
+        await ctx.reply(response.text).catch(() => {});
       }
     } catch (err: any) {
       await fsPromises.appendFile("/tmp/tm_media_errors.log",
