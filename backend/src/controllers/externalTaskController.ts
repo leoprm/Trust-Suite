@@ -27,7 +27,7 @@ async function requireTreeMembership(userId: string, treeId: string, res: Respon
 // ═══════════════════════════════════════════════════════════════════════════════
 export const createExternalTask = async (req: Request, res: Response) => {
   try {
-    const { treeId, title, description, skills, location, locationType, type, budget, currency, kanbanTaskId, kanbanBoard } = req.body;
+    const { treeId, title, description, skills, location, locationType, type, budget, currency, kanbanTaskId, kanbanBoard, assignedUserId } = req.body;
     const userId = req.user?.id;
 
     if (!userId) {
@@ -50,6 +50,17 @@ export const createExternalTask = async (req: Request, res: Response) => {
     const tree = await prisma.tree.findUnique({ where: { id: treeId } });
     if (!tree) {
       return res.status(404).json({ error: 'Tree not found' });
+    }
+
+    // Validate assignedUserId (if provided) is an active member of the tree
+    if (assignedUserId) {
+      const assignedMember = await prisma.treeMember.findUnique({
+        where: { userId_treeId: { userId: assignedUserId, treeId } },
+        select: { status: true },
+      });
+      if (!assignedMember || assignedMember.status !== 'ACTIVE') {
+        return res.status(400).json({ error: 'Assigned user is not a member of this tree' });
+      }
     }
 
     // Verify user is member (SYSTEM role bypasses — used by Kanban dispatcher)
@@ -106,6 +117,7 @@ export const createExternalTask = async (req: Request, res: Response) => {
         budget: Math.round(budget),
         currency: currency || 'CLP',
         status: 'OPEN',
+        workerId: assignedUserId || null,
         ...(kanbanTaskId && { kanbanTaskId }),
         ...(kanbanBoard && { kanbanBoard }),
       },
