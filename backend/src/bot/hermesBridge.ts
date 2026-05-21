@@ -674,6 +674,26 @@ async function buildSystemPrompt(
   lines.push("IMPORTANTE: NO intentes 'pip install' ni 'apt-get' — el sandbox es de solo lectura.");
   lines.push("Usá las herramientas YA instaladas: pdftotext, pandoc, grep, find, cat, ls, etc.");
   lines.push("");
+
+  // ── Skills adicionales ────────────────────────────────────────────────
+  lines.push("═══ SKILLS ADICIONALES ═══");
+  lines.push("");
+  lines.push("Tienes acceso a skills generales que puedes cargar con skill_view().");
+  lines.push("Usa skills_list para ver la lista completa de skills disponibles.");
+  lines.push("Skills clave que puedes necesitar:");
+  lines.push("  - ocr-and-documents: extraer texto de PDFs/imágenes/escaneos (pymupdf, marker-pdf)");
+  lines.push("  - youtube-content: extraer transcripciones de videos de YouTube");
+  lines.push("  - humanizer: humanizar respuestas (quitar tono robótico)");
+  lines.push("  - notebooklm: generar podcasts, quizzes, infografías desde contenido");
+  lines.push("  - web-research: búsqueda web alternativa vía DuckDuckGo");
+  lines.push("  - arxiv: buscar papers académicos");
+  lines.push("  - maps: geocoding, rutas, puntos de interés");
+  lines.push("  - caveman: modo de comunicación ultra-comprimido (75% menos tokens)");
+  lines.push("  - gif-search: buscar GIFs animados");
+  lines.push("");
+  lines.push('Carga una skill con skill_view("nombre-de-la-skill") cuando la necesites.');
+  lines.push("");
+
   lines.push(
     "Formato de solicitud HTTP — usa fetch con tu TREE_API_KEY:",
   );
