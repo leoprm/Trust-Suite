@@ -632,6 +632,229 @@ print(json.dumps({"ok": True, "size": __import__('os').path.getsize(output_path)
   }
 };
 
+// ── Unified diff helper ───────────────────────────────────────────────────
+
+function computeUnifiedDiff(
+  oldContent: string,
+  newContent: string,
+  filePath: string,
+): string {
+  const oldLines = oldContent.split('\n');
+  const newLines = newContent.split('\n');
+
+  // Find first changed line
+  let start = 0;
+  while (
+    start < oldLines.length &&
+    start < newLines.length &&
+    oldLines[start] === newLines[start]
+  ) {
+    start++;
+  }
+
+  // Find last changed line from the end
+  let endOld = oldLines.length - 1;
+  let endNew = newLines.length - 1;
+  while (endOld >= start && endNew >= start && oldLines[endOld] === newLines[endNew]) {
+    endOld--;
+    endNew--;
+  }
+
+  const oldHunkLen = Math.max(endOld - start + 1, 0);
+  const newHunkLen = Math.max(endNew - start + 1, 0);
+
+  const lines: string[] = [];
+  lines.push(`--- a/${filePath}`);
+  lines.push(`+++ b/${filePath}`);
+  lines.push(`@@ -${start + 1},${oldHunkLen} +${start + 1},${newHunkLen} @@`);
+
+  for (let i = start; i <= endOld; i++) {
+    lines.push(`-${oldLines[i]}`);
+  }
+  for (let i = start; i <= endNew; i++) {
+    lines.push(`+${newLines[i]}`);
+  }
+
+  return lines.join('\n');
+}
+
+// ── POST /api/trees/:id/sandbox/search ────────────────────────────────────
+// Body: { pattern: string, file_glob?: string, path?: string }
+// Searches files in the sandbox using grep -rn inside bwrap.
+// Max 100 KB output. Returns: { matches: [{ file, line, content }] }
+
+export const searchTreeSandbox = async (req: Request, res: Response) => {
+  if (!checkApiKey(req, res)) return;
+
+  try {
+    const id = req.params.id as string;
+    const { pattern, file_glob, path: subPath } = req.body;
+
+    if (!pattern || typeof pattern !== 'string' || pattern.trim().length === 0) {
+      return res.status(400).json({ error: 'pattern is required (non-empty regex string)' });
+    }
+
+    const sb = await TreeSandbox.get(id);
+    if (!sb) {
+      return res.status(404).json({ error: 'Sandbox not found for this tree' });
+    }
+
+    // Validate subPath if provided
+    let searchDir = '.';
+    if (subPath && typeof subPath === 'string' && subPath.length > 0) {
+      const safePath = resolveSafePath(sb.workspacePath, subPath);
+      if (!safePath) {
+        return res.status(403).json({ error: 'Path escapes sandbox' });
+      }
+      searchDir = subPath;
+    }
+
+    // Validate file_glob: no path separators, no shell metacharacters beyond *
+    let includeFlag = '';
+    if (file_glob && typeof file_glob === 'string' && file_glob.trim().length > 0) {
+      if (file_glob.includes('/') || file_glob.includes('..')) {
+        return res.status(400).json({ error: 'file_glob may not contain path separators' });
+      }
+      includeFlag = `--include='${file_glob.replace(/'/g, "'\\''")}'`;
+    }
+
+    // Escape single quotes in pattern for shell
+    const escapedPattern = pattern.replace(/'/g, "'\\''");
+    const grepCmd = `grep -rn ${includeFlag} '${escapedPattern}' ${searchDir} 2>/dev/null || true`;
+
+    const result = await execBwrap(grepCmd, id, sb.workspacePath);
+
+    const MAX_OUTPUT = 100_000; // 100 KB
+
+    if (result.exitCode > 1) {
+      // exitCode 0 = matches found, 1 = no matches (|| true normalizes to 0)
+      // exitCode > 1 = grep error
+      console.error('[searchTreeSandbox] grep error:', result.stderr);
+      return res.status(500).json({
+        error: 'Search failed',
+        detail: result.stderr.slice(0, 500),
+      });
+    }
+
+    const output = result.stdout.slice(0, MAX_OUTPUT);
+    const matches: Array<{ file: string; line: number; content: string }> = [];
+
+    // Parse grep -rn output: file:line:content
+    const grepRe = /^([^:]+):(\d+):(.*)$/;
+    for (const raw of output.split('\n')) {
+      const trimmed = raw.trim();
+      if (!trimmed) continue;
+      const m = trimmed.match(grepRe);
+      if (m) {
+        matches.push({
+          file: m[1],
+          line: parseInt(m[2], 10),
+          content: m[3],
+        });
+      }
+    }
+
+    void logEvent({
+      ...getRequestContext(req),
+      treeId: id,
+      action: 'SANDBOX_SEARCH',
+      entityType: 'TreeSandbox',
+      entityId: id,
+      source: 'SYSTEM',
+      metadataJson: { pattern: pattern.trim(), matchCount: matches.length },
+    });
+
+    res.json({ matches });
+  } catch (error: any) {
+    console.error('[searchTreeSandbox] ERROR:', error?.message || error);
+    res.status(500).json({ error: 'Search failed', detail: error?.message });
+  }
+};
+
+// ── POST /api/trees/:id/sandbox/patch ─────────────────────────────────────
+// Body: { path: string, old_string: string, new_string: string }
+// Replaces old_string with new_string inside a sandbox file.
+// Max 500 KB file size. Returns: { diff: string, success: true }
+
+export const patchTreeSandbox = async (req: Request, res: Response) => {
+  if (!checkApiKey(req, res)) return;
+
+  try {
+    const id = req.params.id as string;
+    const { path: requestedPath, old_string, new_string } = req.body;
+
+    if (!requestedPath || typeof requestedPath !== 'string') {
+      return res.status(400).json({ error: 'path is required (string)' });
+    }
+    if (old_string === undefined || old_string === null || typeof old_string !== 'string') {
+      return res.status(400).json({ error: 'old_string is required (string)' });
+    }
+    if (new_string === undefined || new_string === null || typeof new_string !== 'string') {
+      return res.status(400).json({ error: 'new_string is required (string)' });
+    }
+
+    const sb = await TreeSandbox.get(id);
+    if (!sb) {
+      return res.status(404).json({ error: 'Sandbox not found for this tree' });
+    }
+
+    const safePath = resolveSafePath(sb.workspacePath, requestedPath);
+    if (!safePath) {
+      return res.status(403).json({ error: 'Path escapes sandbox' });
+    }
+
+    if (!fs.existsSync(safePath)) {
+      return res.status(404).json({ error: 'File not found', path: requestedPath });
+    }
+
+    const stat = fs.statSync(safePath);
+    if (!stat.isFile()) {
+      return res.status(400).json({ error: 'Path is not a file' });
+    }
+
+    const MAX_PATCH_SIZE = 500_000; // 500 KB
+    if (stat.size > MAX_PATCH_SIZE) {
+      return res.status(413).json({ error: 'File too large (max 500 KB)', size: stat.size });
+    }
+
+    const oldContent = fs.readFileSync(safePath, 'utf-8');
+
+    // Check old_string is present (unique occurrence)
+    const idx = oldContent.indexOf(old_string);
+    if (idx === -1) {
+      return res.status(400).json({ error: 'old_string not found in file' });
+    }
+    if (oldContent.indexOf(old_string, idx + 1) !== -1) {
+      return res.status(400).json({
+        error: 'old_string is not unique in the file (found multiple occurrences). Provide more surrounding context to make it unique.',
+      });
+    }
+
+    const newContent = oldContent.slice(0, idx) + new_string + oldContent.slice(idx + old_string.length);
+
+    // Compute diff
+    const diff = computeUnifiedDiff(oldContent, newContent, requestedPath);
+
+    // Write new content
+    fs.writeFileSync(safePath, newContent, 'utf-8');
+
+    void logEvent({
+      ...getRequestContext(req),
+      treeId: id,
+      action: 'SANDBOX_PATCH',
+      entityType: 'TreeSandbox',
+      entityId: id,
+      source: 'SYSTEM',
+      metadataJson: { path: requestedPath, diffLines: diff.split('\n').length },
+    });
+
+    res.json({ diff, success: true });
+  } catch (error: any) {
+    console.error('[patchTreeSandbox] ERROR:', error?.message || error);
+    res.status(500).json({ error: 'Patch failed', detail: error?.message });
+  }
+};
+
 // ── POST /api/trees/:id/sandbox/save-skill ─────────────────────────────────
 // Body: { userId: string, skill: string, xp?: number, level?: number }
 // Saves or updates a TreeSkill record for a user in a tree.
