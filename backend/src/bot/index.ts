@@ -1432,7 +1432,7 @@ export async function createBot(prisma: PrismaClient): Promise<Bot<BotContext> |
         return;
       }
 
-      const url = `https://api.telegram.org/file/bot${process.env.BOT_TOKEN}/${filePath}`;
+      const url = `https://api.telegram.org/file/bot${process.env.TELEGRAM_BOT_TOKEN}/${filePath}`;
       const resp = await fetch(url);
       if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
       const buffer = Buffer.from(await resp.arrayBuffer());
