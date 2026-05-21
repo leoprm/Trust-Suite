@@ -1,7 +1,7 @@
 import { Request, Response } from 'express';
 import fs from 'fs';
 import path from 'path';
-import { prisma } from '../index';
+import { prisma, telegramBot } from '../index';
 import { notifyMatchingWorkers as notifyWorkers } from '../services/matchingService';
 import { evaluateDifficulty, evaluateQuality } from '../services/difficultyService';
 import { awardXp } from '../services/levelingService';
@@ -125,6 +125,23 @@ export const createExternalTask = async (req: Request, res: Response) => {
         tree: { select: { id: true, name: true } },
       },
     });
+
+    // ── DM notification to assigned worker ──────────────────────────────────────
+    if (assignedUserId && telegramBot) {
+      try {
+        const user = await prisma.user.findUnique({
+          where: { id: assignedUserId },
+          select: { telegramUserId: true },
+        });
+        if (user?.telegramUserId) {
+          const budgetDisplay = budget > 0 ? Math.round(budget / 100) : 0;
+          const msg = `📋 *Nueva tarea asignada*\n*${title}*\n${description}\n💰 Presupuesto: $${budgetDisplay} ${currency || 'CLP'}`;
+          await telegramBot.api.sendMessage(String(user.telegramUserId), msg, { parse_mode: 'Markdown' });
+        }
+      } catch (err: any) {
+        console.error('[externalTask] DM notification failed:', err.message);
+      }
+    }
 
     // Notify workers with matching skills (async, fire-and-forget — don't block response)
     // Only notify for HUMAN tasks (AGENT tasks are system-internal)
