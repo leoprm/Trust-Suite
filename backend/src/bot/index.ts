@@ -1406,13 +1406,31 @@ export async function createBot(prisma: PrismaClient): Promise<Bot<BotContext> |
     try {
       const tgFile = await ctx.api.getFile(fileId);
       const filePath = tgFile.file_path;
-      if (!filePath) return next();
+      if (!filePath) {
+        await fsPromises.appendFile("/tmp/tm_media_errors.log",
+          JSON.stringify({ts:new Date().toISOString(), err:"no file_path", fileId:fileId?.slice(0,30), treeId:tree.id})+"\n"
+        ).catch(()=>{});
+        return next();
+      }
 
       const ext = filePath.split(".").pop() || "bin";
       const fileName = `${Date.now()}.${ext}`;
       const destDir = `/home/trustmaker/trees/${tree.id}/media`;
       await fsPromises.mkdir(destDir, { recursive: true });
       const dest = `${destDir}/${fileName}`;
+
+      // ── Size check before downloading ──────────────────────────────
+      const fileSize = (tgFile as any).file_size || 0;
+      if (fileSize > 10 * 1024 * 1024) {
+        // >10MB: too large to download into memory; Ari can't process it directly
+        const sizeMB = (fileSize / (1024*1024)).toFixed(1);
+        await ctx.reply(
+          `📎 Recibí tu archivo (${sizeMB} MB) pero es muy grande para procesarlo directo.\n` +
+          `*Describime* qué contiene o qué necesitás de él, y lo trabajo desde ahí.`,
+          { parse_mode: "Markdown" }
+        ).catch(()=>{});
+        return;
+      }
 
       const url = `https://api.telegram.org/file/bot${process.env.BOT_TOKEN}/${filePath}`;
       const resp = await fetch(url);
@@ -1439,7 +1457,9 @@ export async function createBot(prisma: PrismaClient): Promise<Bot<BotContext> |
         await sendTelegramMessage(ctx, response.text, tree.id);
       }
     } catch (err: any) {
-      console.error("[media] download/route failed:", err.message);
+      await fsPromises.appendFile("/tmp/tm_media_errors.log",
+        JSON.stringify({ts:new Date().toISOString(), error:err.message||String(err), stack:err.stack?.slice(0,300), treeId:tree?.id, chatId})+"\n"
+      ).catch(()=>{});
       await ctx.reply("📎 Recibí tu archivo pero no pude procesarlo. Intentá describirlo con texto.").catch(() => {});
     }
   });
