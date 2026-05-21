@@ -1,9 +1,7 @@
 import { Request, Response } from 'express';
-import { exec } from 'child_process';
+import { exec, spawn } from 'child_process';
 import { promisify } from 'util';
 import fs from 'fs';
-
-const execAsync = promisify(exec);
 import path from 'path';
 import crypto from 'crypto';
 import https from 'https';
@@ -13,7 +11,11 @@ import TurndownService from 'turndown';
 import { JSDOM } from 'jsdom';
 import { TreeSandbox } from '../services/treeSandbox';
 import { logEvent, getRequestContext } from '../services/eventLogService';
+import { checkQuotaAfterOp, getQuotaInfo } from '../services/sandboxQuota';
+import { telegramBot } from '../index';
 import { prisma } from '../index';
+
+const execAsync = promisify(exec);
 
 const API_SERVER_KEY = process.env.HERMES_API_SERVER_KEY ?? '';
 const DEFAULT_TIMEOUT_MS = 30_000;
@@ -108,6 +110,12 @@ export const uploadTreeSandbox = async (req: Request, res: Response) => {
     fs.mkdirSync(dir, { recursive: true });
     fs.writeFileSync(safePath, req.file.buffer);
 
+    // ── Quota check after upload ──────────────────────────────────────
+    // Non-blocking for upload (too late to reject), but alert on thresholds.
+    checkQuotaAfterOp(sb.workspacePath, id).catch(err =>
+      console.error('[uploadTreeSandbox] Quota check error:', err.message),
+    );
+
     void logEvent({
       ...getRequestContext(req),
       treeId: id,
@@ -137,36 +145,39 @@ async function execBwrap(
   // between creation and execution, the DB record is still correct.
   const sandboxPath = workspacePath;
 
-  const bwrapCmd = [
-    'bwrap',
-    '--ro-bind', '/usr', '/usr',
-    '--ro-bind', '/lib', '/lib',
-    '--ro-bind', '/lib64', '/lib64',
-    '--ro-bind', '/bin', '/bin',
-    '--ro-bind', '/etc/alternatives', '/etc/alternatives',
-    '--bind', sandboxPath, '/sandbox',
-    '--proc', '/proc',
-    '--dev', '/dev',
-    '--unshare-pid',
-    '--unshare-ipc',
-    '--die-with-parent',
-    '/bin/bash', '-c', `cd /sandbox && ${command}`,
-  ].join(' ');
+  const bashScript = `cd /sandbox && ${command}`;
 
-  try {
-    const { stdout, stderr } = await execAsync(bwrapCmd, { timeout: 30_000 });
-    return { stdout, stderr, exitCode: 0 };
-  } catch (err: any) {
-    const exitCode =
-      err.code === 'ETIMEDOUT' ? 124 : err.code ?? 1;
-    return {
-      stdout: '',
-      stderr: err.killed
-        ? (err.stderr || '') + `\n[Timeout after 30s]`
-        : err.stderr || err.message,
-      exitCode,
-    };
-  }
+  return new Promise((resolve) => {
+    const child = spawn('bwrap', [
+      '--ro-bind', '/usr', '/usr',
+      '--ro-bind', '/lib', '/lib',
+      '--ro-bind', '/lib64', '/lib64',
+      '--ro-bind', '/bin', '/bin',
+      '--ro-bind', '/etc/alternatives', '/etc/alternatives',
+      '--bind', sandboxPath, '/sandbox',
+      '--proc', '/proc',
+      '--dev', '/dev',
+      '--unshare-pid',
+      '--unshare-ipc',
+      '--die-with-parent',
+      '/bin/bash', '-c', bashScript,
+    ], { timeout: DEFAULT_TIMEOUT_MS });
+
+    let stdout = '';
+    let stderr = '';
+
+    child.stdout!.on('data', (data: Buffer) => { stdout += data.toString(); });
+    child.stderr!.on('data', (data: Buffer) => { stderr += data.toString(); });
+
+    child.on('error', (err: Error) => {
+      resolve({ stdout: '', stderr: err.message, exitCode: 1 });
+    });
+
+    child.on('close', (code: number | null) => {
+      // Treat SIGTERM/signal kills as exit code 1
+      resolve({ stdout, stderr, exitCode: code ?? 1 });
+    });
+  });
 }
 
 // ── POST /api/trees/:id/sandbox/exec ────────────────────────────────────────
@@ -192,6 +203,12 @@ export const execTreeSandbox = async (req: Request, res: Response) => {
 
     // bwrap handles isolation — pass workspacePath from DB as single source of truth
     const result = await execBwrap(command, id, sb.workspacePath);
+
+    // ── Quota check after exec ──────────────────────────────────────────
+    // Non-blocking: exec always succeeds, but alert if a threshold was crossed.
+    checkQuotaAfterOp(sb.workspacePath, id).catch(err =>
+      console.error('[execTreeSandbox] Quota check error:', err.message),
+    );
 
     void logEvent({
       ...getRequestContext(req),
@@ -416,6 +433,20 @@ export const writeTreeSandbox = async (req: Request, res: Response) => {
     }
 
     fs.writeFileSync(safePath, finalContent, 'utf-8');
+
+    // ── Quota check after write ─────────────────────────────────────────
+    // Alerts at every 10% threshold (100MB steps).
+    // Blocks writes when ≥1GB (413).
+    const quota = await checkQuotaAfterOp(sb.workspacePath, id);
+    if (quota.exceeded) {
+      const info = await getQuotaInfo(sb.workspacePath);
+      return res.status(413).json({
+        error: 'Sandbox disk quota exceeded (1 GB). Delete files to free space.',
+        usedBytes: info.usedBytes,
+        limitBytes: info.limitBytes,
+        usedMB: info.usedMB,
+      });
+    }
 
     void logEvent({
       ...getRequestContext(req),
@@ -1363,5 +1394,30 @@ export const memoryTreeSandbox = async (req: Request, res: Response) => {
   } catch (error: any) {
     console.error('[memoryTreeSandbox] ERROR:', error?.message || error);
     res.status(500).json({ error: 'Memory operation failed', detail: error?.message });
+  }
+};
+
+// ── GET /api/trees/:id/sandbox/quota ────────────────────────────────────────
+// Returns disk usage info for the sandbox workspace.
+// No side effects — does NOT fire alerts (read-only query).
+// Requires API key.
+
+export const quotaTreeSandbox = async (req: Request, res: Response) => {
+  if (!checkApiKey(req, res)) return;
+
+  try {
+    const id = req.params.id as string;
+
+    const sb = await TreeSandbox.get(id);
+    if (!sb) {
+      return res.status(404).json({ error: 'Sandbox not found for this tree' });
+    }
+
+    const info = await getQuotaInfo(sb.workspacePath);
+
+    res.json(info);
+  } catch (error: any) {
+    console.error('[quotaTreeSandbox] ERROR:', error?.message || error);
+    res.status(500).json({ error: 'Quota check failed', detail: error?.message });
   }
 };

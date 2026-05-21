@@ -29,6 +29,7 @@ import {
   tmCall,
   searchTreeSandbox,
   patchTreeSandbox,
+  quotaTreeSandbox,
 } from '../controllers/treeSandboxController';
 import { authenticateJWT } from '../middleware/authMiddleware';
 
@@ -58,6 +59,9 @@ router.post('/:id/sandbox/web-extract', webExtractTreeSandbox);
 router.post('/:id/sandbox/memory', memoryTreeSandbox);
 router.post('/:id/sandbox/search', searchTreeSandbox);
 router.post('/:id/sandbox/patch', patchTreeSandbox);
+
+// ── Quota endpoint (API Key-protected) ────────────────────────────────────────
+router.get('/:id/sandbox/quota', quotaTreeSandbox);
 
 // ── NotebookLM endpoints (API Key-protected, same as sandbox ops) ──────────────
 router.post('/:id/notebooklm/ask', notebooklmAsk);

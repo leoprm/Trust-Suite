@@ -614,7 +614,7 @@ async function buildSystemPrompt(
   lines.push("");
   lines.push("═══ TUS HERRAMIENTAS REALES ═══");
   lines.push("");
-  lines.push("Tus ÚNICAS herramientas nativas son estas 7. No tienes ninguna otra:");
+  lines.push("Tus ÚNICAS herramientas nativas son estas 9. No tienes ninguna otra:");
   lines.push("");
   lines.push("1. skill_view     — Leer skills disponibles (procedimientos guardados)");
   lines.push("2. skill_manage   — Crear/actualizar/eliminar skills");
@@ -623,16 +623,20 @@ async function buildSystemPrompt(
   lines.push("5. web_extract    — Extraer contenido de URLs (páginas, PDFs)");
   lines.push("6. session_search — Buscar en tu historial de conversaciones");
   lines.push("7. execute_code   — Ejecutar código Python (incluye fetch() para llamar APIs REST)");
+  lines.push("8. terminal       — Ejecutar comandos shell DENTRO del sandbox del árbol");
+  lines.push("9. file           — Leer/escribir/buscar/editar archivos (read_file, write_file, search_files, patch) DENTRO del sandbox");
   lines.push("");
-  lines.push("NO TIENES estas herramientas y NUNCA debes afirmar que las tienes:");
-  lines.push("  ❌ terminal / shell / bash    ❌ file / write_file / read_file");
-  lines.push("  ❌ memory");
+  lines.push("TIENES terminal y file, PERO operan EXCLUSIVAMENTE dentro del sandbox del árbol:");
+  lines.push(`  ✅ terminal() ejecuta en /home/trustmaker/trees/${treeId}/ con sandbox isolation`);
+  lines.push("  ✅ read_file/write_file/search_files/patch operan sobre el sandbox del árbol");
+  lines.push("  ❌ NUNCA uses paths fuera del sandbox (/home/leo/, /etc/, /tmp/, etc.)");
+  lines.push("  ❌ NO TIENES: memory (no puedes guardar recuerdos persistentes entre sesiones)");
   lines.push("");
-  lines.push("═══ ACCESO AL SANDBOX (vía API REST) ═══");
+  lines.push("═══ ACCESO AL SANDBOX (vía API REST — alternativo) ═══");
   lines.push("");
   lines.push(`Tu Tree ID es: ${treeId}`);
-  lines.push("No tienes acceso directo al filesystem. Para leer/escribir archivos");
-  lines.push("o ejecutar comandos en tu sandbox, usa estos endpoints REST:");
+  lines.push("Tu acceso principal es vía terminal() y file tools (ver sección anterior).");
+  lines.push("Como alternativa vía execute_code+fetch(), puedes usar estos endpoints REST:");
   lines.push("");
   lines.push("1. EJECUTAR COMANDOS EN EL SANDBOX:");
   lines.push(`   POST /api/trees/${treeId}/sandbox/exec`);
@@ -715,16 +719,16 @@ async function buildSystemPrompt(
   lines.push("");
   lines.push("⚠️  REGLAS DEL SANDBOX:");
   lines.push(
-    "- NUNCA afirmes que puedes leer/escribir archivos directamente. Solo puedes hacerlo vía API REST.",
+    "- Puedes leer/escribir archivos directamente con terminal() y file tools, PERO solo dentro del sandbox del árbol.",
   );
   lines.push(
-    "- El sandbox está en /home/trustmaker/trees/ y solo accedes vía API.",
+    `- El sandbox está en /home/trustmaker/trees/${treeId}/ y es tu único directorio de trabajo.`,
   );
   lines.push(
-    "- Las rutas en la API son relativas a la raíz del sandbox del árbol.",
+    "- Como alternativa, puedes usar la API REST vía execute_code+fetch().",
   );
   lines.push(
-    "- Si la API no responde, informa al usuario. NO finjas que creaste o leíste un archivo.",
+    "- Si una operación falla, informa al usuario. NO finjas que creaste o leíste un archivo.",
   );
 
   // ── Security restrictions ─────────────────────────────────────────────

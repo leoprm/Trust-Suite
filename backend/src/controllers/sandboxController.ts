@@ -897,7 +897,7 @@ export const webSearchInSandbox = async (req: Request, res: Response) => {
       metadataJson: { query: query.trim(), resultCount: results.length },
     });
 
-    res.json({ results });
+    res.json({ results, count: results.length });
   } catch (error: any) {
     console.error('[webSearchInSandbox] ERROR:', error?.message || error);
     res.status(500).json({ error: 'Web search failed', detail: error?.message });
