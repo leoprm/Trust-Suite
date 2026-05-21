@@ -1432,10 +1432,22 @@ export async function createBot(prisma: PrismaClient): Promise<Bot<BotContext> |
         return;
       }
 
+      // ── Download via https (NOT fetch — IPv6 broken on Node v22 to api.telegram.org) ──
       const url = `https://api.telegram.org/file/bot${process.env.TELEGRAM_BOT_TOKEN}/${filePath}`;
-      const resp = await fetch(url);
-      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-      const buffer = Buffer.from(await resp.arrayBuffer());
+      const buffer = await new Promise<Buffer>((resolve, reject) => {
+        const req = https.get(url, (res) => {
+          if (res.statusCode && res.statusCode >= 400) {
+            reject(new Error(`HTTP ${res.statusCode}`));
+            return;
+          }
+          const chunks: Buffer[] = [];
+          res.on("data", (chunk: Buffer) => chunks.push(chunk));
+          res.on("end", () => resolve(Buffer.concat(chunks)));
+          res.on("error", reject);
+        });
+        req.on("error", reject);
+        req.setTimeout(30_000, () => { req.destroy(); reject(new Error("Request timeout")); });
+      });
       await fsPromises.writeFile(dest, buffer);
 
       const mediaType = photo ? "foto" : document ? "documento" : voice ? "nota de voz" : video ? "video" : "audio";
