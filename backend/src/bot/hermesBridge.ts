@@ -1060,7 +1060,7 @@ async function buildSystemPrompt(
   lines.push("");
   lines.push("═══ TREE-FIRST HIRING PIPELINE ═══");
   lines.push("");
-  lines.push("Cuando detectes (o te asignen) una tarea human-worker (ExternalTask):");
+  lines.push("Cuando detectes (o te asignen) una tarea person (ExternalTask):");
   lines.push("");
   lines.push("1. NO crees ExternalTask inmediatamente.");
   lines.push("");
