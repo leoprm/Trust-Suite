@@ -1375,6 +1375,75 @@ export async function createBot(prisma: PrismaClient): Promise<Bot<BotContext> |
     return next();
   });
 
+  // ── Media attachment handler ─────────────────────────────────────────
+  bot.on("message", async (ctx, next) => {
+    const msg = ctx.message;
+    if (!msg || !("chat" in msg)) return next();
+
+    const hasText = !!(msg as any).text || !!(msg as any).caption;
+    if (hasText) return next();
+
+    const photo = (msg as any).photo;
+    const document = (msg as any).document;
+    const voice = (msg as any).voice;
+    const video = (msg as any).video || (msg as any).video_note;
+    const audio = (msg as any).audio;
+    if (!photo && !document && !voice && !video && !audio) return next();
+
+    if (process.env.HERMES_BRIDGE_ENABLED !== "true") return next();
+
+    const chatId = msg.chat?.id?.toString();
+    if (!chatId) return next();
+
+    const tree = await findTreeByChat(prisma, chatId);
+    if (!tree) return next();
+
+    const fileId = photo?.[photo.length - 1]?.file_id
+      || document?.file_id || voice?.file_id
+      || video?.file_id || audio?.file_id;
+    if (!fileId) return next();
+
+    try {
+      const tgFile = await ctx.api.getFile(fileId);
+      const filePath = tgFile.file_path;
+      if (!filePath) return next();
+
+      const ext = filePath.split(".").pop() || "bin";
+      const fileName = `${Date.now()}.${ext}`;
+      const destDir = `/home/trustmaker/trees/${tree.id}/media`;
+      await fsPromises.mkdir(destDir, { recursive: true });
+      const dest = `${destDir}/${fileName}`;
+
+      const url = `https://api.telegram.org/file/bot${process.env.BOT_TOKEN}/${filePath}`;
+      const resp = await fetch(url);
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+      const buffer = Buffer.from(await resp.arrayBuffer());
+      await fsPromises.writeFile(dest, buffer);
+
+      const mediaType = photo ? "foto" : document ? "documento" : voice ? "nota de voz" : video ? "video" : "audio";
+      const senderName = ctx.from?.first_name || "alguien";
+      const caption = (msg as any).caption || "";
+      const fullMessage = caption
+        ? `${senderName}: ${caption}\n[adjuntó una ${mediaType}: ${dest}]`
+        : `${senderName} envió una ${mediaType}.\n[archivo: ${dest}]`;
+
+      const userId = ctx.from?.id.toString() || "0";
+      const displayName = ctx.from?.first_name || userId;
+
+      ctx.replyWithChatAction("typing").catch(() => {});
+      const response = await routeToHermes(
+        fullMessage, tree.id, userId, undefined, displayName,
+        ctx.chat?.id, msg.message_id,
+      );
+      if (response && !response.saturationMessage && !response.queued) {
+        await sendTelegramMessage(ctx, response.text, tree.id);
+      }
+    } catch (err: any) {
+      console.error("[media] download/route failed:", err.message);
+      await ctx.reply("📎 Recibí tu archivo pero no pude procesarlo. Intentá describirlo con texto.").catch(() => {});
+    }
+  });
+
   // ── Onboarding reply handler: detecta respuestas al force_reply ──
   // Se ejecuta antes del handler normal de mensajes. Si es respuesta al
   // force_reply de "¿Qué tipo de organización son...", captura y guarda.
