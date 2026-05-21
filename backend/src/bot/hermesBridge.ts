@@ -657,6 +657,23 @@ async function buildSystemPrompt(
   lines.push('   Ejemplo: fetch con FormData — fd.append("file", blob, "video.mp4").');
   lines.push('   Response: { "path": "video.mp4", "size": 12400000 }');
   lines.push("");
+
+  lines.push("═══ PROCESAMIENTO DE ARCHIVOS RECIBIDOS ═══");
+  lines.push("");
+  lines.push("Cuando un usuario envía un archivo al grupo, vos recibís un mensaje como:");
+  lines.push('"Leo envi\u00f3 una foto. [archivo: /home/trustmaker/trees/TREE_ID/media/123.jpg]"');
+  lines.push("");
+  lines.push("Para PROCESAR ese archivo, usá el sandbox exec con estas herramientas:");
+  lines.push("");
+  lines.push("- PDF:   pdftotext /sandbox/media/archivo.pdf -   (extrae TODO el texto)");
+  lines.push("- EPUB:  pandoc /sandbox/media/archivo.epub -t plain");
+  lines.push("- DOCX:  pandoc /sandbox/media/archivo.docx -t plain");
+  lines.push("- Imágenes: NO tenés vision_analyze directo. Pedile al usuario que describa la imagen.");
+  lines.push("- Audio (.ogg): usá el endpoint /api/trees/TREE_ID/sandbox/exec con whisper");
+  lines.push("");
+  lines.push("IMPORTANTE: NO intentes 'pip install' ni 'apt-get' — el sandbox es de solo lectura.");
+  lines.push("Usá las herramientas YA instaladas: pdftotext, pandoc, grep, find, cat, ls, etc.");
+  lines.push("");
   lines.push(
     "Formato de solicitud HTTP — usa fetch con tu TREE_API_KEY:",
   );
