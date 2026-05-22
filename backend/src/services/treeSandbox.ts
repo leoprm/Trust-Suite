@@ -127,6 +127,13 @@ export class TreeSandbox {
     fs.mkdirSync(path.join(workspacePath, 'logs'), { recursive: true });
     fs.mkdirSync(path.join(workspacePath, 'context'), { recursive: true });
 
+    // 2a. Copy tree template (scripts, tools, preconfigured files)
+    const templateDir = path.resolve(TREES_BASE, '..', 'tree-template');
+    if (fs.existsSync(templateDir)) {
+      fs.cpSync(templateDir, workspacePath, { recursive: true });
+      console.log(`[TreeSandbox] Template copied from tree-template to ${treeId.slice(0, 8)}…`);
+    }
+
     // 2b. Scaffold obsidian vault
     scaffoldObsidianVault(workspacePath);
 
