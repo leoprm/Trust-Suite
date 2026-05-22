@@ -1818,6 +1818,15 @@ export async function routeToHermes(
 
     // Increment task counter for skill auto-evaluation
     if (treeId) taskCounters.set(treeId, (taskCounters.get(treeId) ?? 0) + 1);
+
+    // ── Log Ari's response to daily conversation log ────────────────────
+    if (treeId && accumulatedContent) {
+      try {
+        const { appendToDailyLog } = await import("../lib/dailyLog");
+        appendToDailyLog(treeId, new Date(), "Ari", accumulatedContent, false, "assistant");
+      } catch { /* best-effort */ }
+    }
+
     return { text: accumulatedContent };
   } catch (err) {
     clearTimeout(timeoutId);

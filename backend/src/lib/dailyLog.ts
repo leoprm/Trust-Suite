@@ -7,6 +7,7 @@ export function appendToDailyLog(
   username: string,
   text: string,
   isAudio: boolean = false,
+  role: "user" | "assistant" = "user",
 ): void {
   const dateStr = timestamp.toISOString().slice(0, 10); // YYYY-MM-DD
   const timeStr = timestamp.toTimeString().slice(0, 5); // HH:MM
@@ -15,6 +16,7 @@ export function appendToDailyLog(
   fs.mkdirSync(dir, { recursive: true });
   const filePath = path.join(dir, `${dateStr}.txt`);
   const prefix = isAudio ? "[🎤 audio]" : "";
-  const line = `[${timeStr}] ${prefix} ${username}: ${text}\n`;
+  const roleTag = role === "assistant" ? "[assistant]" : "[user]";
+  const line = `[${timeStr}] ${prefix} ${roleTag} ${username}: ${text}\n`;
   fs.appendFileSync(filePath, line, "utf-8");
 }
