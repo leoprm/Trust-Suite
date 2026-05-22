@@ -362,42 +362,69 @@ async function buildSystemPrompt(
     select: { id: true, name: true },
   });
 
-  let parentDisplayName: string | null = null;
-
-  if (parentTreeId) {
-    const parent = await (prisma as any).tree.findUnique({
-      where: { id: parentTreeId },
-      select: { name: true, icono: true },
+  // ── Resolve full ancestor chain (not just direct parent) ──────────────
+  const ancestorChain: Array<{ id: string; name: string; icono: string }> = [];
+  let cursor: string | null = parentTreeId;
+  while (cursor) {
+    const a = await (prisma as any).tree.findUnique({
+      where: { id: cursor },
+      select: { id: true, name: true, icono: true, parentTreeId: true },
     });
-    if (parent) {
-      parentTreeName = parent.name;
-      parentDisplayName = `${parent.icono || "🌳"} ${parent.name}`;
-    }
+    if (!a) break;
+    ancestorChain.push({ id: a.id, name: a.name, icono: a.icono || "🌳" });
+    cursor = a.parentTreeId;
   }
 
-  const isSubTree = !!parentTreeName;
+  const isSubTree = ancestorChain.length > 0;
   const hasChildren = childTrees.length > 0;
 
-  // ── Sub-tree: parent awareness + sandbox read, NO multi-IA rules ──
+  if (parentTreeId && ancestorChain.length > 0) {
+    parentTreeName = ancestorChain[0].name;
+  }
+
+  // ── Sub-tree: ancestor chain awareness + sandbox read ─────────────────
   if (isSubTree) {
     lines.push("");
-    lines.push("═══ PARENT TREE CONTEXT ═══");
+    lines.push("═══ ANCESTOR TREE CONTEXT ═══");
     lines.push("");
-    lines.push(`Eres un SUB-ÁRBOL de ${parentDisplayName || parentTreeName} (id: ${parentTreeId}).`);
-    lines.push(`Formas parte de la comunidad "${parentTreeName}".`);
+    lines.push("Eres parte de una JERARQUÍA de árboles. Estos son tus ancestros");
+    lines.push("(del más cercano al más lejano — tu padre directo primero, luego");
+    lines.push("el padre de tu padre, etc., hasta el árbol base):");
     lines.push("");
-    lines.push("Como sub-árbol, DEBES:");
-    lines.push("- Reconocer al árbol padre como autoridad estratégica del ecosistema");
-    lines.push("- Leer el sandbox del padre antes de decisiones que afecten a todo el ecosistema");
-    lines.push("- No hablar en nombre del árbol padre ni tomar decisiones que le competan");
-    lines.push("- No uses prefijos como 🌿 Nombre (sub): en tus respuestas. Responde normalmente.");
+    const depthLabels = ["Padre directo", "Abuelo", "Bisabuelo", "Tatarabuelo"];
+    for (let i = 0; i < ancestorChain.length; i++) {
+      const a = ancestorChain[i];
+      const label = depthLabels[i] || `Ancestro nivel ${i + 1}`;
+      lines.push(`  ${i + 1}. ${a.icono} **${a.name}** (${label}) — id: \`${a.id}\``);
+    }
     lines.push("");
-    lines.push("SANDBOX PADRE (solo lectura):");
-    lines.push(`  POST http://localhost:3100/api/trees/${treeId}/sandbox/parent/read`);
+    lines.push("═══ REGLAS DE ASCENDENCIA ═══");
+    lines.push("");
+    lines.push("- El árbol BASE (último de la lista) es la autoridad máxima del ecosistema.");
+    lines.push("- Los ancestros intermedios heredan y filtran directrices del base.");
+    lines.push("- Tu árbol puede tener sus propias reglas, pero no contradicen al base.");
+    lines.push("");
+    lines.push("═══ SANDBOX ANCESTROS (solo lectura) ═══");
+    lines.push("");
+    lines.push("Para leer archivos de CUALQUIER ancestro (padre, abuelo, ..., base):");
+    lines.push(`  POST http://localhost:3100/api/trees/${treeId}/sandbox/ancestors/read`);
     lines.push('  Body: { "path": "obsidian/decisiones/ejemplo.md" }');
     lines.push("  Authorization: Bearer HERMES_API_SERVER_KEY");
+    lines.push("  Respuesta: { treeId, treeName, ancestors: [{ treeId, treeName, content, size }] }");
     lines.push("");
-    lines.push("⚠️  SOLO LECTURA. No puedes escribir, modificar ni borrar en el sandbox padre.");
+    lines.push("Para leer SOLO del padre directo (más rápido si ya sabes dónde está):");
+    lines.push(`  POST http://localhost:3100/api/trees/${treeId}/sandbox/parent/read`);
+    lines.push('  Body: { "path": "archivo.md" }');
+    lines.push("  Authorization: Bearer HERMES_API_SERVER_KEY");
+    lines.push("");
+    lines.push("═══ SKILL: TRUST-MAKER ═══");
+    lines.push("");
+    lines.push("Siempre que necesites consultar o entender tu ascendencia, tu sandbox,");
+    lines.push("o cualquier operación de Trust Maker, DEBES cargar el skill trust-maker:");
+    lines.push("  Usa skill_view(name='trust-maker')");
+    lines.push("Este skill contiene todos los endpoints, helpers y convenciones.");
+    lines.push("");
+    lines.push("⚠️  SOLO LECTURA en ancestros. No puedes escribir, modificar ni borrar.");
   }
 
   // ── Root tree with children: multi-IA coordination rules ──
