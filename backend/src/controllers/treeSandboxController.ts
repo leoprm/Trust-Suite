@@ -1195,6 +1195,88 @@ export const readParentTreeSandbox = async (req: Request, res: Response) => {
   }
 };
 
+// ── POST /api/trees/:id/sandbox/ancestors/read ───────────────────────────
+// Body: { path: string }
+// Reads a file from ALL ancestor sandboxes (parent → grandparent → … → root).
+// Returns: { treeId, treeName, ancestors: [{ treeId, treeName, content, size }] }
+
+export const readAncestorsTreeSandbox = async (req: Request, res: Response) => {
+  if (!checkApiKey(req, res)) return;
+
+  try {
+    const id = req.params.id as string;
+    const { path: requestedPath } = req.body;
+
+    if (!requestedPath || typeof requestedPath !== 'string') {
+      return res.status(400).json({ error: 'path is required (string)' });
+    }
+
+    // Verify current tree exists
+    const tree = await prisma.tree.findUnique({ where: { id } });
+    if (!tree) {
+      return res.status(404).json({ error: 'Tree not found' });
+    }
+
+    const SANDBOX_BASE = process.env.SANDBOX_BASE_DIR || '/home/trustmaker/trees';
+    const ancestors: Array<{ treeId: string; treeName: string; content: string; size: number }> = [];
+
+    // Walk up the parent chain
+    let currentId: string | null = tree.parentTreeId;
+    const visited = new Set<string>();
+    visited.add(id); // prevent cycles
+
+    while (currentId) {
+      if (visited.has(currentId)) break; // safety: cycle detection
+      visited.add(currentId);
+
+      const ancestorTree = await prisma.tree.findUnique({
+        where: { id: currentId },
+        select: { id: true, name: true, parentTreeId: true },
+      });
+
+      if (!ancestorTree) break;
+
+      const ancestorWorkspace = path.join(SANDBOX_BASE, currentId);
+      const safePath = resolveSafePath(ancestorWorkspace, requestedPath);
+
+      if (safePath && fs.existsSync(safePath)) {
+        const stat = fs.statSync(safePath);
+        if (stat.isFile()) {
+          if (stat.size > 100_000) {
+            // Skip oversized files, continue walking
+            currentId = ancestorTree.parentTreeId;
+            continue;
+          }
+          const content = fs.readFileSync(safePath, 'utf-8');
+          ancestors.push({
+            treeId: currentId,
+            treeName: ancestorTree.name,
+            content,
+            size: stat.size,
+          });
+        }
+      }
+
+      currentId = ancestorTree.parentTreeId;
+    }
+
+    void logEvent({
+      ...getRequestContext(req),
+      treeId: id,
+      action: 'SANDBOX_ANCESTORS_READ',
+      entityType: 'TreeSandbox',
+      entityId: id,
+      source: 'SYSTEM',
+      metadataJson: { path: requestedPath, ancestorCount: ancestors.length },
+    });
+
+    res.json({ treeId: id, treeName: tree.name, ancestors });
+  } catch (error: any) {
+    console.error('[readAncestorsTreeSandbox] ERROR:', error?.message || error);
+    res.status(500).json({ error: 'Ancestor read failed', detail: error?.message });
+  }
+};
+
 // ── Rate limiter for web-extract (5 calls/min per tree) ─────────────────────
 
 const webExtractWindowMs = 60_000; // 1 minute

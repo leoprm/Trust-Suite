@@ -23,6 +23,7 @@ import {
   uploadTreeSandbox,
   sandboxUpload,
   readParentTreeSandbox,
+  readAncestorsTreeSandbox,
   saveTreeSkill,
   webExtractTreeSandbox,
   memoryTreeSandbox,
@@ -53,6 +54,7 @@ router.post('/:id/sandbox/upload', sandboxUpload.single('file'), uploadTreeSandb
 router.post('/:id/sandbox/media-search', searchMediaInSandbox);
 router.post('/:id/sandbox/web-search', webSearchInSandbox);
 router.post('/:id/sandbox/parent/read', readParentTreeSandbox);
+router.post('/:id/sandbox/ancestors/read', readAncestorsTreeSandbox);
 router.post('/:id/sandbox/save-skill', saveTreeSkill);
 router.post('/:id/sandbox/tm-call', tmCall);
 router.post('/:id/sandbox/web-extract', webExtractTreeSandbox);
