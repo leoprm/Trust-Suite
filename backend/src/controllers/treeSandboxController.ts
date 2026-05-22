@@ -1254,6 +1254,15 @@ export const readAncestorsTreeSandbox = async (req: Request, res: Response) => {
             content,
             size: stat.size,
           });
+        } else if (stat.isDirectory()) {
+          // List directory contents so the agent can navigate
+          const entries = fs.readdirSync(safePath);
+          ancestors.push({
+            treeId: currentId,
+            treeName: ancestorTree.name,
+            content: JSON.stringify({ type: 'directory', entries }),
+            size: 0,
+          });
         }
       }
 
