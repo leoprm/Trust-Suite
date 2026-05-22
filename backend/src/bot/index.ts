@@ -2162,18 +2162,27 @@ export async function createBot(prisma: PrismaClient): Promise<Bot<BotContext> |
     // 3. Si no hay comando ni mención → verificar si es conversación 1:1
     let isOneOnOne = false;
     if (cmdText === null || cmdText === "") {
-      // One-on-one mode: if tree has only 1 active member, respond to everything.
-      // BUT only bypass the shouldAriRespond filter if the tree is standalone
-      // (no parent and no children) — sub-trees with multiple IAs need the filter.
+      // One-on-one mode: if Telegram group has exactly 2 members (Ari + 1 person),
+      // bypass shouldAriRespond and respond to everything.
+      // If more members join (3+), shouldAriRespond reactivates normally.
       if (chatId) {
-        const soloTree = await findTreeByChat(prisma, chatId!);
-        if (soloTree) {
-          const memberCount = await (prisma as any).treeMember.count({
-            where: { treeId: soloTree.id, status: "ACTIVE" },
-          });
-          if (memberCount <= 1) {
+        try {
+          const memberCount = await ctx.getChatMemberCount();
+          if (memberCount === 2) {
             cmdText = msg.text.trim();
             isOneOnOne = true;
+          }
+        } catch {
+          // Fallback: if getChatMemberCount fails (e.g. in DMs), check DB
+          const soloTree = await findTreeByChat(prisma, chatId!);
+          if (soloTree) {
+            const dbCount = await (prisma as any).treeMember.count({
+              where: { treeId: soloTree.id, status: "ACTIVE" },
+            });
+            if (dbCount <= 1) {
+              cmdText = msg.text.trim();
+              isOneOnOne = true;
+            }
           }
         }
       }
