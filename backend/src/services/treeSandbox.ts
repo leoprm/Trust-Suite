@@ -213,6 +213,7 @@ export class TreeSandbox {
     const treeMeta = {
       description: tree.description || '',
       objectives: tree.objectives || '',
+      telegramChatId: tree.telegramChatId || null,
     };
     fs.writeFileSync(
       path.join(workspacePath, 'context', 'tree_meta.json'),
