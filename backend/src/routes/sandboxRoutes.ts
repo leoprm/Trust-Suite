@@ -27,6 +27,7 @@ import {
   saveTreeSkill,
   webExtractTreeSandbox,
   memoryTreeSandbox,
+  historyTreeSandbox,
   tmCall,
   searchTreeSandbox,
   patchTreeSandbox,
@@ -59,6 +60,7 @@ router.post('/:id/sandbox/save-skill', saveTreeSkill);
 router.post('/:id/sandbox/tm-call', tmCall);
 router.post('/:id/sandbox/web-extract', webExtractTreeSandbox);
 router.post('/:id/sandbox/memory', memoryTreeSandbox);
+router.post('/:id/sandbox/history', historyTreeSandbox);
 router.post('/:id/sandbox/search', searchTreeSandbox);
 router.post('/:id/sandbox/patch', patchTreeSandbox);
 

@@ -657,7 +657,7 @@ async function buildSystemPrompt(
   lines.push(`  ✅ terminal() ejecuta en /home/trustmaker/trees/${treeId}/ con sandbox isolation`);
   lines.push("  ✅ read_file/write_file/search_files/patch operan sobre el sandbox del árbol");
   lines.push("  ❌ NUNCA uses paths fuera del sandbox (/home/leo/, /etc/, /tmp/, etc.)");
-  lines.push("  ❌ NO TIENES: memory (no puedes guardar recuerdos persistentes entre sesiones)");
+  lines.push("  ❌ NO TIENES memoria nativa de Hermes, PERO tienes acceso a 2 capas de memoria persistente vía API (ver sección MEMORIA PERSISTENTE más abajo)");
   lines.push("");
   lines.push("═══ ACCESO AL SANDBOX (vía API REST — alternativo) ═══");
   lines.push("");
@@ -775,6 +775,57 @@ async function buildSystemPrompt(
   lines.push("");
   lines.push("3. ADVERTENCIA:");
   lines.push("   ⚠️ Intentar acceder a MySQL directamente es una VIOLACIÓN DE SEGURIDAD cross-tree y será reportado.");
+
+  // ── Persistent Memory (tree-scoped) ────────────────────────────────────
+  lines.push("");
+  lines.push("═══ MEMORIA PERSISTENTE ═══");
+  lines.push("");
+  lines.push("Tienes 2 capas de memoria persistente entre sesiones. Úsalas para recordar");
+  lines.push("información relevante que necesitarás en futuras conversaciones.");
+  lines.push("");
+  lines.push("── CAPA 1: Memory Key-Value Store ──");
+  lines.push("");
+  lines.push("Almacenamiento simple clave-valor para preferencias, configuraciones y datos");
+  lines.push("que necesitas recordar entre sesiones:");
+  lines.push("");
+  lines.push(`  POST /api/trees/${treeId}/sandbox/memory`);
+  lines.push('  Body: { "action": "write", "key": "preferencia_idioma", "value": "español" }');
+  lines.push("  Authorization: Bearer HERMES_API_SERVER_KEY");
+  lines.push("");
+  lines.push("Acciones disponibles:");
+  lines.push(`  - write: POST .../sandbox/memory  Body: { action: \"write\", key: \"...\", value: \"...\" }`);
+  lines.push(`  - read:  POST .../sandbox/memory  Body: { action: \"read\",  key: \"...\" }  → { key, value }`);
+  lines.push(`  - list:  POST .../sandbox/memory  Body: { action: \"list\" }  → { keys: [...] }`);
+  lines.push("");
+  lines.push("Cuándo usarla:");
+  lines.push("  - Preferencias del árbol (idioma, formato de fechas, etc.)");
+  lines.push("  - Datos clave que NO son lecciones de IA (nombres, montos, configuraciones)");
+  lines.push("  - Estado de procesos (último análisis, última búsqueda, etc.)");
+  lines.push("  ⚠️  Solo valores string. Para datos estructurados, usa JSON.stringify().");
+  lines.push("");
+  lines.push("── CAPA 2: Historial de Conversación ──");
+  lines.push("");
+  lines.push("El backend guarda automáticamente todas las conversaciones en tu sandbox.");
+  lines.push("Puedes consultar el historial reciente para dar contexto a tus respuestas:");
+  lines.push("");
+  lines.push(`  POST /api/trees/${treeId}/sandbox/history`);
+  lines.push("  Body: { \"iteration\": 2 }");
+  lines.push("  Authorization: Bearer HERMES_API_SERVER_KEY");
+  lines.push("  Response: { \"messages\": \"[HH:MM] [role] name: text\\n...\", \"count\": 48 }");
+  lines.push("");
+  lines.push("La carga de historial usa chunking progresivo con factor φ=1.618:");
+  lines.push("  - Iteración 1: últimos ~30 mensajes");
+  lines.push("  - Iteración 2: últimos ~48 mensajes");
+  lines.push("  - Iteración 3: últimos ~78 mensajes");
+  lines.push("  - ...");
+  lines.push("  - Iteración 7: últimos ~538 mensajes (máximo)");
+  lines.push("");
+  lines.push("Cuándo cargar historial:");
+  lines.push("  - El usuario pregunta \"¿qué hemos hablado antes?\" o \"¿recuerdas...?\"");
+  lines.push("  - Necesitas contexto de conversaciones anteriores para responder");
+  lines.push("  - Estás en una conversación larga y necesitas refrescar el contexto");
+  lines.push("  ⚠️  NO cargues historial para cada mensaje — solo cuando sea necesario.");
+  lines.push("  ⚠️  Empieza con iteration=1 y escala si necesitas más contexto.");
 
   // ── Parent sandbox read ────────────────────────────────────────────────
   if (tree.parentTreeId) {

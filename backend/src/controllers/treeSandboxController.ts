@@ -8,6 +8,7 @@ import https from 'https';
 import http from 'http';
 import multer from 'multer';
 import TurndownService from 'turndown';
+import { loadChatHistory } from '../lib/chatHistory';
 import { JSDOM } from 'jsdom';
 import { TreeSandbox } from '../services/treeSandbox';
 import { logEvent, getRequestContext } from '../services/eventLogService';
@@ -1485,6 +1486,27 @@ export const memoryTreeSandbox = async (req: Request, res: Response) => {
   } catch (error: any) {
     console.error('[memoryTreeSandbox] ERROR:', error?.message || error);
     res.status(500).json({ error: 'Memory operation failed', detail: error?.message });
+  }
+};
+
+// ── POST /api/trees/:id/sandbox/history ───────────────────────────────────
+// Returns chat history from the tree's sandbox using φ=1.618 chunking.
+// Requires API key.
+
+export const historyTreeSandbox = async (req: Request, res: Response) => {
+  if (!checkApiKey(req, res)) return;
+
+  try {
+    const treeId = req.params.id as string;
+    const iteration = Math.max(1, Math.min(parseInt(req.body?.iteration) || 1, 7));
+
+    const messages = loadChatHistory(treeId, iteration);
+    const count = messages ? messages.split('\n').filter(Boolean).length : 0;
+
+    res.json({ messages, count, iteration });
+  } catch (error: any) {
+    console.error('[historyTreeSandbox] ERROR:', error?.message || error);
+    res.status(500).json({ error: 'History operation failed', detail: error?.message });
   }
 };
 
