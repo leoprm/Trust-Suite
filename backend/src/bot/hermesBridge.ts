@@ -721,8 +721,14 @@ lines.push("TIENES terminal y file, PERO operan EXCLUSIVAMENTE dentro del sandbo
   lines.push("- PDF:   pdftotext /sandbox/media/archivo.pdf -   (extrae TODO el texto)");
   lines.push("- EPUB:  pandoc /sandbox/media/archivo.epub -t plain");
   lines.push("- DOCX:  pandoc /sandbox/media/archivo.docx -t plain");
-  lines.push("- Imágenes: NO tenés vision_analyze directo. Pedile al usuario que describa la imagen.");
-  lines.push("- Audio (.ogg): usá el endpoint /api/trees/TREE_ID/sandbox/exec con whisper");
+  lines.push("- Imagen con texto (OCR):  usá execute_code con pytesseract para extraer texto:");
+  lines.push(`  python3 -c \"`);
+  lines.push(`  from PIL import Image; import pytesseract`);
+  lines.push(`  text = pytesseract.image_to_string(Image.open('/sandbox/media/archivo.jpg'), lang='spa+eng')`);
+  lines.push(`  print(text)\"`);
+  lines.push("  Tip: si la imagen tiene poco texto, usá lang='spa' o lang='eng' para mejor precisión.");
+  lines.push("- Imagen sin texto (foto, gráfico, etc.): describí lo que sabés del contexto.");
+  lines.push("- Audio (.ogg): usá el endpoint /api/audio/transcribe con whisper");
   lines.push("");
   lines.push("IMPORTANTE: NO intentes 'pip install' ni 'apt-get' — el sandbox es de solo lectura.");
   lines.push("Usá las herramientas YA instaladas: pdftotext, pandoc, grep, find, cat, ls, etc.");
@@ -802,8 +808,32 @@ lines.push("TIENES terminal y file, PERO operan EXCLUSIVAMENTE dentro del sandbo
   lines.push("");
   lines.push("═══ MEMORIA PERSISTENTE ═══");
   lines.push("");
-  lines.push("Tienes 2 capas de memoria persistente entre sesiones. Úsalas para recordar");
-  lines.push("información relevante que necesitarás en futuras conversaciones.");
+  lines.push("Tienes 2 capas de memoria persistente entre sesiones. Son tu ÚNICA forma");
+  lines.push("de recordar lo que pasó en conversaciones anteriores. Sin ellas, cada");
+  lines.push("conversación es un borrón y cuenta nueva.");
+  lines.push("");
+  lines.push("── REGLAS OBLIGATORIAS ──");
+  lines.push("");
+  lines.push("🔴 REGLA #1 — AL INICIO DE CADA CONVERSACIÓN:");
+  lines.push("   SIEMPRE carga el historial reciente ANTES de responder tu primer mensaje.");
+  lines.push("   Usa POST /sandbox/history con iteration=1. Esto te da los últimos ~30");
+  lines.push("   mensajes. Si el usuario referencia algo más antiguo, escala iteration.");
+  lines.push("   HAZLO INCLUSO si el primer mensaje parece trivial (\"hola\", \"cómo estás\").");
+  lines.push("");
+  lines.push("🔴 REGLA #2 — AL FINAL DE CADA CONVERSACIÓN:");
+  lines.push("   Cuando la conversación termina (el usuario se despide, cambia de tema");
+  lines.push("   radicalmente, o pasan >5 min sin actividad), DEBES guardar un RESUMEN");
+  lines.push("   en el memory KV. Usa estas claves obligatorias:");
+  lines.push("   - \"last_summary\": resumen de 2-3 frases de lo hablado y decisiones tomadas");
+  lines.push("   - \"last_topic\": tema principal de la conversación");
+  lines.push("   - \"last_date\": fecha ISO de la última conversación");
+  lines.push("   - \"pending_items\": JSON array de tareas/decisiones pendientes");
+  lines.push("");
+  lines.push("🔴 REGLA #3 — DATOS QUE DEBES PERSISTIR:");
+  lines.push("   Cualquier dato que el usuario comparta y sea relevante para el futuro:");
+  lines.push("   nombres, preferencias, decisiones, configuraciones, estado de proyectos.");
+  lines.push("   Usa el KV store con claves descriptivas. Ej: \"proyecto_x_estado\",");
+  lines.push("   \"leo_preferencia_formato\", \"ultimo_analisis_competencia\".");
   lines.push("");
   lines.push("── CAPA 1: Memory Key-Value Store ──");
   lines.push("");
@@ -819,11 +849,7 @@ lines.push("TIENES terminal y file, PERO operan EXCLUSIVAMENTE dentro del sandbo
   lines.push(`  - read:  POST .../sandbox/memory  Body: { action: \"read\",  key: \"...\" }  → { key, value }`);
   lines.push(`  - list:  POST .../sandbox/memory  Body: { action: \"list\" }  → { keys: [...] }`);
   lines.push("");
-  lines.push("Cuándo usarla:");
-  lines.push("  - Preferencias del árbol (idioma, formato de fechas, etc.)");
-  lines.push("  - Datos clave que NO son lecciones de IA (nombres, montos, configuraciones)");
-  lines.push("  - Estado de procesos (último análisis, última búsqueda, etc.)");
-  lines.push("  ⚠️  Solo valores string. Para datos estructurados, usa JSON.stringify().");
+  lines.push("⚠️  Solo valores string. Para datos estructurados, usa JSON.stringify().");
   lines.push("");
   lines.push("── CAPA 2: Historial de Conversación ──");
   lines.push("");
@@ -835,19 +861,10 @@ lines.push("TIENES terminal y file, PERO operan EXCLUSIVAMENTE dentro del sandbo
   lines.push("  Authorization: Bearer HERMES_API_SERVER_KEY");
   lines.push("  Response: { \"messages\": \"[HH:MM] [role] name: text\\n...\", \"count\": 48 }");
   lines.push("");
-  lines.push("La carga de historial usa chunking progresivo con factor φ=1.618:");
-  lines.push("  - Iteración 1: últimos ~30 mensajes");
-  lines.push("  - Iteración 2: últimos ~48 mensajes");
-  lines.push("  - Iteración 3: últimos ~78 mensajes");
-  lines.push("  - ...");
-  lines.push("  - Iteración 7: últimos ~538 mensajes (máximo)");
+  lines.push("Chunking progresivo (φ=1.618):");
+  lines.push("  Iteración 1: ~30 msg → 2: ~48 → 3: ~78 → ... → 7: ~538 (máx)");
   lines.push("");
-  lines.push("Cuándo cargar historial:");
-  lines.push("  - El usuario pregunta \"¿qué hemos hablado antes?\" o \"¿recuerdas...?\"");
-  lines.push("  - Necesitas contexto de conversaciones anteriores para responder");
-  lines.push("  - Estás en una conversación larga y necesitas refrescar el contexto");
-  lines.push("  ⚠️  NO cargues historial para cada mensaje — solo cuando sea necesario.");
-  lines.push("  ⚠️  Empieza con iteration=1 y escala si necesitas más contexto.");
+  lines.push("⚠️  Empieza SIEMPRE con iteration=1. Escala solo si necesitas más contexto.");
 
   // ── Parent sandbox read ────────────────────────────────────────────────
   if (tree.parentTreeId) {
@@ -1510,7 +1527,7 @@ export async function shouldAriRespond(
 
   // ── Call Hermes Agent API (streaming — avoids empty-response bug with tools) ──
   const controller = new AbortController();
-const timeoutId = setTimeout(() => controller.abort(), 420_000); // 7 min — complex tasks need time
+const timeoutId = setTimeout(() => controller.abort(), 900_000); // 15 min — matches Hermes dialog_timeout_s
 
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
@@ -1751,7 +1768,7 @@ export async function routeToHermes(
 
   // ── Call Hermes Agent API ─────────────────────────────────────────────
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 420_000); // 7 minutos
+  const timeoutId = setTimeout(() => controller.abort(), 900_000); // 15 min — matches Hermes dialog_timeout_s
 
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
@@ -1775,12 +1792,12 @@ export async function routeToHermes(
   } catch (err) {
     clearTimeout(timeoutId);
     if (err instanceof Error && err.name === "AbortError") {
-      console.error("[hermesBridge] Hermes API timed out after 15 minutes");
+      console.error(`[hermesBridge] Hermes API timed out after ${Math.round(900_000/60000)} minutes`);
     } else {
       console.error("[hermesBridge] Hermes API fetch failed:", err);
     }
     return {
-      text: "⚠️ No pude procesar tu mensaje a tiempo (el servidor de IA no respondió). ¿Podrías reformularlo de forma más concreta o dividirlo en partes más pequeñas?",
+      text: "⚠️ El servidor de IA no respondió a tiempo. Esto suele pasar por una caída temporal de conexión. Intenta de nuevo en un momento — si el problema persiste, intenta con un mensaje más corto o concreto.",
     };
   }
 
@@ -1932,7 +1949,7 @@ export async function routeToHermes(
       return { text: accumulatedContent };
     }
     if (err instanceof Error && err.name === "AbortError") {
-      console.error("[hermesBridge] Hermes API stream timed out after 15 minutes");
+      console.error(`[hermesBridge] Hermes API stream timed out after ${Math.round(900_000/60000)} minutes`);
     } else {
       console.error("[hermesBridge] Error reading SSE stream:", err);
     }

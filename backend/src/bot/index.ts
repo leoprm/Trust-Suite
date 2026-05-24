@@ -1420,13 +1420,14 @@ export async function createBot(prisma: PrismaClient): Promise<Bot<BotContext> |
       const dest = `${destDir}/${fileName}`;
 
       // ── Size check before downloading ──────────────────────────────
+      // Telegram bot API limit: 50 MB for regular downloads (20 MB for getFile)
       const fileSize = (tgFile as any).file_size || 0;
-      if (fileSize > 10 * 1024 * 1024) {
-        // >10MB: too large to download into memory; Ari can't process it directly
+      if (fileSize > 50 * 1024 * 1024) {
+        // >50MB: exceeds Telegram bot limit; should never happen in practice
         const sizeMB = (fileSize / (1024*1024)).toFixed(1);
         await ctx.reply(
-          `📎 Recibí tu archivo (${sizeMB} MB) pero es muy grande para procesarlo directo.\n` +
-          `*Describime* qué contiene o qué necesitás de él, y lo trabajo desde ahí.`,
+          `📎 Recibí tu archivo (${sizeMB} MB) pero supera el límite de 50 MB de Telegram.\n` +
+          `*Dividilo* en partes más chicas o *describime* qué contiene.`,
           { parse_mode: "Markdown" }
         ).catch(()=>{});
         return;
@@ -2212,6 +2213,16 @@ export async function createBot(prisma: PrismaClient): Promise<Bot<BotContext> |
         await ctx.reply("⚠️ Este grupo no está vinculado a ningún árbol de Trust Maker.");
         return;
       }
+
+      // ── Log user message to daily conversation log ──────────────────
+      try {
+        appendToDailyLog(
+          tree.id,
+          new Date(msg.date * 1000),
+          ctx.from?.first_name || "Unknown",
+          cmdText,
+        );
+      } catch { /* best-effort */ }
 
       const displayName = ctx.from?.first_name || ctx.from?.id.toString() || "alguien";
 

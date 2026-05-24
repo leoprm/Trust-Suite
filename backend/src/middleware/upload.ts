@@ -2,7 +2,7 @@ import multer from 'multer';
 import { ALLOWED_UPLOAD_TYPES, validateUploadFile } from '../utils/fileSecurity';
 
 const storage = multer.memoryStorage();
-const maxUploadBytes = Number(process.env.MAX_UPLOAD_SIZE_MB || 10) * 1024 * 1024;
+const maxUploadBytes = Number(process.env.MAX_UPLOAD_SIZE_MB || 50) * 1024 * 1024;
 
 export const upload = multer({
   storage,

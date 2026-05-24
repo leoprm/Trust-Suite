@@ -227,7 +227,7 @@ app.post('/api/whatsapp/webhook', express.raw({ type: 'application/json' }), (re
   whatsappReceive(req, res);
 });
 
-app.use(express.json());
+app.use(express.json({ limit: "50mb" }));
 
 // Uploads
 const uploadsDir = path.join(__dirname, '../uploads');
