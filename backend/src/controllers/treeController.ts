@@ -1354,3 +1354,90 @@ export const getUserTrees = async (req: Request, res: Response) => {
     res.status(500).json({ error: "Failed to get user trees", detail: error?.message || String(error) });
   }
 };
+
+// ── GET /api/users/:userId/cross-tree-skills ──────────────────────────────
+// Returns all skills for a user across ALL trees where they are an active member.
+// Respects visibility: PRIVATE skills are excluded from cross-tree views.
+// Includes a summary with totalSkills, treesWithSkills, and topCategories.
+
+export const getCrossTreeSkills = async (req: Request, res: Response) => {
+  try {
+    const userId = req.params.userId as string;
+
+    // Verify the user exists
+    const user = await prisma.user.findUnique({ where: { id: userId } });
+    if (!user) return res.status(404).json({ error: 'User not found' });
+
+    // Get all trees where this user is an active member
+    const activeMemberships = await prisma.treeMember.findMany({
+      where: { userId, status: 'ACTIVE' },
+      select: { treeId: true },
+    });
+
+    const activeTreeIds = activeMemberships.map((m) => m.treeId);
+
+    if (activeTreeIds.length === 0) {
+      return res.json({
+        userId,
+        skills: [],
+        summary: { totalSkills: 0, treesWithSkills: 0, topCategories: [] },
+      });
+    }
+
+    // Fetch TreeSkill records for this user in their active trees.
+    // Only return skills where visibility is INTERNAL or PUBLIC.
+    // PRIVATE skills are excluded from cross-tree views.
+    const skills = await (prisma as any).treeSkill.findMany({
+      where: {
+        userId,
+        treeId: { in: activeTreeIds },
+        visibility: { in: ['INTERNAL', 'PUBLIC'] },
+      },
+      include: {
+        tree: {
+          select: { id: true, name: true },
+        },
+      },
+      orderBy: [{ xp: 'desc' }, { skill: 'asc' }],
+    });
+
+    // Map to response shape
+    const skillItems = skills.map((s: any) => ({
+      id: s.id,
+      name: s.skill,
+      category: s.category || null,
+      level: s.level,
+      xp: s.xp,
+      treeId: s.treeId,
+      treeName: s.tree.name,
+      visibility: s.visibility,
+    }));
+
+    // Compute summary aggregations
+    const uniqueTreeIds = new Set(skills.map((s: any) => s.treeId));
+    const categoryCounts: Record<string, number> = {};
+    for (const s of skills) {
+      if (s.category) {
+        categoryCounts[s.category] = (categoryCounts[s.category] || 0) + 1;
+      }
+    }
+    const topCategories = Object.entries(categoryCounts)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 5)
+      .map(([cat]) => cat);
+
+    const summary = {
+      totalSkills: skills.length,
+      treesWithSkills: uniqueTreeIds.size,
+      topCategories,
+    };
+
+    res.json({ userId, skills: skillItems, summary });
+  } catch (error: any) {
+    console.error('[getCrossTreeSkills] ERROR:', error?.message || error);
+    res.status(500).json({
+      error: 'Failed to get cross-tree skills',
+      detail: error?.message || String(error),
+    });
+  }
+};

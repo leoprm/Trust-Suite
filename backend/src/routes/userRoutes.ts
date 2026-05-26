@@ -1,12 +1,15 @@
 import { Router } from 'express';
 import { getUserSkills, getUserXpHistory, getMySkills, getWorkerLevels } from '../controllers/userController';
-import { getUserTrees } from '../controllers/treeController';
+import { getUserTrees, getCrossTreeSkills } from '../controllers/treeController';
 import { authenticateJWT } from '../middleware/authMiddleware';
 
 const router = Router();
 
 // GET /api/users/:telegramUserId/trees → trees where user is an active member
 router.get('/:telegramUserId/trees', getUserTrees);
+
+// GET /api/users/:userId/cross-tree-skills → all skills across all trees
+router.get('/:userId/cross-tree-skills', authenticateJWT, getCrossTreeSkills);
 
 // GET /api/users/me/skills → cross-tree profile (skills + level + top 3)
 router.get('/me/skills', authenticateJWT, getMySkills);

@@ -132,6 +132,12 @@ enum ExternalTaskType {
   AGENT
 }
 
+enum Visibility {
+  PRIVATE
+  INTERNAL
+  PUBLIC
+}
+
 enum WorkerLevelReason {
   TASK_COMPLETED
   XP_DECAY
@@ -1286,13 +1292,14 @@ model WorkerLevelHistory {
 // ── Tree Skills ─────────────────────────────────────────────────────────────
 
 model TreeSkill {
-  id        String   @id @default(uuid())
-  treeId    String
-  userId    String
-  skill     String
-  xp        Int      @default(0)
-  level     Int      @default(1)
-  updatedAt DateTime @updatedAt
+  id         String     @id @default(uuid())
+  treeId     String
+  userId     String
+  skill      String
+  xp         Int        @default(0)
+  level      Int        @default(1)
+  visibility Visibility @default(INTERNAL)
+  updatedAt  DateTime   @updatedAt
 
   tree Tree @relation(fields: [treeId], references: [id], onDelete: Cascade)
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
