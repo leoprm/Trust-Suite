@@ -365,12 +365,26 @@ export const readTreeSandbox = async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'Path is not a file' });
     }
 
-    // 100 KB limit for reads
+    // 100 KB hard limit for reads
     if (stat.size > 100_000) {
       return res.status(413).json({ error: 'File too large (max 100 KB)', size: stat.size });
     }
 
-    const content = fs.readFileSync(safePath, 'utf-8');
+    // Truncation: files > 5 KB return first 100 lines unless ?full=true
+    const TRUNCATION_THRESHOLD = 5 * 1024; // 5 KB
+    const fullMode = req.query.full === 'true';
+
+    let content = fs.readFileSync(safePath, 'utf-8');
+    let truncated = false;
+
+    if (!fullMode && stat.size > TRUNCATION_THRESHOLD) {
+      const lines = content.split('\n');
+      if (lines.length > 100) {
+        content = lines.slice(0, 100).join('\n')
+          + `\n[TRUNCATED: ${stat.size} bytes total]`;
+        truncated = true;
+      }
+    }
 
     void logEvent({
       ...getRequestContext(req),
@@ -379,9 +393,10 @@ export const readTreeSandbox = async (req: Request, res: Response) => {
       entityType: 'TreeSandbox',
       entityId: id,
       source: 'SYSTEM',
+      metadataJson: truncated ? { truncated: true, originalSize: stat.size } : undefined,
     });
 
-    res.json({ content, size: stat.size });
+    res.json({ content, size: truncated ? stat.size : content.length, truncated: truncated || undefined });
   } catch (error: any) {
     console.error('[readTreeSandbox] ERROR:', error?.message || error);
     res.status(500).json({ error: 'File read failed', detail: error?.message });
