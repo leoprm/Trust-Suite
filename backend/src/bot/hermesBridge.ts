@@ -830,96 +830,32 @@ lines.push("TIENES terminal y file, PERO operan EXCLUSIVAMENTE dentro del sandbo
   lines.push("  ❌ NUNCA uses paths fuera del sandbox (/home/leo/, /etc/, /tmp/, etc.)");
   lines.push("  ❌ NO TIENES memoria nativa de Hermes, PERO tienes acceso a 2 capas de memoria persistente vía API (ver sección MEMORIA PERSISTENTE más abajo)");
   lines.push("");
-  lines.push("═══ ACCESO AL SANDBOX (vía API REST — alternativo) ═══");
+  lines.push("═══ ACCESO AL SANDBOX Y APIs ═══");
   lines.push("");
-  lines.push(`Tu Tree ID es: ${treeId}`);
-  lines.push("Tu acceso principal es vía terminal() y file tools (ver sección anterior).");
-  lines.push("Como alternativa vía execute_code+fetch(), puedes usar estos endpoints REST:");
-  lines.push("");
-  lines.push("1. EJECUTAR COMANDOS EN EL SANDBOX:");
-  lines.push(`   POST /api/trees/${treeId}/sandbox/exec`);
-  lines.push('   Body: { "command": "ls -la", "cwd": "/sandbox" }');
-  lines.push('   Response: { "stdout": "...", "stderr": "...", "exitCode": 0 }');
-  lines.push("");
-  lines.push("2. LEER ARCHIVOS DEL SANDBOX:");
-  lines.push(`   POST /api/trees/${treeId}/sandbox/read`);
-  lines.push('   Body: { "path": "archivo.txt" }');
-  lines.push('   Response: { "content": "...", "exists": true }');
-  lines.push("");
-  lines.push("3. ESCRIBIR ARCHIVOS EN EL SANDBOX:");
-  lines.push(`   POST /api/trees/${treeId}/sandbox/write`);
-  lines.push('   Body: { "path": "archivo.txt", "content": "contenido..." }');
-  lines.push('   Response: { "success": true }');
-  lines.push('   ⚠️  Solo para texto/JSON que quepa en memoria. Para archivos binarios');
-  lines.push('      (videos, imágenes, documentos >1 MB), usa el endpoint upload (#4).');
-  lines.push("");
-  lines.push("4. SUBIR ARCHIVOS BINARIOS AL SANDBOX:");
-  lines.push(`   POST /api/trees/${treeId}/sandbox/upload`);
-  lines.push('   Usa multipart/form-data con campo "file". Límite: 50 MB.');
-  lines.push('   Ejemplo: fetch con FormData — fd.append("file", blob, "video.mp4").');
-  lines.push('   Response: { "path": "video.mp4", "size": 12400000 }');
+  lines.push(`Tu Tree ID es: ${treeId}. Para APIs REST usá execute_code+fetch()`);
+  lines.push("con Authorization: Bearer HERMES_API_SERVER_KEY.");
+  lines.push("Endpoints clave (ver trust-maker y trustmaker-exec skills para docs completos):");
+  lines.push(`  POST /api/trees/${treeId}/sandbox/exec   — Body: {command, timeout?} → {stdout,stderr,exitCode}`);
+  lines.push(`  POST /api/trees/${treeId}/sandbox/read   — leer archivos`);
+  lines.push(`  POST /api/trees/${treeId}/sandbox/write  — escribir archivos`);
+  lines.push(`  POST /api/trees/${treeId}/sandbox/upload — subir binarios (multipart, 50MB)`);
+  lines.push(`  POST /api/bot/send-message               — Body: {treeId, text} → envía al chat`);
   lines.push("");
 
-  lines.push("═══ PROCESAMIENTO DE ARCHIVOS RECIBIDOS ═══");
+  lines.push("═══ PROCESAMIENTO DE ARCHIVOS ═══");
   lines.push("");
-  lines.push("Cuando un usuario envía un archivo al grupo, vos recibís un mensaje como:");
-  lines.push('"Leo envi\u00f3 una foto. [archivo: /home/trustmaker/trees/TREE_ID/media/123.jpg]"');
-  lines.push("");
-  lines.push("Para PROCESAR ese archivo, usá el sandbox exec con estas herramientas:");
-  lines.push("");
-  lines.push("- PDF:   pdftotext /sandbox/media/archivo.pdf -   (extrae TODO el texto)");
-  lines.push("- EPUB:  pandoc /sandbox/media/archivo.epub -t plain");
-  lines.push("- DOCX:  pandoc /sandbox/media/archivo.docx -t plain");
-  lines.push("- Imagen con texto (OCR):  usá execute_code con pytesseract para extraer texto:");
-  lines.push(`  python3 -c \"`);
-  lines.push(`  from PIL import Image; import pytesseract`);
-  lines.push(`  text = pytesseract.image_to_string(Image.open('/sandbox/media/archivo.jpg'), lang='spa+eng')`);
-  lines.push(`  print(text)\"`);
-  lines.push("  Tip: si la imagen tiene poco texto, usá lang='spa' o lang='eng' para mejor precisión.");
-  lines.push("- Imagen sin texto (foto, gráfico, etc.): describí lo que sabés del contexto.");
-  lines.push("- Audio (.ogg): usá el endpoint /api/audio/transcribe con whisper");
-  lines.push("");
-  lines.push("IMPORTANTE: NO intentes 'pip install' ni 'apt-get' — el sandbox es de solo lectura.");
-  lines.push("Usá las herramientas YA instaladas: pdftotext, pandoc, grep, find, cat, ls, etc.");
+  lines.push("Usá el sandbox exec con herramientas YA instaladas:");
+  lines.push("  pdftotext, pandoc, grep, find, cat, ls, python3+pytesseract (OCR).");
+  lines.push("NO intentes pip install ni apt-get — el sandbox es de solo lectura.");
   lines.push("");
 
   // ── Skills adicionales ────────────────────────────────────────────────
-  lines.push("═══ SKILLS ADICIONALES ═══");
+  lines.push("═══ SKILLS ═══");
   lines.push("");
-  lines.push("Tienes acceso a skills generales que puedes cargar con skill_view().");
-  lines.push("Usa skills_list para ver la lista completa de skills disponibles.");
-  lines.push("Skills clave que puedes necesitar:");
-  lines.push("  - ocr-and-documents: extraer texto de PDFs/imágenes/escaneos (pymupdf, marker-pdf)");
-  lines.push("  - youtube-content: extraer transcripciones de videos de YouTube");
-  lines.push("  - humanizer: humanizar respuestas (quitar tono robótico)");
-  lines.push("  - notebooklm: generar podcasts, quizzes, infografías desde contenido");
-  lines.push("  - web-research: búsqueda web alternativa vía DuckDuckGo");
-  lines.push("  - arxiv: buscar papers académicos");
-  lines.push("  - maps: geocoding, rutas, puntos de interés");
-  lines.push("  - caveman: modo de comunicación ultra-comprimido (75% menos tokens)");
-  lines.push("  - gif-search: buscar GIFs animados");
-  lines.push("");
-  lines.push('Carga una skill con skill_view("nombre-de-la-skill") cuando la necesites.');
-  lines.push("");
-
-  lines.push(
-    "Formato de solicitud HTTP — usa fetch con tu TREE_API_KEY:",
-  );
-  lines.push("");
-  lines.push("```javascript");
-  lines.push(
-    `fetch("http://localhost:3100/api/trees/${treeId}/sandbox/exec", {`,
-  );
-  lines.push('  method: "POST",');
-  lines.push("  headers: {");
-  lines.push('    "Content-Type": "application/json",');
-  lines.push(`    "Authorization": "Bearer ${treeApiKey}"`);
-  lines.push("  },");
-  lines.push(
-    '  body: JSON.stringify({ command: "...", cwd: "/sandbox" })',
-  );
-  lines.push("});");
-  lines.push("```");
+  lines.push("Skills disponibles sin tool calls extra: trust-maker, trustmaker-exec.");
+  lines.push("Otras skills disponibles: ocr-and-documents, youtube-content, humanizer,");
+  lines.push("notebooklm, web-research, arxiv, maps, caveman, gif-search.");
+  lines.push("Usá skills_list para ver la lista completa y skill_view() para cargarlas.");
   lines.push("");
   lines.push("⚠️  REGLAS DEL SANDBOX:");
   lines.push(
@@ -963,11 +899,12 @@ lines.push("TIENES terminal y file, PERO operan EXCLUSIVAMENTE dentro del sandbo
   lines.push("");
   lines.push("── REGLAS OBLIGATORIAS ──");
   lines.push("");
-  lines.push("🔴 REGLA #1 — AL INICIO DE CADA CONVERSACIÓN:");
-  lines.push("   SIEMPRE carga el historial reciente ANTES de responder tu primer mensaje.");
-  lines.push("   Usa POST /sandbox/history con iteration=1. Esto te da los últimos ~30");
-  lines.push("   mensajes. Si el usuario referencia algo más antiguo, escala iteration.");
-  lines.push("   HAZLO INCLUSO si el primer mensaje parece trivial (\"hola\", \"cómo estás\").");
+  lines.push("🔴 REGLA #1 — CONTEXTO DE CONVERSACIÓN:");
+  lines.push("   Carga el historial SOLO cuando el mensaje lo requiera: referencias a");
+  lines.push("   conversaciones pasadas, seguimiento de temas, o decisiones previas.");
+  lines.push("   Usa POST /sandbox/history con iteration=1 (~30 msg). Escala si necesitás más.");
+  lines.push("   Para saludos, preguntas nuevas o mensajes que no necesitan contexto previo,");
+  lines.push("   NO cargues el historial — respondé directo.");
   lines.push("");
   lines.push("🔴 REGLA #2 — AL FINAL DE CADA CONVERSACIÓN:");
   lines.push("   Cuando la conversación termina (el usuario se despide, cambia de tema");
