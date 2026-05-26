@@ -2529,14 +2529,38 @@ export async function createBot(prisma: PrismaClient): Promise<Bot<BotContext> |
         } catch { /* silent — dailyLog is best-effort */ }
       }
 
-      // 3. Solo responder si el audio menciona a Ari.
-      //    "Ari" es corto y la transcripción lo captura bien con variaciones mínimas.
-      const ariMatch = transcribedText.match(/\b(ari|ari[,!?]?|Ari)\b/i);
-      if (!ariMatch) {
-        console.log(
-          `[Voice] No "Ari" mention — ignoring. Text: "${transcribedText.substring(0, 80)}"`,
-        );
-        return;
+      // 3. One-on-one mode: if group has exactly 2 members (Ari + 1 person),
+      //    bypass mention detection and respond to everything.
+      //    If 3+ members, require explicit "Ari" mention in the audio.
+      let isOneOnOneVoice = false;
+      if (chatId && (ctx.chat?.type === "group" || ctx.chat?.type === "supergroup")) {
+        try {
+          const memberCount = await ctx.getChatMemberCount();
+          if (memberCount === 2) {
+            isOneOnOneVoice = true;
+          }
+        } catch {
+          // Fallback: check DB tree member count
+          const voiceTree = await findTreeByChat(prisma, chatId);
+          if (voiceTree) {
+            const dbCount = await (prisma as any).treeMember.count({
+              where: { treeId: voiceTree.id, status: "ACTIVE" },
+            });
+            if (dbCount <= 1) {
+              isOneOnOneVoice = true;
+            }
+          }
+        }
+      }
+
+      if (!isOneOnOneVoice) {
+        const ariMatch = transcribedText.match(/\b(ari|ari[,!?]?|Ari)\b/i);
+        if (!ariMatch) {
+          console.log(
+            `[Voice] No "Ari" mention — ignoring. Text: "${transcribedText.substring(0, 80)}"`,
+          );
+          return;
+        }
       }
       const cleanText = transcribedText.trim();
       if (!cleanText) return;
