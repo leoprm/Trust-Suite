@@ -256,6 +256,7 @@ model Tree {
   externalTasks           ExternalTask[]
   satisfactionSurveys     SatisfactionSurvey[]
   treeSkills              TreeSkill[]
+  conversationNodes       ConversationNode[]
   paused                  Boolean                @default(false)
   monthlyReportsEnabled   Boolean                @default(true)
   voteThreshold           Int                    @default(20)
@@ -1361,4 +1362,22 @@ model HiringApplicant {
   @@index([taskId])
   @@index([userId])
   @@index([taskId, status])
+}
+
+/// Conversation tree node — enables branching conversation history (Pi feature).
+model ConversationNode {
+  id        String   @id @default(uuid())
+  treeId    String
+  tree      Tree     @relation(fields: [treeId], references: [id], onDelete: Cascade)
+  parentId  String?  // null = root node
+  parent    ConversationNode? @relation("ConversationTree", fields: [parentId], references: [id])
+  children  ConversationNode[] @relation("ConversationTree")
+  branchName String? // human-readable branch label
+  messages   Json     @default("[]") // [{role, content, timestamp}]
+  summary    String?  @db.Text // AI-generated summary of this node
+  createdAt  DateTime @default(now())
+
+  @@index([treeId])
+  @@index([parentId])
+  @@index([treeId, createdAt])
 }

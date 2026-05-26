@@ -34,6 +34,8 @@ import {
   quotaTreeSandbox,
 } from '../controllers/treeSandboxController';
 import { authenticateJWT } from '../middleware/authMiddleware';
+import { compactContext } from '../controllers/compactController';
+import { createBranch, getConversationTree, checkoutBranch, summarizeNode } from '../controllers/conversationTreeController';
 
 const router = Router();
 
@@ -61,6 +63,11 @@ router.post('/:id/sandbox/tm-call', tmCall);
 router.post('/:id/sandbox/web-extract', webExtractTreeSandbox);
 router.post('/:id/sandbox/memory', memoryTreeSandbox);
 router.post('/:id/sandbox/history', historyTreeSandbox);
+router.post('/:id/sandbox/compact', compactContext);
+router.post('/:id/sandbox/branch', createBranch);
+router.get('/:id/sandbox/tree', getConversationTree);
+router.post('/:id/sandbox/checkout', checkoutBranch);
+router.post('/:id/sandbox/summarize-node', summarizeNode);
 router.post('/:id/sandbox/search', searchTreeSandbox);
 router.post('/:id/sandbox/patch', patchTreeSandbox);
 

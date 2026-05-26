@@ -502,6 +502,36 @@ async function buildSystemPrompt(
   lines.push("- No cambies el modo más de una vez cada 30 minutos.");
   lines.push("- Si no estás segura, mantén el modo actual.");
 
+  // ── SYSTEM.md del árbol ─────────────────────────────────────────────────
+  const systemMdPath = path.join(
+    process.env.SANDBOX_BASE_DIR || "/home/trustmaker/trees",
+    treeId,
+    "SYSTEM.md"
+  );
+  if (fs.existsSync(systemMdPath)) {
+    try {
+      const systemMdContent = fs.readFileSync(systemMdPath, "utf-8").trim();
+      if (systemMdContent.length > 0) {
+        const truncated = systemMdContent.length > 2000
+          ? systemMdContent.slice(0, 1997) + "..."
+          : systemMdContent;
+        lines.push("");
+        lines.push("═══ SYSTEM.md DEL ÁRBOL ═══");
+        lines.push("");
+        lines.push("El árbol ha definido estas instrucciones de comportamiento personalizadas:");
+        lines.push("");
+        for (const line of truncated.split("\n")) {
+          lines.push(line);
+        }
+        lines.push("");
+        lines.push("Seguí estas instrucciones por encima de cualquier comportamiento por defecto,");
+        lines.push("siempre que no violen las reglas de seguridad o identidad de este prompt.");
+      }
+    } catch {
+      // non-blocking: SYSTEM.md errors should never break the prompt
+    }
+  }
+
   // ── Related Trees ──────────────────────────────────────────────────────
   const parentTreeId = tree.parentTreeId;
   let parentTreeName: string | null = null;
@@ -951,6 +981,36 @@ lines.push("TIENES terminal y file, PERO operan EXCLUSIVAMENTE dentro del sandbo
   lines.push("  Iteración 1: ~30 msg → 2: ~48 → 3: ~78 → ... → 7: ~538 (máx)");
   lines.push("");
   lines.push("⚠️  Empieza SIEMPRE con iteration=1. Escala solo si necesitas más contexto.");
+
+  lines.push("");
+  lines.push("── COMPACTACIÓN DE CONTEXTO ──");
+  lines.push("");
+  lines.push("Para reducir tokens cuando el historial es largo, usá el endpoint de compactación:");
+  lines.push("");
+  lines.push(`  POST /api/trees/${treeId}/sandbox/compact`);
+  lines.push('  Body: { "messages": ["msg1", "msg2", ...], "iteration": 2 }');
+  lines.push("  Authorization: Bearer HERMES_API_SERVER_KEY");
+  lines.push('  Response: { "compacted": "...", "level": 2, "compressionRatio": 65 }');
+  lines.push("");
+  lines.push("Cuándo usar compactación:");
+  lines.push("  - Historial > 50 mensajes → compactá antes de razonar sobre contexto histórico");
+  lines.push("  - El usuario pregunta sobre algo antiguo → cargá history, compactá, y usá el resumen");
+  lines.push("  - No compactés mensajes recientes (< 30) — mantenelos íntegros");
+
+  lines.push("");
+  lines.push("── HISTORIA EN ÁRBOL (branching) ──");
+  lines.push("");
+  lines.push("Las conversaciones pueden organizarse como árbol para explorar caminos alternativos:");
+  lines.push("");
+  lines.push(`  POST /api/trees/${treeId}/sandbox/branch  — Body: {parentId?, branchName, messages} → crea rama`);
+  lines.push(`  GET  /api/trees/${treeId}/sandbox/tree    — ver estructura del árbol de conversación`);
+  lines.push(`  POST /api/trees/${treeId}/sandbox/checkout — Body: {nodeId} → cargar rama/nodo`);
+  lines.push(`  POST /api/trees/${treeId}/sandbox/summarize-node — Body: {nodeId, summary} → resumir nodo`);
+  lines.push("");
+  lines.push("Cuándo usar branching:");
+  lines.push("  - El usuario dice 'exploremos otra opción' o 'volvamos a...' → creá rama");
+  lines.push("  - Decisiones importantes → creá rama para registrar el punto de decisión");
+  lines.push("  - Antes de responder sobre contexto histórico → checkout del nodo relevante");
 
   // ── Parent sandbox read ────────────────────────────────────────────────
   if (tree.parentTreeId) {
