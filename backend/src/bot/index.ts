@@ -2435,216 +2435,185 @@ export async function createBot(prisma: PrismaClient): Promise<Bot<BotContext> |
   // T29: El bot escucha todo pero solo responde si lo mencionan.
   // Flujo: 1) Descargar .ogg vía getFile 2) POST /api/audio/transcribe
   // 3) Verificar si el texto contiene @TrustMakerBot 4) Si sí → pipeline concierge
-  bot.on("message:voice", async (ctx) => {
+  bot.on("message:voice", (ctx) => {
     const msg = ctx.message;
     if (!msg?.voice) return;
 
     const chatId = ctx.chat?.id.toString();
+    if (!chatId) return;
+
     const fileId = msg.voice.file_id;
+    const senderFirstName = ctx.from?.first_name;
+    const senderUsername = ctx.from?.username;
+    const senderId = ctx.from?.id;
+    const messageDate = msg.date;
+    const chatType = ctx.chat?.type;
+    const voiceMimeType = msg.voice.mime_type;
 
-    // Show typing indicator while transcribing
-    ctx.replyWithChatAction("typing").catch(() => {});
+    // Responder inmediatamente — no bloquear al usuario
+    ctx.reply("🎙️ Estoy procesando tu audio, te respondo en un momento...").catch(() => {});
 
-    try {
-      // 1. Download .ogg from Telegram
-      const fileInfo = await ctx.api.getFile(fileId);
-      if (!fileInfo.file_path) {
-        console.error("[Voice] Telegram returned no file_path for", fileId);
-        return;
-      }
-
-      const tgUrl = `https://api.telegram.org/file/bot${process.env.TELEGRAM_BOT_TOKEN}/${fileInfo.file_path}`;
-      const fileBuffer = await httpsDownload(tgUrl);
-
-      // Silent save: guardar la nota de voz en filesystem del árbol
-      if (chatId && (ctx.chat?.type === "group" || ctx.chat?.type === "supergroup")) {
+    // Procesar transcripción + pipeline en background (fire-and-forget)
+    setTimeout(() => {
+      (async () => {
         try {
-          const voiceTree = await findTreeByChat(prisma, chatId);
-          if (voiceTree) {
-            const TREES_BASE = process.env.SANDBOX_BASE_DIR || "/home/leo/trees";
-            const rawName = ctx.from?.first_name
-              || ctx.from?.username
-              || ctx.from?.id.toString()
-              || "unknown";
-            const senderName = rawName
-              .replace(/[^a-zA-Z0-9_\-\u00e1\u00e9\u00ed\u00f3\u00fa\u00f1\u00c1\u00c9\u00cd\u00d3\u00da\u00d1 ]/g, "")
-              .trim()
-              .replace(/\s+/g, "_")
-              .slice(0, 64) || "unknown";
-            const today = new Date().toISOString().slice(0, 10);
-            const voiceFileName = `voice_${Date.now()}.ogg`;
-            const dir = `${TREES_BASE}/${voiceTree.id}/media/${senderName}`;
-            await fsPromises.mkdir(dir, { recursive: true });
-            const destFile = `${dir}/${today}_${voiceFileName}`;
-            await fsPromises.writeFile(destFile, fileBuffer);
-            console.log(`[Voice] Media saved: ${destFile}`);
+          // 1. Download .ogg from Telegram
+          const fileInfo = await ctx.api.getFile(fileId);
+          if (!fileInfo.file_path) {
+            console.error("[Voice] Telegram returned no file_path for", fileId);
+            return;
           }
-        } catch (_saveErr: any) {
-          console.error("[Voice] Silent save error:", _saveErr.message || _saveErr);
-        }
-      }
 
-      // 2. POST to /api/audio/transcribe
-      const blob = new Blob([fileBuffer], {
-        type: msg.voice.mime_type || "audio/ogg",
-      });
-      const formData = new FormData();
-      formData.append("audio", blob, "voice.ogg");
+          const tgUrl = `https://api.telegram.org/file/bot${process.env.TELEGRAM_BOT_TOKEN}/${fileInfo.file_path}`;
+          const fileBuffer = await httpsDownload(tgUrl);
 
-      const apiKey = process.env.HERMES_API_SERVER_KEY ?? "";
-      const transcribeResp = await fetch(
-        "http://localhost:3100/api/audio/transcribe",
-        {
-          method: "POST",
-          headers: { Authorization: `Bearer ${apiKey}` },
-          body: formData,
-        },
-      );
-
-      if (!transcribeResp.ok) {
-        console.error(
-          "[Voice] Transcription endpoint returned:",
-          transcribeResp.status,
-        );
-        return;
-      }
-
-      const data = (await transcribeResp.json()) as any;
-      const transcribedText: string = data?.text ?? "";
-      if (!transcribedText.trim()) return;
-
-      // ── Daily conversation log (audio) ──────────────────────────
-      if (chatId) {
-        try {
-          const logVoiceTree = await findTreeByChat(prisma, chatId);
-          if (logVoiceTree) {
-            appendToDailyLog(
-              logVoiceTree.id,
-              new Date(msg.date * 1000),
-              ctx.from?.first_name || "Unknown",
-              transcribedText.trim(),
-              true,
-            );
-          }
-        } catch { /* silent — dailyLog is best-effort */ }
-      }
-
-      // 3. One-on-one mode: if group has exactly 2 members (Ari + 1 person),
-      //    bypass mention detection and respond to everything.
-      //    If 3+ members, require explicit "Ari" mention in the audio.
-      let isOneOnOneVoice = false;
-      if (chatId && (ctx.chat?.type === "group" || ctx.chat?.type === "supergroup")) {
-        try {
-          const memberCount = await ctx.getChatMemberCount();
-          if (memberCount === 2) {
-            isOneOnOneVoice = true;
-          }
-        } catch {
-          // Fallback: check DB tree member count
-          const voiceTree = await findTreeByChat(prisma, chatId);
-          if (voiceTree) {
-            const dbCount = await (prisma as any).treeMember.count({
-              where: { treeId: voiceTree.id, status: "ACTIVE" },
-            });
-            if (dbCount <= 1) {
-              isOneOnOneVoice = true;
+          // Silent save: guardar la nota de voz en filesystem del árbol
+          if (chatType === "group" || chatType === "supergroup") {
+            try {
+              const voiceTree = await findTreeByChat(prisma, chatId);
+              if (voiceTree) {
+                const TREES_BASE = process.env.SANDBOX_BASE_DIR || "/home/leo/trees";
+                const rawName = senderFirstName || senderUsername || senderId?.toString() || "unknown";
+                const cleanSenderName = rawName
+                  .replace(/[^a-zA-Z0-9_\-áéíóúñÁÉÍÓÚÑ ]/g, "")
+                  .trim()
+                  .replace(/\s+/g, "_")
+                  .slice(0, 64) || "unknown";
+                const today = new Date().toISOString().slice(0, 10);
+                const voiceFileName = `voice_${Date.now()}.ogg`;
+                const dir = `${TREES_BASE}/${voiceTree.id}/media/${cleanSenderName}`;
+                await fsPromises.mkdir(dir, { recursive: true });
+                const destFile = `${dir}/${today}_${voiceFileName}`;
+                await fsPromises.writeFile(destFile, fileBuffer);
+                console.log(`[Voice] Media saved: ${destFile}`);
+              }
+            } catch (_saveErr: any) {
+              console.error("[Voice] Silent save error:", _saveErr.message || _saveErr);
             }
           }
-        }
-      }
 
-      if (!isOneOnOneVoice) {
-        const ariMatch = transcribedText.match(/\b(ari|ari[,!?]?|Ari)\b/i);
-        if (!ariMatch) {
-          console.log(
-            `[Voice] No "Ari" mention — ignoring. Text: "${transcribedText.substring(0, 80)}"`,
-          );
-          return;
-        }
-      }
-      const cleanText = transcribedText.trim();
-      if (!cleanText) return;
+          // 2. POST to /api/audio/transcribe
+          const blob = new Blob([fileBuffer], { type: voiceMimeType || "audio/ogg" });
+          const formData = new FormData();
+          formData.append("audio", blob, "voice.ogg");
 
-      console.log(
-        `[Voice] Transcribed + detected mention → routing: "${cleanText.substring(0, 80)}"`,
-      );
+          const apiKey = process.env.HERMES_API_SERVER_KEY ?? "";
+          const transcribeResp = await fetch("http://localhost:3100/api/audio/transcribe", {
+            method: "POST",
+            headers: { Authorization: `Bearer ${apiKey}` },
+            body: formData,
+          });
 
-      // 5. Route through concierge pipeline (same as text messages)
-      // 5a. Payment check
-      if (chatId) {
-        const paymentResult = await checkPaymentAccess(
-          prisma,
-          ctx,
-          chatId,
-          cleanText,
-        );
-        if (paymentResult.blocked) {
-          await ctx.reply(paymentResult.reply, { parse_mode: "Markdown" });
-          return;
-        }
-      }
+          if (!transcribeResp.ok) {
+            console.error("[Voice] Transcription endpoint returned:", transcribeResp.status);
+            await bot.api.sendMessage(chatId, "❌ No pude transcribir tu audio. ¿Probamos con texto?").catch(() => {});
+            return;
+          }
 
-      // 5b. Simulate a text message so the existing handlers work.
-      //     Prepend @TrustMakerBot mention so extractCommandText + handleNaturalMessage
-      //     can parse it (they require a leading mention to identify the message as addressed).
-      const originalText = (msg as any).text;
-      (msg as any).text = `@TrustMakerBot ${cleanText}`;
+          const data = (await transcribeResp.json()) as any;
+          const transcribedText: string = data?.text ?? "";
+          if (!transcribedText.trim()) {
+            await bot.api.sendMessage(chatId, "🤔 No entendí el audio. ¿Lo podés repetir o escribir?").catch(() => {});
+            return;
+          }
 
-      try {
-        const isCommand = cleanText.startsWith("/");
-        const isHelpAlias = /^(help|ayuda)$/i.test(cleanText);
-
-        if (isCommand || isHelpAlias) {
-          const result = await handleMessage(prisma, ctx);
-          if (result) {
-            // Send text immediately
-            const messages = formatForChannel(
-              { text: result.text, react: result.react },
-              "telegram",
-            );
-            await sendViaTelegram(ctx, messages);
-            if (result.react) {
-              try { await ctx.react("❤"); } catch {}
+          // Daily conversation log
+          try {
+            const logVoiceTree = await findTreeByChat(prisma, chatId);
+            if (logVoiceTree) {
+              appendToDailyLog(
+                logVoiceTree.id,
+                new Date(messageDate * 1000),
+                senderFirstName || "Unknown",
+                transcribedText.trim(),
+                true,
+              );
             }
-            // Voice: fire-and-forget
-            const voiceLang = ctx.from ? await getUserLanguage(prisma, ctx.from.id) : undefined;
-            generateVoice(result.text, voiceLang).then((vb) => {
-              if (vb) {
-                const vmsgs = formatForChannel({ text: "", voiceBuffer: vb }, "telegram");
-                sendViaTelegram(ctx, vmsgs).catch(() => {});
+          } catch { /* silent */ }
+
+          // 3. One-on-one mode
+          let isOneOnOneVoice = false;
+          if (chatType === "group" || chatType === "supergroup") {
+            try {
+              const memberCount = await ctx.getChatMemberCount();
+              if (memberCount === 2) isOneOnOneVoice = true;
+            } catch {
+              const voiceTree = await findTreeByChat(prisma, chatId);
+              if (voiceTree) {
+                const dbCount = await (prisma as any).treeMember.count({
+                  where: { treeId: voiceTree.id, status: "ACTIVE" },
+                });
+                if (dbCount <= 1) isOneOnOneVoice = true;
               }
-            });
+            }
           }
-        } else {
-          const naturalResult = await handleNaturalMessage(prisma, ctx);
-          if (naturalResult) {
-            // Send text immediately
-            const messages = formatForChannel(
-              { text: naturalResult.text },
-              "telegram",
-            );
-            await sendViaTelegram(ctx, messages);
-            // Voice: fire-and-forget
-            const voiceNatLang = ctx.from ? await getUserLanguage(prisma, ctx.from.id) : undefined;
-            generateVoice(naturalResult.text, voiceNatLang).then((vb) => {
-              if (vb) {
-                const vmsgs = formatForChannel({ text: "", voiceBuffer: vb }, "telegram");
-                sendViaTelegram(ctx, vmsgs).catch(() => {});
+
+          if (!isOneOnOneVoice) {
+            const ariMatch = transcribedText.match(/\b(ari|ari[,!?]?|Ari)\b/i);
+            if (!ariMatch) {
+              console.log(`[Voice] No "Ari" mention — ignoring. Text: "${transcribedText.substring(0, 80)}"`);
+              return;
+            }
+          }
+          const cleanText = transcribedText.trim();
+          if (!cleanText) return;
+
+          console.log(`[Voice] Transcribed + routing: "${cleanText.substring(0, 80)}"`);
+
+          // 5a. Payment check
+          const paymentResult = await checkPaymentAccess(prisma, ctx, chatId, cleanText);
+          if (paymentResult.blocked) {
+            await bot.api.sendMessage(chatId, paymentResult.reply, { parse_mode: "Markdown" }).catch(() => {});
+            return;
+          }
+
+          // 5b. Simulate text message with @TrustMakerBot prefix
+          const originalText = (msg as any).text;
+          (msg as any).text = `@TrustMakerBot ${cleanText}`;
+
+          try {
+            const isCommand = cleanText.startsWith("/");
+            const isHelpAlias = /^(help|ayuda)$/i.test(cleanText);
+
+            if (isCommand || isHelpAlias) {
+              const result = await handleMessage(prisma, ctx);
+              if (result) {
+                await bot.api.sendMessage(chatId, result.text, { parse_mode: "Markdown" }).catch(() => {});
+                if (result.react) {
+                  try { await ctx.react("❤"); } catch {}
+                }
+                const voiceLang = senderId ? await getUserLanguage(prisma, senderId) : undefined;
+                generateVoice(result.text, voiceLang).then((vb) => {
+                  if (vb) {
+                    bot.api.sendVoice(chatId, new InputFile(vb)).catch(() => {});
+                  }
+                });
               }
-            });
+            } else {
+              const naturalResult = await handleNaturalMessage(prisma, ctx);
+              if (naturalResult) {
+                await bot.api.sendMessage(chatId, naturalResult.text, { parse_mode: "Markdown" }).catch(() => {});
+                const voiceNatLang = senderId ? await getUserLanguage(prisma, senderId) : undefined;
+                generateVoice(naturalResult.text, voiceNatLang).then((vb) => {
+                  if (vb) {
+                    bot.api.sendVoice(chatId, new InputFile(vb)).catch(() => {});
+                  }
+                });
+              }
+            }
+          } finally {
+            if (originalText === undefined) {
+              delete (msg as any).text;
+            } else {
+              (msg as any).text = originalText;
+            }
           }
+        } catch (err: any) {
+          console.error("[Voice] Background error:", err.message || err);
+          bot.api.sendMessage(chatId, "❌ Ocurrió un error procesando tu audio. ¿Probamos con texto?").catch(() => {});
         }
-      } finally {
-        // Restore original message state (voice messages have no text)
-        if (originalText === undefined) {
-          delete (msg as any).text;
-        } else {
-          (msg as any).text = originalText;
-        }
-      }
-    } catch (err: any) {
-      console.error("[Voice] Handler error:", err.message || err);
-    }
+      })();
+    }, 0);
   });
 
   // ── Evidencia: fotos y documentos ──────────────────────────────────────
