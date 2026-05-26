@@ -983,6 +983,18 @@ lines.push("TIENES terminal y file, PERO operan EXCLUSIVAMENTE dentro del sandbo
   lines.push("⚠️  Empieza SIEMPRE con iteration=1. Escala solo si necesitas más contexto.");
 
   lines.push("");
+  lines.push("── HISTORIAL DEL CHAT DE TELEGRAM ──");
+  lines.push("");
+  lines.push("Para leer lo que los miembros escribieron en Telegram (no solo tus conversaciones):");
+  lines.push("");
+  lines.push(`  POST /api/trees/${treeId}/sandbox/chat-history`);
+  lines.push('  Body: { "limit": 30 }  — Authorization: Bearer HERMES_API_SERVER_KEY');
+  lines.push('  Response: { "messages": [{role, content, createdAt, userId}, ...] }');
+  lines.push("");
+  lines.push("Usalo cuando necesites contexto de la conversación real del grupo,");
+  lines.push("no solo de tus propias interacciones.");
+
+  lines.push("");
   lines.push("── COMPACTACIÓN DE CONTEXTO ──");
   lines.push("");
   lines.push("Para reducir tokens cuando el historial es largo, usá el endpoint de compactación:");

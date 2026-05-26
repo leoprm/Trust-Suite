@@ -1534,3 +1534,39 @@ export const quotaTreeSandbox = async (req: Request, res: Response) => {
     res.status(500).json({ error: 'Quota check failed', detail: error?.message });
   }
 };
+
+// ── POST /api/trees/:id/sandbox/chat-history ──────────────────────────
+// Exposes recent ChatMessage records for the tree so Ari can read the
+// actual Telegram chat history, not just her own conversations.
+export const chatHistoryTreeSandbox = async (req: Request, res: Response) => {
+  try {
+    const { id: treeId } = req.params;
+    const limit = Math.min(req.body?.limit || 30, 100);
+
+    if (!treeId) {
+      return res.status(400).json({ error: "treeId is required" });
+    }
+
+    const messages = await (prisma as any).chatMessage.findMany({
+      where: { treeId },
+      orderBy: { createdAt: "desc" },
+      take: limit,
+      select: {
+        id: true,
+        role: true,
+        content: true,
+        createdAt: true,
+        userId: true,
+      },
+    });
+
+    res.json({
+      treeId,
+      count: messages.length,
+      messages: messages.reverse(), // oldest first
+    });
+  } catch (err: any) {
+    console.error("[chatHistoryTreeSandbox]", err?.message || err);
+    res.status(500).json({ error: "Failed to fetch chat history" });
+  }
+};

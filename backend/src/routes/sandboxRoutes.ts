@@ -32,6 +32,7 @@ import {
   searchTreeSandbox,
   patchTreeSandbox,
   quotaTreeSandbox,
+  chatHistoryTreeSandbox,
 } from '../controllers/treeSandboxController';
 import { authenticateJWT } from '../middleware/authMiddleware';
 import { compactContext } from '../controllers/compactController';
@@ -68,6 +69,7 @@ router.post('/:id/sandbox/branch', createBranch);
 router.get('/:id/sandbox/tree', getConversationTree);
 router.post('/:id/sandbox/checkout', checkoutBranch);
 router.post('/:id/sandbox/summarize-node', summarizeNode);
+router.post('/:id/sandbox/chat-history', chatHistoryTreeSandbox);
 router.post('/:id/sandbox/search', searchTreeSandbox);
 router.post('/:id/sandbox/patch', patchTreeSandbox);
 
