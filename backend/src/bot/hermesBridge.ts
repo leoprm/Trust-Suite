@@ -14,6 +14,7 @@
 
 import { PrismaClient } from "@prisma/client";
 import { spawn } from "child_process";
+import crypto from "crypto";
 import fs from "fs";
 import path from "path";
 import { messageQueue } from "./messageQueue";
@@ -95,6 +96,30 @@ export const conversationWindows = new ConversationWindow();
 
 // ── Task counter for skill auto-evaluation (every 20 tasks) ─────────────
 const taskCounters = new Map<string, number>();
+
+// ── AGENTS.md cache ──────────────────────────────────────────────────────
+// AGENTS.md from the sandbox doesn't change between calls for the same tree.
+// Cache by treeId with content hash to avoid redundant reads.
+const agentsMdCache = new Map<string, { hash: string; content: string }>();
+
+function getAgentsMd(sandboxDir: string, treeId: string): string | null {
+  const agentsPath = path.join(sandboxDir, "AGENTS.md");
+  if (!fs.existsSync(agentsPath)) return null;
+
+  try {
+    const content = fs.readFileSync(agentsPath, "utf-8").trim();
+    if (!content) return null;
+
+    const hash = crypto.createHash("sha256").update(content).digest("hex");
+    const cached = agentsMdCache.get(treeId);
+    if (cached && cached.hash === hash) return cached.content;
+
+    agentsMdCache.set(treeId, { hash, content });
+    return content;
+  } catch {
+    return null;
+  }
+}
 
 export interface HermesBridgeResponse {
   text: string | null;
@@ -389,6 +414,86 @@ function spawnHermesShow(bin: string, taskId: string): Promise<string> {
   });
 }
 
+// ── History compression ──────────────────────────────────────────────────
+// When chatHistory exceeds COMPRESSION_THRESHOLD messages, older messages
+// are summarized via the same LLM and injected as a system message, keeping
+// only the last KEEP_RECENT messages raw. This cuts token usage significantly.
+
+const HISTORY_COMPRESSION_THRESHOLD = 10;
+const HISTORY_KEEP_RECENT = 3;
+
+async function summarizeHistory(
+  chatHistory: ChatMessage[],
+  treeId: string,
+): Promise<string | null> {
+  const historyText = chatHistory
+    .map((m) => `${m.role}: ${m.content.slice(0, 300)}`)
+    .join("\n");
+
+  const API_SERVER_KEY = process.env.HERMES_API_SERVER_KEY ?? "";
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+    "X-Hermes-Session-Key": `tree-agent-summary-${treeId}`,
+  };
+  if (API_SERVER_KEY) {
+    headers["Authorization"] = `Bearer ${API_SERVER_KEY}`;
+  }
+
+  try {
+    const response = await fetch(HERMES_API, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        messages: [
+          {
+            role: "system",
+            content:
+              "Eres un resumidor. Resume esta conversación en 2-3 frases concisas. " +
+              "Solo devuelve el resumen, nada más. Usa el mismo idioma que la conversación.",
+          },
+          { role: "user", content: historyText },
+        ],
+        max_tokens: 150,
+        stream: false,
+      }),
+      signal: AbortSignal.timeout(20_000),
+    });
+
+    if (!response.ok) return null;
+    const data = (await response.json()) as any;
+    return data?.choices?.[0]?.message?.content?.trim() ?? null;
+  } catch {
+    return null;
+  }
+}
+
+async function compressHistory(
+  chatHistory: ChatMessage[],
+  treeId: string,
+): Promise<ChatMessage[]> {
+  if (chatHistory.length <= HISTORY_COMPRESSION_THRESHOLD) {
+    return chatHistory;
+  }
+
+  const splitPoint = chatHistory.length - HISTORY_KEEP_RECENT;
+  const olderMessages = chatHistory.slice(0, splitPoint);
+  const recentMessages = chatHistory.slice(splitPoint);
+
+  const summary = await summarizeHistory(olderMessages, treeId);
+  if (!summary) {
+    // Fallback: keep last 5 messages if summarization fails
+    return chatHistory.slice(-5);
+  }
+
+  return [
+    {
+      role: "system",
+      content: `[Resumen de la conversación anterior]: ${summary}`,
+    },
+    ...recentMessages,
+  ];
+}
+
 async function buildSystemPrompt(
   prisma: PrismaClient,
   treeId: string,
@@ -450,7 +555,8 @@ async function buildSystemPrompt(
 
   // ── SYSTEM.md del árbol ───────────────────────────────────────────────
   const sandboxBase = process.env.SANDBOX_BASE_DIR || "/home/trustmaker/trees";
-  const systemMdPath = path.join(sandboxBase, treeId, "SYSTEM.md");
+  const sandboxDir = path.join(sandboxBase, treeId);
+  const systemMdPath = path.join(sandboxDir, "SYSTEM.md");
   if (fs.existsSync(systemMdPath)) {
     try {
       const systemMdContent = fs.readFileSync(systemMdPath, "utf-8").trim();
@@ -464,6 +570,18 @@ async function buildSystemPrompt(
         lines.push("Follow these instructions above default behavior.");
       }
     } catch { /* non-blocking */ }
+  }
+
+  // ── AGENTS.md del árbol (cached) ──────────────────────────────────────
+  const agentsMdContent = getAgentsMd(sandboxDir, treeId);
+  if (agentsMdContent) {
+    const truncated = agentsMdContent.length > 2000
+      ? agentsMdContent.slice(0, 1997) + "..."
+      : agentsMdContent;
+    lines.push("");
+    lines.push("═══ AGENTS.md (project rules) ═══");
+    for (const line of truncated.split("\n")) lines.push(line);
+    lines.push("Follow these project-level rules above default behavior.");
   }
 
   // ── Ancestor chain (sub-trees only) ───────────────────────────────────
@@ -861,6 +979,7 @@ export async function routeToHermes(
   displayName?: string,
   chatId?: number,
   messageId?: number,
+  complex?: boolean,
 ): Promise<HermesBridgeResponse | null> {
   let didEnqueue = false; // track whether we acquired the semaphore
 
@@ -950,14 +1069,18 @@ export async function routeToHermes(
     { role: "system", content: systemPrompt },
   ];
 
-  // Inject chat history if provided (for multi-turn context)
-  if (chatHistory && chatHistory.length > 0) {
+  // Inject chat history with compression (A3)
+  if (chatHistory && chatHistory.length > 0 && treeId) {
+    const compressed = await compressHistory(chatHistory, treeId);
+    messages.push(...compressed);
+  } else if (chatHistory && chatHistory.length > 0) {
     messages.push(...chatHistory);
   }
 
   messages.push({ role: "user", content: message.trim() });
 
   // ── Call Hermes Agent API ─────────────────────────────────────────────
+  const maxTokens = complex ? 2048 : 1024;
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 900_000); // 15 min — matches Hermes dialog_timeout_s
 
@@ -977,6 +1100,7 @@ export async function routeToHermes(
       body: JSON.stringify({
         messages,
         stream: true,
+        max_tokens: maxTokens,
       }),
       signal: controller.signal,
     });
