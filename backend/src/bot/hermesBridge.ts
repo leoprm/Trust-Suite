@@ -261,6 +261,137 @@ export function shouldAriRespondLocal(
 }
 
 /**
+ * Revisa si hay tareas Kanban completadas que Ari delegó.
+ * Lee <sandboxDir>/kanban_pending.json (JSONL),
+ * ejecuta `hermes kanban show --json` para cada tarea,
+ * quita las completadas y retorna los resultados formateados.
+ *
+ * @returns String con resultados formateados, o null si no hay.
+ */
+async function checkKanbanCompletions(
+  treeId: string,
+  sandboxDir: string,
+): Promise<string | null> {
+  const pendingFile = path.join(sandboxDir, "kanban_pending.json");
+
+  if (!fs.existsSync(pendingFile)) return null;
+
+  let raw: string;
+  try {
+    raw = fs.readFileSync(pendingFile, "utf-8").trim();
+  } catch {
+    return null;
+  }
+
+  if (!raw) return null;
+
+  // Parsear JSONL (un objeto JSON por línea)
+  const entries: Array<{
+    task_id: string;
+    created_at: string;
+    description: string;
+  }> = [];
+  for (const line of raw.split("\n")) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    try {
+      entries.push(JSON.parse(trimmed));
+    } catch {
+      // ignorar líneas malformadas
+    }
+  }
+
+  if (entries.length === 0) {
+    try { fs.unlinkSync(pendingFile); } catch { /* best-effort */ }
+    return null;
+  }
+
+  const hermesBin = "/home/trustmaker/.hermes/hermes-agent/venv/bin/hermes";
+  const remaining: typeof entries = [];
+  const completed: Array<{
+    task_id: string;
+    description: string;
+    summary: string;
+  }> = [];
+
+  for (const entry of entries) {
+    try {
+      const output = await spawnHermesShow(hermesBin, entry.task_id);
+      const data = JSON.parse(output);
+      const status = data?.task?.status ?? data?.status ?? "";
+
+      if (status === "done") {
+        const summary =
+          data?.task?.result ??
+          data?.result ??
+          data?.task?.summary ??
+          "(completada)";
+        completed.push({
+          task_id: entry.task_id,
+          description: entry.description,
+          summary,
+        });
+      } else {
+        remaining.push(entry);
+      }
+    } catch {
+      remaining.push(entry);
+    }
+  }
+
+  // Actualizar archivo de pendientes
+  if (remaining.length === 0) {
+    try { fs.unlinkSync(pendingFile); } catch { /* best-effort */ }
+  } else {
+    try {
+      const content =
+        remaining.map((e) => JSON.stringify(e)).join("\n") + "\n";
+      fs.writeFileSync(pendingFile, content, "utf-8");
+    } catch { /* best-effort */ }
+  }
+
+  if (completed.length === 0) return null;
+
+  const parts = completed.map(
+    (c) =>
+      `- **${c.description}** (task \`${c.task_id}\`): ${c.summary}`,
+  );
+  return parts.join("\n");
+}
+
+/** Ejecuta `sudo -u trustmaker hermes kanban show <id> --json` y retorna stdout. */
+function spawnHermesShow(bin: string, taskId: string): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const child = spawn("sudo", [
+      "-u",
+      "trustmaker",
+      bin,
+      "kanban",
+      "show",
+      taskId,
+      "--json",
+    ], {
+      stdio: ["ignore", "pipe", "pipe"],
+      timeout: 30_000,
+    });
+
+    let stdout = "";
+    let stderr = "";
+    child.stdout?.on("data", (chunk: Buffer) => {
+      stdout += chunk.toString("utf-8");
+    });
+    child.stderr?.on("data", (chunk: Buffer) => {
+      stderr += chunk.toString("utf-8");
+    });
+    child.on("error", reject);
+    child.on("close", (code) => {
+      if (code === 0) resolve(stdout);
+      else reject(new Error(stderr || `exit ${code}`));
+    });
+  });
+}
+
+/**
  * Construye el system prompt con contexto real del árbol.
  * Incluye: nombre, descripción, necesidades activas y miembros.
  */
@@ -1455,6 +1586,18 @@ lines.push("TIENES terminal y file, PERO operan EXCLUSIVAMENTE dentro del sandbo
   lines.push("- Para tareas humanas usa `person:<telegramUserId>`");
   lines.push("- No esperes resultados — el Kanban notifica");
   lines.push("- Tú orquestas, no ejecutas");
+  lines.push("");
+  lines.push("**Tracking de tareas:**");
+  lines.push("Cuando crees una tarea Kanban, GUARDA el task_id en el archivo");
+  lines.push(`kanban_pending.json dentro de tu sandbox (${process.env.SANDBOX_BASE_DIR || "/home/trustmaker/trees"}/${treeId}/kanban_pending.json):`);
+  lines.push("");
+  lines.push("  echo '{\"task_id\":\"<TASK_ID>\",\"created_at\":\"$(date -Iseconds)\",\"description\":\"<breve descripción>\"}' >> kanban_pending.json");
+  lines.push("");
+  lines.push("Formato: JSONL — un objeto JSON por línea (sin comas entre objetos).");
+  lines.push("Cada línea: {\"task_id\":\"...\", \"created_at\":\"...\", \"description\":\"...\"}");
+  lines.push("");
+  lines.push("Cuando recibas RESULTADOS DE TAREAS DELEGADAS en tu system prompt,");
+  lines.push("actúa sobre ellos inmediatamente — informa al usuario del resultado.");
 
   return lines.join("\n");
 }
@@ -1795,6 +1938,28 @@ export async function routeToHermes(
       "Your identity and full instructions are in your SOUL.md.",
       `Current user: ${name}`,
     ].join("\n");
+  }
+
+  // ── Check for completed Kanban tasks ─────────────────────────────────
+  if (treeId) {
+    const sandboxBase =
+      process.env.SANDBOX_BASE_DIR || "/home/trustmaker/trees";
+    const sandboxDir = `${sandboxBase}/${treeId}`;
+    try {
+      const kanbanResults = await checkKanbanCompletions(
+        treeId,
+        sandboxDir,
+      );
+      if (kanbanResults) {
+        systemPrompt +=
+          `\n\n## RESULTADOS DE TAREAS DELEGADAS\n${kanbanResults}\n\nACTÚA sobre estos resultados en tu respuesta. Informa al usuario.`;
+      }
+    } catch (err) {
+      console.error(
+        `[hermesBridge] checkKanbanCompletions failed:` +
+          ` ${(err as Error)?.message}`,
+      );
+    }
   }
 
   // ── Build messages array ──────────────────────────────────────────────
