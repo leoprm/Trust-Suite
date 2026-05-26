@@ -584,6 +584,23 @@ async function buildSystemPrompt(
     lines.push("Follow these project-level rules above default behavior.");
   }
 
+  // ── Sandbox memory (tree-level MEMORY.md) ───────────────────────────────
+  const memoryPath = path.join(sandboxDir, "memory", "MEMORY.md");
+  if (fs.existsSync(memoryPath)) {
+    try {
+      const memoryContent = fs.readFileSync(memoryPath, "utf-8").trim();
+      if (memoryContent.length > 0) {
+        const truncated = memoryContent.length > 2000
+          ? memoryContent.slice(0, 1997) + "..."
+          : memoryContent;
+        lines.push("");
+        lines.push("═══ MEMORY (tree-level durable memory) ═══");
+        lines.push("This is your persistent memory. Use the memory tool to update it.");
+        for (const line of truncated.split("\n")) lines.push(line);
+      }
+    } catch { /* non-blocking */ }
+  }
+
   // ── Ancestor chain (sub-trees only) ───────────────────────────────────
   const ancestorChain: Array<{ id: string; name: string; icono: string }> = [];
   let cursor: string | null = tree.parentTreeId;
