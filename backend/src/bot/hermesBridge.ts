@@ -595,7 +595,10 @@ async function buildSystemPrompt(
           : memoryContent;
         lines.push("");
         lines.push("═══ MEMORY (tree-level durable memory) ═══");
-        lines.push("This is your persistent memory. Use the memory tool to update it.");
+        lines.push("This is your persistent memory. To UPDATE it, use:");
+        lines.push("  POST /api/trees/<treeId>/sandbox/file/write");
+        lines.push("  Body: { path: 'memory/MEMORY.md', content: '<new-full-content>' }");
+        lines.push("NEVER use the built-in 'memory' tool — it writes to the wrong location.");
         for (const line of truncated.split("\n")) lines.push(line);
       }
     } catch { /* non-blocking */ }
