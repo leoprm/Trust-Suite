@@ -755,6 +755,21 @@ async function buildSystemPrompt(
     }
   }
 
+  // ── Cross-Tree Skills ──────────────────────────────────────────────────
+  lines.push("");
+  lines.push("═══ CROSS-TREE SKILLS ═══");
+  lines.push("");
+  lines.push(`Consulta skills cross-tree: GET /api/users/<userId>/cross-tree-skills`);
+  lines.push("  Authorization: Bearer HERMES_API_SERVER_KEY");
+  lines.push("  Response: { userId, skills: [{name, category, level, xp, treeId, treeName}],");
+  lines.push("              summary: { totalSkills, treesWithSkills, topCategories } }");
+  lines.push("");
+  lines.push("⚠️  PRIVACIDAD: Skills PRIVATE se excluyen. NUNCA las menciones fuera de su árbol.");
+  lines.push("");
+  lines.push("Usa este endpoint cuando pregunten:");
+  lines.push('  - \"¿qué skills tengo?\" o \"¿qué sabe hacer X?\"');
+  lines.push("  - Responde usando el summary: \"Tenés 12 skills en 3 árboles. Top: Diseño, React.\"");
+
   // ── Community Todo List ────────────────────────────────────────────────
   const todos = await (prisma as any).todo.findMany({
     where: { treeId, status: "PENDING" },
