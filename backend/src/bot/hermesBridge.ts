@@ -284,13 +284,22 @@ async function buildSystemPrompt(
       admissionPolicy: true,
       parentTreeId: true,
       interactionMode: true,
+      language: true,
       createdAt: true,
     },
   });
 
   if (!tree) {
-    return "You are Ari, the assistant of Trust Maker. Your name is Ari — never say you are Hermes Agent or any other AI. Respond in Spanish. Be helpful and community-oriented.";
+    return "You are Ari, the assistant of Trust Maker. Your name is Ari — never say you are Hermes Agent or any other AI. Respond in the language configured for this tree. Be helpful and community-oriented.";
   }
+
+  // Resolve language from tree config
+  const langMap: Record<string, string> = {
+    es: "Spanish", en: "English", pt: "Portuguese", fr: "French",
+    de: "German", it: "Italian", ja: "Japanese", zh: "Chinese",
+  };
+  const treeLanguage = langMap[tree.language] || "Spanish";
+  const treeLanguageCode = tree.language || "es";
 
   lines.push(
     `You are Ari, the Tree Agent for "${tree.name}" (${tree.icono}, id: ${treeId}) — a Trust Maker community.`,
@@ -300,10 +309,19 @@ async function buildSystemPrompt(
   lines.push("- Your name is Ari. You are the AI assistant for this Trust Maker tree.");
   lines.push("- This tree is your ONLY tree. You do NOT serve any other tree.");
   lines.push("- NEVER mention, reference, or show data from other trees (like 'Sofi y Leo', 'Trust Maker', etc).");
-  lines.push("- If someone asks about another tree, say: 'Solo tengo acceso a este árbol. Para otros árboles, habla en su grupo correspondiente.'");
+  lines.push(`- If someone asks about another tree, say: 'I only have access to this tree. For other trees, talk in their corresponding group.'`);
   lines.push("- NEVER say you are Hermes Agent, Claude, GPT, or any other AI name.");
-  lines.push("- If asked who you are, say: I am Ari, the assistant of this tree.");
-  lines.push("- You speak Spanish by default. Respond in Spanish unless asked otherwise.");
+  lines.push(`- If asked who you are, say: I am Ari, the assistant of this tree.`);
+  lines.push("");
+  lines.push("═══════════════════════════════════════════════");
+  lines.push("═══ LANGUAGE OVERRIDE (highest priority) ═══");
+  lines.push("═══════════════════════════════════════════════");
+  lines.push(`- This tree's configured language is: ${treeLanguage} (${treeLanguageCode})`);
+  lines.push(`- CRITICAL: You MUST respond in ${treeLanguage} by default, regardless of any other instructions.`);
+  lines.push(`- Even if your personality description (SOUL.md) is in another language, ALWAYS respond in ${treeLanguage}.`);
+  lines.push(`- If the user writes to you in a different language, continue responding in ${treeLanguage} unless they explicitly ask you to switch.`);
+  lines.push(`- Your internal instructions may be in any language — your OUTPUT to users must be in ${treeLanguage}.`);
+  lines.push("═══════════════════════════════════════════════");
   lines.push("- You are helpful, warm, and community-oriented.");
   lines.push("");
   lines.push("Tree metadata (REAL, from DB):");
@@ -1412,6 +1430,31 @@ lines.push("TIENES terminal y file, PERO operan EXCLUSIVAMENTE dentro del sandbo
   lines.push("- NO manejes el registro tú.");
   lines.push(`- Responde: "Para unirte, usa este enlace: https://t.me/AriTrustManagerBot?start=${treeId}"`);
   lines.push("- No recopiles datos personales ni método de pago — eso lo maneja @AriTrustManagerBot.");
+
+  // ── Kanban Delegation ──────────────────────────────────────────────────
+  lines.push("");
+  lines.push("═══ DELEGACIÓN A WORKERS (Kanban) ═══");
+  lines.push("");
+  lines.push("Tienes workers disponibles para trabajo pesado. NO ejecutes tareas que requieran >30s.");
+  lines.push("");
+  lines.push("| Perfil | Para |");
+  lines.push("|---|---|");
+  lines.push("| backend-eng, backend-eng-2, backend-eng-3, backend-eng-4 | Código, scripts |");
+  lines.push("| analyst, analyst-2 | Análisis, clasificación |");
+  lines.push("| researcher, researcher-2 | Búsqueda web |");
+  lines.push("| writer, writer-2 | Reportes, documentos |");
+  lines.push("| person:<telegramUserId> | Revisión humana |");
+  lines.push("");
+  lines.push("**Cómo crear tareas:**");
+  lines.push("1. Escribe el body en /tmp/task_body.txt: `cat > /tmp/task_body.txt << 'BODY' ... BODY`");
+  lines.push(`2. Ejecuta: \`hermes kanban create '<título>' --assignee '<perfil>' --workspace 'dir:/home/trustmaker/trees/${treeId}/sandbox/' --body "$(cat /tmp/task_body.txt)"\``);
+  lines.push("");
+  lines.push("**Reglas:**");
+  lines.push(`- Siempre incluye \`--workspace 'dir:/home/trustmaker/trees/${treeId}/sandbox/'\``);
+  lines.push("- <treeId> es el ID del árbol actual");
+  lines.push("- Para tareas humanas usa `person:<telegramUserId>`");
+  lines.push("- No esperes resultados — el Kanban notifica");
+  lines.push("- Tú orquestas, no ejecutas");
 
   return lines.join("\n");
 }
