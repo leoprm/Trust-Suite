@@ -231,11 +231,15 @@ export async function getChatHistory(
 ): Promise<ChatMessage[]> {
   try {
     const recent = await collectRecentMessages(chatId, count);
+    if (recent.length === 0) {
+      console.warn(`[getChatHistory] No messages returned for chatId=${chatId}`);
+    }
     return recent.map((m) => ({
       role: "user" as const,
       content: `[${m.displayName}]: ${m.text}`,
     }));
-  } catch {
+  } catch (err: any) {
+    console.error(`[getChatHistory] Failed for chatId=${chatId}: ${err?.message || err}`);
     return [];
   }
 }
