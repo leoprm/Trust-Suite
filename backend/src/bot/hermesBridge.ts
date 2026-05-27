@@ -722,6 +722,12 @@ async function buildSystemPrompt(
   // ── Response guidelines ───────────────────────────────────────────────
   lines.push("Respond in neutral Spanish (tú/usted, no voseo). Be concise, helpful, action-oriented.");
   lines.push("Use real data above — don't hallucinate. Use Telegram display names for members.");
+  lines.push("");
+  lines.push("MULTI-MESSAGE: When you want to send multiple independent messages (e.g., greeting");
+  lines.push("then explanation, or list items best read one-by-one), separate them with \"---\"");
+  lines.push("on its own line. Each segment becomes a separate Telegram message bubble.");
+  lines.push("ONLY use --- when the messages are truly independent. For structured content");
+  lines.push("within a single message (headings, bullet lists, paragraphs), keep it as one.");
 
   return lines.join("\n");
 }
@@ -1302,6 +1308,11 @@ function splitAtBoundary(text: string, maxLen: number): string[] {
 /**
  * Send a potentially-long message to Telegram, splitting at paragraph
  * boundaries if it exceeds the 4096-character limit.
+ *
+ * ALSO splits on ``\\n---\\n`` markers — when Ari wants to send multiple
+ * independent messages, she separates them with a triple-dash on its own line.
+ * Each segment becomes its own Telegram message, and each is independently
+ * split at paragraph boundaries if it still exceeds TELEGRAM_MAX_CHARS.
  */
 export async function sendTelegramMessage(
   ctx: any,
@@ -1309,6 +1320,21 @@ export async function sendTelegramMessage(
   parseMode: "Markdown" | "HTML" = "Markdown",
 ): Promise<void> {
   if (!text) return;
+
+  // ── Multi-message split: ``---`` on its own line ────────────────────
+  // Ari uses ``\\n---\\n`` to separate independent messages.
+  const MSG_SEPARATOR = /\n---\n/;
+  if (MSG_SEPARATOR.test(text)) {
+    const segments = text.split(MSG_SEPARATOR).map(s => s.trim()).filter(Boolean);
+    console.log(
+      `[hermesBridge] Multi-message split: ${segments.length} segments from ${text.length} chars`,
+    );
+    for (const segment of segments) {
+      await sendTelegramMessage(ctx, segment, parseMode);
+    }
+    return;
+  }
+  // ──────────────────────────────────────────────────────────────────────
 
   if (text.length <= TELEGRAM_MAX_CHARS) {
     try {
