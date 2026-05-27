@@ -14,10 +14,29 @@
 
 import { execFile } from "child_process";
 import { promisify } from "util";
+import fs from "fs";
+import path from "path";
 import type { PrismaClient } from "@prisma/client";
 
 const execFileAsync = promisify(execFile);
 const HERMES_BIN = process.env.HERMES_BIN || "hermes";
+
+// ── Activity filter ──────────────────────────────────────────────────────
+/** Returns true if the tree has conversation files modified in the last 24h. */
+function hasRecentActivity(sandboxDir: string): boolean {
+  const convDir = path.join(sandboxDir, "conversations");
+  if (!fs.existsSync(convDir)) return false;
+  const yesterday = Date.now() - 24 * 60 * 60 * 1000;
+  try {
+    return fs.readdirSync(convDir).some((f) => {
+      const stat = fs.statSync(path.join(convDir, f));
+      return stat.mtimeMs > yesterday;
+    });
+  } catch {
+    return false;
+  }
+}
+// ─────────────────────────────────────────────────────────────────────────
 
 // ── Types ─────────────────────────────────────────────────────────────────
 
@@ -141,8 +160,18 @@ export async function runNightlyResearch(
   );
 
   const results: NightlyResearchResult[] = [];
+  const sandboxBase = process.env.SANDBOX_BASE_DIR || "/home/trustmaker/trees";
 
   for (const tree of trees) {
+    const sandboxDir = path.join(sandboxBase, tree.id);
+
+    // Skip inactive trees — no conversations in the last 24h
+    if (!hasRecentActivity(sandboxDir)) {
+      console.log(`[NightlyResearch] ⏭️  ${tree.name}: sin actividad reciente — skip`);
+      results.push({ treeName: tree.name, treeId: tree.id, status: "skipped" });
+      continue;
+    }
+
     try {
       const result = await spawnResearchTask(tree.name, tree.id);
       results.push(result);
@@ -162,9 +191,10 @@ export async function runNightlyResearch(
   }
 
   const spawned = results.filter((r) => r.status === "spawned").length;
+  const skipped = results.filter((r) => r.status === "skipped").length;
   const errors = results.filter((r) => r.status === "error").length;
   console.log(
-    `[NightlyResearch] 🌙 Pipeline completado: ${spawned} tareas creadas, ${errors} errores.`,
+    `[NightlyResearch] 🌙 Pipeline completado: ${spawned} tareas, ${skipped} sin actividad, ${errors} errores.`,
   );
 
   return results;
