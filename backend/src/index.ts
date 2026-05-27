@@ -1,11 +1,6 @@
 import dotenv from 'dotenv';
 dotenv.config();
 
-// Force IPv4 — undici (Node's fetch) ignores --dns-result-order in Node 22.
-// setGlobalDispatcher covers ALL fetch() calls: grammY, native fetch, etc.
-import { setGlobalDispatcher, Agent } from 'undici';
-setGlobalDispatcher(new Agent({ connect: { family: 4 } }));
-
 import express from 'express';
 import path from 'path';
 import fs from 'fs';
