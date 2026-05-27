@@ -1,6 +1,12 @@
 import dotenv from 'dotenv';
 dotenv.config();
 
+// Force IPv4-only — undici (Node's fetch engine) ignores kernel IPv6 disable.
+// setGlobalDispatcher covers ALL fetch() calls: grammY, native fetch, etc.
+// sysctl net.ipv6.conf.*.disable_ipv6=1 covers https.get, curl, and everything else.
+import { setGlobalDispatcher, Agent } from 'undici';
+setGlobalDispatcher(new Agent({ connect: { family: 4 } }));
+
 import express from 'express';
 import path from 'path';
 import fs from 'fs';

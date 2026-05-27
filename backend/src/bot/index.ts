@@ -4311,15 +4311,8 @@ export async function createBot(prisma: PrismaClient): Promise<Bot<BotContext> |
   // ── Iniciar polling (con reintentos para 409 Conflict) ──────────────────
   async function startBotWithRetry(maxRetries = 5) {
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      console.log(`[Telegram Bot] Intento ${attempt}/${maxRetries} de iniciar polling...`);
       try {
-        // Limpiar conexiones stale antes de cada intento (3 iteraciones)
-        for (let i = 0; i < 3; i++) {
-          await bot.api.getUpdates({ timeout: 0, offset: -1 });
-          await new Promise((r) => setTimeout(r, 500));
-        }
-        // Espera extra para que Telegram libere la sesión anterior
-        await new Promise((r) => setTimeout(r, 3000));
-
         await bot.start({
           drop_pending_updates: true,
           onStart(botInfo) {
