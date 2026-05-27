@@ -1463,7 +1463,7 @@ export async function createBot(prisma: PrismaClient): Promise<Bot<BotContext> |
 
       ctx.replyWithChatAction("typing").catch(() => {});
       const chatHistory = ctx.chat?.id
-        ? await getChatHistory(ctx.chat.id, 20)
+        ? await getChatHistory(ctx.chat.id, tree.id, 20)
         : [];
       const response = await routeToHermes(
         fullMessage, tree.id, userId, chatHistory, displayName,
@@ -1592,7 +1592,7 @@ export async function createBot(prisma: PrismaClient): Promise<Bot<BotContext> |
       }, 4000);
       ctx.replyWithChatAction("typing").catch(() => {});
       const chatHistory = ctx.chat?.id
-        ? await getChatHistory(ctx.chat.id, 20)
+        ? await getChatHistory(ctx.chat.id, treeId, 20)
         : [];
 
       let response;
@@ -2244,7 +2244,7 @@ export async function createBot(prisma: PrismaClient): Promise<Bot<BotContext> |
         ctx.replyWithChatAction("typing").catch(() => {});
         try {
           const chatHistory = ctx.chat?.id
-            ? await getChatHistory(ctx.chat.id, 20)
+            ? await getChatHistory(ctx.chat.id, tree.id, 20)
             : [];
           const response = await routeToHermes(
             fullMessage, tree.id, userId, chatHistory, displayName,
@@ -2350,7 +2350,7 @@ export async function createBot(prisma: PrismaClient): Promise<Bot<BotContext> |
       ctx.replyWithChatAction("typing").catch(() => {});
       try {
         const chatHistory = ctx.chat?.id
-          ? await getChatHistory(ctx.chat.id, 20)
+          ? await getChatHistory(ctx.chat.id, tree.id, 20)
           : [];
         const response = await routeToHermes(
           fullMessage, tree.id, userId, chatHistory, displayName,
@@ -3693,7 +3693,7 @@ export async function createBot(prisma: PrismaClient): Promise<Bot<BotContext> |
           try {
             await ctx.editMessageText("🔍 Enviando a Ari para análisis...");
             const chatHistory = ctx.chat?.id
-              ? await getChatHistory(ctx.chat.id, 20)
+              ? await getChatHistory(ctx.chat.id, treeId, 20)
               : [];
             await routeToHermes(
               `Analiza el archivo "${filePath}" en el sandbox del árbol ${treeId}. Describe su contenido, utilidad y si detectas algo relevante para las necesidades del árbol.`,

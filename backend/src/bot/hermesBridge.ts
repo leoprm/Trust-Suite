@@ -223,25 +223,47 @@ export interface ChatMessage {
 
 /**
  * Recolecta los últimos `count` mensajes del chat y los convierte a ChatMessage[].
- * Usado para darle contexto de conversación a Ari.
+ * Usa la DB (ChatMessage table) como fuente primaria — rápido y confiable.
+ * Telethon queda como fallback si la DB no tiene datos.
  */
 export async function getChatHistory(
   chatId: number,
+  treeId: string,
   count: number = 20,
 ): Promise<ChatMessage[]> {
+  // ── Primary: read from DB ───────────────────────────────────────────
+  try {
+    const { prisma } = await import("../index");
+    const rows = await (prisma as any).chatMessage.findMany({
+      where: { treeId },
+      orderBy: { createdAt: "desc" },
+      take: count,
+      select: { role: true, content: true },
+    });
+    if (rows.length > 0) {
+      return rows.reverse().map((r: any) => ({
+        role: r.role as "user" | "assistant",
+        content: r.content,
+      }));
+    }
+  } catch (err: any) {
+    console.warn(`[getChatHistory] DB fallback failed: ${err?.message || err}`);
+  }
+
+  // ── Fallback: Telethon (MTProto) ───────────────────────────────────
   try {
     const recent = await collectRecentMessages(chatId, count);
-    if (recent.length === 0) {
-      console.warn(`[getChatHistory] No messages returned for chatId=${chatId}`);
+    if (recent.length > 0) {
+      return recent.map((m) => ({
+        role: "user" as const,
+        content: `[${m.displayName}]: ${m.text}`,
+      }));
     }
-    return recent.map((m) => ({
-      role: "user" as const,
-      content: `[${m.displayName}]: ${m.text}`,
-    }));
   } catch (err: any) {
-    console.error(`[getChatHistory] Failed for chatId=${chatId}: ${err?.message || err}`);
-    return [];
+    console.error(`[getChatHistory] Telethon fallback failed for chatId=${chatId}: ${err?.message || err}`);
   }
+
+  return [];
 }
 
 // ── Keyword scanning ────────────────────────────────────────────────────
@@ -1115,7 +1137,22 @@ export async function routeToHermes(
 
   messages.push({ role: "user", content: message.trim() });
 
-  // ── Call Hermes Agent API ─────────────────────────────────────────────
+    // ── Persist user message to ChatMessage table (for getChatHistory) ─
+    if (treeId) {
+      try {
+        const { prisma: p } = await import("../index");
+        await (p as any).chatMessage.create({
+          data: {
+            userId,
+            treeId,
+            role: "user",
+            content: message.trim(),
+          },
+        });
+      } catch { /* best-effort */ }
+    }
+
+    // ── Call Hermes Agent API ─────────────────────────────────────────────
   const maxTokens = complex ? 2048 : 1024;
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 900_000); // 15 min — matches Hermes dialog_timeout_s
@@ -1263,8 +1300,20 @@ export async function routeToHermes(
     // ── Log Ari's response to daily conversation log ────────────────────
     if (treeId && accumulatedContent) {
       try {
-        const { appendToDailyLog } = await import("../lib/dailyLog");
+        const [{ appendToDailyLog }, { prisma: p }] = await Promise.all([
+          import("../lib/dailyLog"),
+          import("../index"),
+        ]);
         appendToDailyLog(treeId, new Date(), "Ari", accumulatedContent, false, "assistant");
+        // Persist assistant response to ChatMessage table
+        await (p as any).chatMessage.create({
+          data: {
+            userId,
+            treeId,
+            role: "assistant",
+            content: accumulatedContent.slice(0, 2000),
+          },
+        });
       } catch { /* best-effort */ }
     }
 
