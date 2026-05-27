@@ -27,6 +27,23 @@ const SUPPORT_HERMES_GATEWAY = process.env.HERMES_SUPPORT_GATEWAY || "http://127
 const SUPPORT_HERMES_API_URL = process.env.SUPPORT_HERMES_API_URL || `${SUPPORT_HERMES_GATEWAY}/v1/chat/completions`;
 const SUPPORT_HERMES_API_KEY = process.env.HERMES_SUPPORT_API_KEY || process.env.SUPPORT_HERMES_API_KEY || "";
 
+// ── LLM stream dispatcher ──────────────────────────────────────────────
+// Prevents undici's default 300s bodyTimeout from killing slow LLM streams.
+// IMPORTANT: dynamic import to avoid top-level await issues with tsx.
+let LLM_DISPATCHER: any = undefined;
+async function getLLMDispatcher() {
+  if (!LLM_DISPATCHER) {
+    const { Agent } = await import("undici");
+    LLM_DISPATCHER = new Agent({
+      bodyTimeout: 900_000,   // 15 min — match Hermes dialog timeout
+      headersTimeout: 60_000,  // 1 min
+      keepAliveTimeout: 120_000,
+      keepAliveMaxTimeout: 600_000,
+    });
+  }
+  return LLM_DISPATCHER;
+}
+
 // ── ConversationWindow ───────────────────────────────────────────────────
 // In-memory per-tree window for proactive engagement. Each openWindow starts
 // a countdown of 20 interactions. tickWindow decrements; when it hits 0 the
@@ -1176,6 +1193,8 @@ export async function routeToHermes(
         max_tokens: maxTokens,
       }),
       signal: controller.signal,
+      // @ts-ignore — undici-specific: prevent premature body timeout on slow LLM streams
+      dispatcher: await getLLMDispatcher(),
     });
   } catch (err) {
     clearTimeout(timeoutId);
