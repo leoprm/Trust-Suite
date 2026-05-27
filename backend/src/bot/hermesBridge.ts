@@ -607,33 +607,41 @@ async function buildSystemPrompt(
   }
 
   // ── Sandbox memory (tree-level memory.json) ────────────────────────────
+  // ALWAYS show memory instructions so Ari knows how to save, even on first use.
   const memoryPath = path.join(sandboxDir, "memory", "memory.json");
+  const sandboxApiKey = process.env.HERMES_API_SERVER_KEY ?? "";
+
+  let memoryData: Record<string, string> = {};
   if (fs.existsSync(memoryPath)) {
     try {
       const memoryRaw = fs.readFileSync(memoryPath, "utf-8").trim();
       if (memoryRaw.length > 0) {
-        const memoryJson = JSON.parse(memoryRaw);
-        const keys = Object.keys(memoryJson);
-        if (keys.length > 0) {
-          lines.push("");
-          lines.push("═══ MEMORY (tree-level durable memory) ═══");
-          lines.push("This is your persistent key-value memory. To UPDATE it, call:");
-          lines.push(`  POST http://127.0.0.1:3100/api/trees/${treeId}/sandbox/memory`);
-          lines.push('  Headers: { "Authorization": "Bearer <HERMES_API_SERVER_KEY>" }');
-          lines.push('  Body: { "action": "write", "key": "<key>", "value": "<text>" }');
-          lines.push('  To READ: { "action": "read", "key": "<key>" }');
-          lines.push('  To LIST keys: { "action": "list" }');
-          lines.push("NEVER use the built-in 'memory' tool — it writes to the wrong location.");
-          lines.push("Current memory contents:");
-          for (const [k, v] of Object.entries(memoryJson)) {
-            const truncated = (v as string).length > 500
-              ? (v as string).slice(0, 497) + "..."
-              : v;
-            lines.push(`  ${k}: ${truncated}`);
-          }
-        }
+        memoryData = JSON.parse(memoryRaw);
       }
     } catch { /* non-blocking */ }
+  }
+
+  lines.push("");
+  lines.push("═══ MEMORY (tree-level durable memory) ═══");
+  lines.push("This is your persistent key-value memory. To UPDATE it, call:");
+  lines.push(`  POST http://127.0.0.1:3100/api/trees/${treeId}/sandbox/memory`);
+  lines.push(`  Headers: { "Authorization": "Bearer ${sandboxApiKey}" }`);
+  lines.push('  Body: { "action": "write", "key": "<key>", "value": "<text>" }');
+  lines.push('  To READ: { "action": "read", "key": "<key>" }');
+  lines.push('  To LIST keys: { "action": "list" }');
+  lines.push("NEVER use the built-in 'memory' tool — it writes to the wrong location.");
+
+  const keys = Object.keys(memoryData);
+  if (keys.length > 0) {
+    lines.push("Current memory contents:");
+    for (const [k, v] of Object.entries(memoryData)) {
+      const truncated = (v as string).length > 500
+        ? (v as string).slice(0, 497) + "..."
+        : v;
+      lines.push(`  ${k}: ${truncated}`);
+    }
+  } else {
+    lines.push("(memory is empty — use the write action above to save facts)");
   }
 
   // ── Ancestor chain (sub-trees only) ───────────────────────────────────
