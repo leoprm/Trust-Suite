@@ -4308,42 +4308,6 @@ export async function createBot(prisma: PrismaClient): Promise<Bot<BotContext> |
   // ── Inicializar i18n ───────────────────────────────────────────────────
   await initI18n();
 
-  // ── Iniciar polling (con reintentos para 409 Conflict) ──────────────────
-  async function startBotWithRetry(maxRetries = 5) {
-    for (let attempt = 1; attempt <= maxRetries; attempt++) {
-      try {
-        await bot.start({
-          drop_pending_updates: true,
-          onStart(botInfo) {
-            console.log(
-              `[Telegram Bot] @${botInfo.username} iniciado en modo polling`
-            );
-            // T13: Recuperar encuestas de aprobación pendientes tras reinicio
-            recoverPendingApprovals(bot, prisma).catch((err) =>
-              console.error("[approval] Recovery error:", err.message)
-            );
-          },
-        });
-        return; // éxito
-      } catch (err: any) {
-        const is409 = err?.error_code === 409;
-        if (is409 && attempt < maxRetries) {
-          const delay = Math.min(2000 * 2 ** (attempt - 1), 30000);
-          console.warn(
-            `[Telegram Bot] 409 Conflict (intento ${attempt}/${maxRetries}), reintentando en ${delay / 1000}s...`
-          );
-          await new Promise((r) => setTimeout(r, delay));
-        } else {
-          console.error("[Telegram Bot] ERROR al iniciar polling:", err.message);
-          throw err;
-        }
-      }
-    }
-  }
-  startBotWithRetry().catch(() => {
-    /* ya logeado — el servidor sigue corriendo sin bot */
-  });
-
   // Initialize payment service (used by /pagar command)
   initPaymentService(prisma, bot);
 
@@ -4382,4 +4346,51 @@ export async function createBot(prisma: PrismaClient): Promise<Bot<BotContext> |
   }
 
   return bot;
+}
+
+/**
+ * Inicia el bot en modo polling (fallback cuando no hay túnel webhook disponible).
+ * Exportada para que src/index.ts pueda usarla como alternativa al webhook.
+ */
+export async function startBotPolling(
+  bot: Bot<BotContext>,
+  prisma: PrismaClient,
+  maxRetries = 5,
+): Promise<void> {
+  // Quick connectivity test
+  try {
+    const me = await bot.api.getMe();
+    console.log(`[Telegram Bot] getMe OK: @${me.username}`);
+  } catch (e: any) {
+    console.error(`[Telegram Bot] getMe FAILED:`, e.message);
+  }
+
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      await bot.start({
+        drop_pending_updates: true,
+        onStart(botInfo) {
+          console.log(
+            `[Telegram Bot] @${botInfo.username} iniciado en modo polling`,
+          );
+          recoverPendingApprovals(bot, prisma).catch((err) =>
+            console.error("[approval] Recovery error:", err.message),
+          );
+        },
+      });
+      return;
+    } catch (err: any) {
+      const is409 = err?.error_code === 409;
+      if (is409 && attempt < maxRetries) {
+        const delay = Math.min(2000 * 2 ** (attempt - 1), 30000);
+        console.warn(
+          `[Telegram Bot] 409 Conflict (intento ${attempt}/${maxRetries}), reintentando en ${delay / 1000}s...`,
+        );
+        await new Promise((r) => setTimeout(r, delay));
+      } else {
+        console.error("[Telegram Bot] ERROR al iniciar polling:", err.message);
+        throw err;
+      }
+    }
+  }
 }
