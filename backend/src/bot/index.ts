@@ -23,7 +23,7 @@ import { formatForChannel, sendViaTelegram } from "./channelAdapter";
 import { textToSpeech } from "../services/ttsService";
 import { TreeSandbox } from "../services/treeSandbox";
 import { initI18n, t } from "./i18n";
-import { routeToHermes, shouldAriRespond, sendTelegramMessage } from "./hermesBridge";
+import { routeToHermes, shouldAriRespond, sendTelegramMessage, getChatHistory } from "./hermesBridge";
 import { parseDeadline } from "./deadlineParser";
 import { checkTodoReminders } from "./todoReminders";
 import { detectNaturalAddIntent } from "./todoNaturalAdd";
@@ -1462,8 +1462,11 @@ export async function createBot(prisma: PrismaClient): Promise<Bot<BotContext> |
       const displayName = ctx.from?.first_name || userId;
 
       ctx.replyWithChatAction("typing").catch(() => {});
+      const chatHistory = ctx.chat?.id
+        ? await getChatHistory(ctx.chat.id, 20)
+        : [];
       const response = await routeToHermes(
-        fullMessage, tree.id, userId, undefined, displayName,
+        fullMessage, tree.id, userId, chatHistory, displayName,
         ctx.chat?.id, msg.message_id,
       );
       if (response && !response.saturationMessage && !response.queued) {
@@ -1588,11 +1591,14 @@ export async function createBot(prisma: PrismaClient): Promise<Bot<BotContext> |
         ctx.replyWithChatAction("typing").catch(() => {});
       }, 4000);
       ctx.replyWithChatAction("typing").catch(() => {});
+      const chatHistory = ctx.chat?.id
+        ? await getChatHistory(ctx.chat.id, 20)
+        : [];
 
       let response;
       try {
         response = await routeToHermes(
-        fullMessage, treeId, userId, undefined, displayName,
+        fullMessage, treeId, userId, chatHistory, displayName,
         ctx.chat?.id, msg.message_id,
       );
       } finally {
@@ -2237,8 +2243,11 @@ export async function createBot(prisma: PrismaClient): Promise<Bot<BotContext> |
         }, 4000);
         ctx.replyWithChatAction("typing").catch(() => {});
         try {
+          const chatHistory = ctx.chat?.id
+            ? await getChatHistory(ctx.chat.id, 20)
+            : [];
           const response = await routeToHermes(
-            fullMessage, tree.id, userId, undefined, displayName,
+            fullMessage, tree.id, userId, chatHistory, displayName,
             ctx.chat?.id, msg.message_id,
           );
           clearInterval(typingInterval);
@@ -2340,8 +2349,11 @@ export async function createBot(prisma: PrismaClient): Promise<Bot<BotContext> |
       }, 4000);
       ctx.replyWithChatAction("typing").catch(() => {});
       try {
+        const chatHistory = ctx.chat?.id
+          ? await getChatHistory(ctx.chat.id, 20)
+          : [];
         const response = await routeToHermes(
-          fullMessage, tree.id, userId, undefined, displayName,
+          fullMessage, tree.id, userId, chatHistory, displayName,
           ctx.chat?.id, msg.message_id,
         );
         clearInterval(typingInterval3);
@@ -3680,11 +3692,14 @@ export async function createBot(prisma: PrismaClient): Promise<Bot<BotContext> |
         case "analyze": {
           try {
             await ctx.editMessageText("🔍 Enviando a Ari para análisis...");
+            const chatHistory = ctx.chat?.id
+              ? await getChatHistory(ctx.chat.id, 20)
+              : [];
             await routeToHermes(
               `Analiza el archivo "${filePath}" en el sandbox del árbol ${treeId}. Describe su contenido, utilidad y si detectas algo relevante para las necesidades del árbol.`,
               treeId,
               ctx.from?.id?.toString() ?? "0",
-              undefined,
+              chatHistory,
               ctx.from?.first_name,
               ctx.chat?.id,
               ctx.callbackQuery?.message?.message_id,

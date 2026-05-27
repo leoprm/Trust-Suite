@@ -216,9 +216,28 @@ export async function collectRecentMessages(
   });
 }
 
-interface ChatMessage {
+export interface ChatMessage {
   role: "system" | "user" | "assistant";
   content: string;
+}
+
+/**
+ * Recolecta los últimos `count` mensajes del chat y los convierte a ChatMessage[].
+ * Usado para darle contexto de conversación a Ari.
+ */
+export async function getChatHistory(
+  chatId: number,
+  count: number = 20,
+): Promise<ChatMessage[]> {
+  try {
+    const recent = await collectRecentMessages(chatId, count);
+    return recent.map((m) => ({
+      role: "user" as const,
+      content: `[${m.displayName}]: ${m.text}`,
+    }));
+  } catch {
+    return [];
+  }
 }
 
 // ── Keyword scanning ────────────────────────────────────────────────────
