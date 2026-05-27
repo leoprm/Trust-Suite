@@ -47,7 +47,6 @@ import cancelledPlansRoutes from './routes/cancelledPlansRoutes';
 import hiringRoutes from './routes/hiringRoutes';
 // Note: roleRoutes is registered inline below to avoid circular dependency with eventLogService
 import { createBot, startBotPolling } from './bot/index';
-import { webhookCallback } from 'grammy';
 import { initTrustManagerBot } from './bot/trustManagerBot';
 import { startScheduler } from './bot/scheduler';
 import { initDisputeService } from './services/telegramBotService';
@@ -77,70 +76,10 @@ let trustManagerBot: any = null;
   trustManagerBot = await initTrustManagerBot(prisma);
 
   if (telegramBot) {
-    // ── Intentar webhook (si hay túnel cloudflared disponible) ────────────
-    const TUNNEL_URL_FILE = '/dev/shm/trustmaker-tunnel-url';
-    let webhookUrl: string | null = null;
-
-    // Retry loop: el túnel puede tardar unos segundos en escribir la URL
-    for (let attempt = 0; attempt < 10; attempt++) {
-      try {
-        if (fs.existsSync(TUNNEL_URL_FILE)) {
-          const raw = fs.readFileSync(TUNNEL_URL_FILE, 'utf-8').trim();
-          if (raw && raw.startsWith('https://')) {
-            webhookUrl = raw + '/telegram-webhook';
-            break;
-          }
-        }
-      } catch {
-        // tunnel file doesn't exist or can't be read → retry
-      }
-      if (attempt < 9) await new Promise((r) => setTimeout(r, 1000));
-    }
-
-    if (webhookUrl) {
-      try {
-        // ── setWebhook vía curl (el fetch de Node tiene bug IPv6 con undici) ──
-        const token = process.env.TELEGRAM_BOT_TOKEN ?? '';
-        execSync(
-          `curl -sS -4 -X POST --max-time 10 ` +
-          `"https://api.telegram.org/bot${token}/setWebhook" ` +
-          `-H 'Content-Type: application/json' ` +
-          `-d '${JSON.stringify({ url: webhookUrl, drop_pending_updates: true })}'`,
-          { encoding: 'utf-8', timeout: 15_000 },
-        );
-        console.log(`[Telegram Bot] Webhook configurado: ${webhookUrl}`);
-
-        // Registrar webhook callback en Express (grammY maneja el parseo)
-        app.use('/telegram-webhook', webhookCallback(telegramBot, 'express'));
-
-        // Verificar conectividad vía curl
-        const meJson = execSync(
-          `curl -sS -4 --max-time 10 "https://api.telegram.org/bot${token}/getMe"`,
-          { encoding: 'utf-8', timeout: 15_000 },
-        );
-        const me = JSON.parse(meJson);
-        console.log(`[Telegram Bot] @${me.result.username} iniciado en modo webhook ✅`);
-
-        // Recover pending approvals
-        import('./bot/approval').then(({ recoverPendingApprovals }) => {
-          recoverPendingApprovals(telegramBot!, prisma).catch((err: any) =>
-            console.error('[approval] Recovery error:', err.message),
-          );
-        });
-      } catch (err: any) {
-        console.error(
-          `[Telegram Bot] Webhook falló (${err.message}), cayendo a polling...`,
-        );
-        startBotPolling(telegramBot, prisma).catch(() => {
-          /* ya logeado */
-        });
-      }
-    } else {
-      console.log('[Telegram Bot] Sin túnel cloudflared — usando polling');
-      startBotPolling(telegramBot, prisma).catch(() => {
-        /* ya logeado */
-      });
-    }
+    // ── Iniciar polling (con reintentos para 409 Conflict) ──────────────────
+    startBotPolling(telegramBot, prisma).catch(() => {
+      /* ya logeado — el servidor sigue corriendo sin bot */
+    });
   }
 
   // ── Initialize dispute broadcast service ──────────────────────────────────────
