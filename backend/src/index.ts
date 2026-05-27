@@ -1,10 +1,10 @@
 import dotenv from 'dotenv';
 dotenv.config();
 
-// IPv4-first DNS resolution — Node.js v17+ defaults to verbatim (IPv6).
-// The systemd unit also passes --dns-result-order=ipv4first as a belt-and-suspenders.
-import dns from 'dns';
-dns.setDefaultResultOrder('ipv4first');
+// Force IPv4 — undici (Node's fetch) ignores --dns-result-order in Node 22.
+// setGlobalDispatcher covers ALL fetch() calls: grammY, native fetch, etc.
+import { setGlobalDispatcher, Agent } from 'undici';
+setGlobalDispatcher(new Agent({ connect: { family: 4 } }));
 
 import express from 'express';
 import path from 'path';
