@@ -258,13 +258,15 @@ export async function getChatHistory(
       select: { role: true, content: true },
     });
     if (rows.length > 0) {
+      console.log(`[getChatHistory] DB returned ${rows.length} messages for treeId=${treeId}`);
       return rows.reverse().map((r: any) => ({
         role: r.role as "user" | "assistant",
         content: r.content,
       }));
     }
+    console.warn(`[getChatHistory] DB empty for treeId=${treeId}, falling back to Telethon`);
   } catch (err: any) {
-    console.warn(`[getChatHistory] DB fallback failed: ${err?.message || err}`);
+    console.warn(`[getChatHistory] DB query failed: ${err?.message || err}`);
   }
 
   // ── Fallback: Telethon (MTProto) ───────────────────────────────────
@@ -1166,7 +1168,9 @@ export async function routeToHermes(
             content: message.trim(),
           },
         });
-      } catch { /* best-effort */ }
+      } catch (err: any) {
+        console.error(`[hermesBridge] Failed to persist user message: ${err?.message || err}`);
+      }
     }
 
     // ── Call Hermes Agent API ─────────────────────────────────────────────
@@ -1333,7 +1337,9 @@ export async function routeToHermes(
             content: accumulatedContent.slice(0, 2000),
           },
         });
-      } catch { /* best-effort */ }
+      } catch (err: any) {
+        console.error(`[hermesBridge] Failed to persist assistant response: ${err?.message || err}`);
+      }
     }
 
     return { text: accumulatedContent };
