@@ -2120,6 +2120,34 @@ export async function createBot(prisma: PrismaClient): Promise<Bot<BotContext> |
       cmdText = msg.text.trim();
     }
 
+    let isOneOnOne = false;
+    if (cmdText === null || cmdText === "") {
+      // One-on-one mode: if Telegram group has exactly 2 members (Ari + 1 person),
+      // bypass shouldAriRespond and respond to everything.
+      // If more members join (3+), shouldAriRespond reactivates normally.
+      if (chatId) {
+        try {
+          const memberCount = await ctx.getChatMemberCount();
+          if (memberCount === 2) {
+            cmdText = msg.text.trim();
+            isOneOnOne = true;
+          }
+        } catch (err: any) {
+          // Fallback: if getChatMemberCount fails (e.g. in DMs), check DB
+          const soloTree = await findTreeByChat(prisma, chatId!);
+          if (soloTree) {
+            const dbCount = await (prisma as any).treeMember.count({
+              where: { treeId: soloTree.id, status: "ACTIVE" },
+            });
+            if (dbCount <= 1) {
+              cmdText = msg.text.trim();
+              isOneOnOne = true;
+            }
+          }
+        }
+      }
+    }
+
     // ── Conversation Window: proactive engagement (Hermes Bridge) ────
     // Runs BEFORE the cmdText null gate to decide if Ari should join
     // ambient conversation via keyword scanning or active window state.
@@ -2160,34 +2188,6 @@ export async function createBot(prisma: PrismaClient): Promise<Bot<BotContext> |
       }
     }
 
-    // 3. Si no hay comando ni mención → verificar si es conversación 1:1
-    let isOneOnOne = false;
-    if (cmdText === null || cmdText === "") {
-      // One-on-one mode: if Telegram group has exactly 2 members (Ari + 1 person),
-      // bypass shouldAriRespond and respond to everything.
-      // If more members join (3+), shouldAriRespond reactivates normally.
-      if (chatId) {
-        try {
-          const memberCount = await ctx.getChatMemberCount();
-          if (memberCount === 2) {
-            cmdText = msg.text.trim();
-            isOneOnOne = true;
-          }
-        } catch {
-          // Fallback: if getChatMemberCount fails (e.g. in DMs), check DB
-          const soloTree = await findTreeByChat(prisma, chatId!);
-          if (soloTree) {
-            const dbCount = await (prisma as any).treeMember.count({
-              where: { treeId: soloTree.id, status: "ACTIVE" },
-            });
-            if (dbCount <= 1) {
-              cmdText = msg.text.trim();
-              isOneOnOne = true;
-            }
-          }
-        }
-      }
-    }
     if (cmdText === null || cmdText === "") return;
 
     // 3.5 Payment check: verificar acceso antes de procesar
@@ -2789,10 +2789,10 @@ export async function createBot(prisma: PrismaClient): Promise<Bot<BotContext> |
     // Must be awaiting evidence
     if (!taskId) {
       // Silent save: guardar en filesystem del árbol sin preguntar
-      const chatId2 = ctx.chat?.id.toString();
-      if (chatId2 && (ctx.chat?.type === "group" || ctx.chat?.type === "supergroup")) {
+      const chatId = ctx.chat?.id.toString();
+      if (chatId && (ctx.chat?.type === "group" || ctx.chat?.type === "supergroup")) {
         try {
-          const tree2 = await findTreeByChat(prisma, chatId2);
+          const tree2 = await findTreeByChat(prisma, chatId);
           if (tree2) {
             const photo = msg.photo[msg.photo.length - 1];
             const fileId = photo.file_id;
@@ -2850,10 +2850,10 @@ export async function createBot(prisma: PrismaClient): Promise<Bot<BotContext> |
     // Must be awaiting evidence
     if (!taskId) {
       // Silent save: guardar en filesystem del árbol sin preguntar
-      const chatId2 = ctx.chat?.id.toString();
-      if (chatId2 && (ctx.chat?.type === "group" || ctx.chat?.type === "supergroup")) {
+      const chatId = ctx.chat?.id.toString();
+      if (chatId && (ctx.chat?.type === "group" || ctx.chat?.type === "supergroup")) {
         try {
-          const tree2 = await findTreeByChat(prisma, chatId2);
+          const tree2 = await findTreeByChat(prisma, chatId);
           if (tree2) {
             const doc = msg.document;
             const fileId = doc.file_id;
@@ -2906,11 +2906,11 @@ export async function createBot(prisma: PrismaClient): Promise<Bot<BotContext> |
     const msg = ctx.message;
     if (!msg?.video) return;
 
-    const chatId2 = ctx.chat?.id.toString();
-    if (!chatId2 || (ctx.chat?.type !== "group" && ctx.chat?.type !== "supergroup")) return;
+    const chatId = ctx.chat?.id.toString();
+    if (!chatId || (ctx.chat?.type !== "group" && ctx.chat?.type !== "supergroup")) return;
 
     try {
-      const tree2 = await findTreeByChat(prisma, chatId2);
+      const tree2 = await findTreeByChat(prisma, chatId);
       if (tree2) {
         const video = msg.video;
         const fileId = video.file_id;
@@ -2926,11 +2926,11 @@ export async function createBot(prisma: PrismaClient): Promise<Bot<BotContext> |
     const msg = ctx.message;
     if (!msg?.audio) return;
 
-    const chatId2 = ctx.chat?.id.toString();
-    if (!chatId2 || (ctx.chat?.type !== "group" && ctx.chat?.type !== "supergroup")) return;
+    const chatId = ctx.chat?.id.toString();
+    if (!chatId || (ctx.chat?.type !== "group" && ctx.chat?.type !== "supergroup")) return;
 
     try {
-      const tree2 = await findTreeByChat(prisma, chatId2);
+      const tree2 = await findTreeByChat(prisma, chatId);
       if (tree2) {
         const audio = msg.audio;
         const fileId = audio.file_id;

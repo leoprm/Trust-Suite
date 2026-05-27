@@ -20,6 +20,9 @@ import path from "path";
 import { messageQueue } from "./messageQueue";
 
 const HERMES_API = "http://127.0.0.1:8644/v1/chat/completions";
+const DEEPSEEK_DECISION_API = "https://api.deepseek.com/v1/chat/completions";
+const DEEPSEEK_API_KEY = process.env.DEEPSEEK_API_KEY ?? "";
+const DECISION_MODEL = "deepseek-chat"; // fast + cheap for yes/no decisions
 const SUPPORT_HERMES_GATEWAY = process.env.HERMES_SUPPORT_GATEWAY || "http://127.0.0.1:8646";
 const SUPPORT_HERMES_API_URL = process.env.SUPPORT_HERMES_API_URL || `${SUPPORT_HERMES_GATEWAY}/v1/chat/completions`;
 const SUPPORT_HERMES_API_KEY = process.env.HERMES_SUPPORT_API_KEY || process.env.SUPPORT_HERMES_API_KEY || "";
@@ -783,10 +786,12 @@ export async function shouldAriRespond(
     "   - Thank-you messages, acknowledgments, or simple agreements (\"gracias Ari\", \"ok\", \"de acuerdo\")",
     "   - Emoji-only messages, stickers, or reactions",
     "",
-    "RESPONSE FORMAT:",
-    '- If Ari should stay silent: respond with exactly "NO_RESPONSE" (no quotes, no punctuation, no explanation)',
-    '- If Ari should respond: respond with exactly "RESPOND" (no quotes, no punctuation, no explanation)',
-    "- NEVER write the actual response text. ONLY output the decision word.",
+    "RESPONSE FORMAT (JSON — CRITICAL, FOLLOW EXACTLY):",
+    "You MUST output a single JSON object and NOTHING else. No markdown, no explanation.",
+    'If Ari should stay silent:  {"decision":"NO_RESPONSE"}',
+    'If Ari should respond:     {"decision":"RESPOND"}',
+    "- DeepSeek requires the word 'json' in the prompt to enable JSON output mode.",
+    "- NEVER write the actual response text. ONLY output the JSON object above.",
     "",
     "You are deciding for the MOST RECENT message in the context below.",
   ].join("\n");
@@ -832,25 +837,24 @@ export async function shouldAriRespond(
     });
   }
 
-  // ── Call Hermes Agent API (streaming — avoids empty-response bug with tools) ──
+  // ── Call DeepSeek API directly (bypass Hermes Agent for fast decision) ──
   const controller = new AbortController();
-const timeoutId = setTimeout(() => controller.abort(), 900_000); // 15 min — matches Hermes dialog_timeout_s
-
-  const headers: Record<string, string> = {
-    "Content-Type": "application/json",
-    "X-Hermes-Session-Key": `tree-agent-decision-${treeId}`,
-  };
-  if (API_SERVER_KEY) {
-    headers["Authorization"] = `Bearer ${API_SERVER_KEY}`;
-  }
+  const timeoutId = setTimeout(() => controller.abort(), 30_000); // 30s is plenty
 
   try {
-    const response = await fetch(HERMES_API, {
+    const response = await fetch(DEEPSEEK_DECISION_API, {
       method: "POST",
-      headers,
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${DEEPSEEK_API_KEY}`,
+      },
       body: JSON.stringify({
+        model: DECISION_MODEL,
         messages,
-        stream: true, // streaming: avoids empty-response bug when agent uses tools
+        stream: false,
+        response_format: { type: "json_object" },
+        max_tokens: 50,
+        temperature: 0,
       }),
       signal: controller.signal,
     });
@@ -860,71 +864,36 @@ const timeoutId = setTimeout(() => controller.abort(), 900_000); // 15 min — m
     if (!response.ok) {
       const errorText = await response.text().catch(() => "");
       console.error(
-        `[shouldAriRespond] Hermes API returned ${response.status}: ${errorText.slice(0, 200)}`,
+        `[shouldAriRespond] DeepSeek API returned ${response.status}: ${errorText.slice(0, 200)}`,
       );
       return { shouldRespond: false };
     }
 
-    // ── SSE parser (same pattern as routeToHermes) ──
-    const reader = response.body?.getReader();
-    if (!reader) {
-      console.warn("[shouldAriRespond] No readable stream body");
+    const data = await response.json();
+    const rawContent: string = data?.choices?.[0]?.message?.content ?? "";
+
+    if (!rawContent) {
+      console.warn("[shouldAriRespond] Empty response from DeepSeek API");
       return { shouldRespond: false };
     }
 
-    const decoder = new TextDecoder();
-    let content = "";
-    let buffer = "";
-
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-
-      buffer += decoder.decode(value, { stream: true });
-      const lines = buffer.split("\n");
-      buffer = lines.pop() ?? "";
-
-      for (const line of lines) {
-        const trimmedLine = line.trim();
-        if (!trimmedLine || !trimmedLine.startsWith("data:")) continue;
-
-        const dataStr = trimmedLine.slice(5).trim();
-        if (dataStr === "[DONE]") break;
-
-        try {
-          const parsed = JSON.parse(dataStr);
-          const delta =
-            parsed?.choices?.[0]?.delta?.content ??
-            parsed?.choices?.[0]?.message?.content ??
-            "";
-          content += delta;
-        } catch {
-          // skip unparseable chunks
-        }
-      }
+    // ── Parse JSON ────────────────────────────────────────────────────────
+    try {
+      const parsed = JSON.parse(rawContent.trim());
+      const decision: string = (parsed?.decision ?? "").trim().toUpperCase();
+      if (decision === "RESPOND") return { shouldRespond: true };
+      if (decision === "NO_RESPONSE") return { shouldRespond: false };
+      console.warn(
+        `[shouldAriRespond] Unexpected decision: "${decision}" — defaulting to silent`,
+      );
+    } catch {
+      // JSON parse failed — try regex extraction
+      const m = rawContent.match(/"decision"\s*:\s*"(RESPOND|NO_RESPONSE)"/i);
+      if (m) return { shouldRespond: m[1].toUpperCase() === "RESPOND" };
+      console.warn(
+        `[shouldAriRespond] Non-JSON response: "${rawContent.slice(0, 80)}" — defaulting to silent`,
+      );
     }
-
-    if (!content) {
-      console.warn("[shouldAriRespond] Empty response from Hermes API");
-      return { shouldRespond: false };
-    }
-
-    const trimmed = content.trim();
-
-    // Check for RESPOND signal
-    if (trimmed === "RESPOND" || trimmed === '"RESPOND"') {
-      return { shouldRespond: true };
-    }
-
-    // Check for NO_RESPONSE signal
-    if (trimmed === "NO_RESPONSE" || trimmed === '"NO_RESPONSE"') {
-      return { shouldRespond: false };
-    }
-
-    // Safe default: anything else → silent (avoid generating text here)
-    console.warn(
-      `[shouldAriRespond] Unexpected response: "${trimmed.slice(0, 80)}" — defaulting to silent`,
-    );
     return { shouldRespond: false };
   } catch (err) {
     clearTimeout(timeoutId);
