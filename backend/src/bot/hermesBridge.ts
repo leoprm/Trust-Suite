@@ -606,22 +606,32 @@ async function buildSystemPrompt(
     lines.push("Follow these project-level rules above default behavior.");
   }
 
-  // ── Sandbox memory (tree-level MEMORY.md) ───────────────────────────────
-  const memoryPath = path.join(sandboxDir, "memory", "MEMORY.md");
+  // ── Sandbox memory (tree-level memory.json) ────────────────────────────
+  const memoryPath = path.join(sandboxDir, "memory", "memory.json");
   if (fs.existsSync(memoryPath)) {
     try {
-      const memoryContent = fs.readFileSync(memoryPath, "utf-8").trim();
-      if (memoryContent.length > 0) {
-        const truncated = memoryContent.length > 2000
-          ? memoryContent.slice(0, 1997) + "..."
-          : memoryContent;
-        lines.push("");
-        lines.push("═══ MEMORY (tree-level durable memory) ═══");
-        lines.push("This is your persistent memory. To UPDATE it, use:");
-        lines.push("  POST /api/trees/<treeId>/sandbox/file/write");
-        lines.push("  Body: { path: 'memory/MEMORY.md', content: '<new-full-content>' }");
-        lines.push("NEVER use the built-in 'memory' tool — it writes to the wrong location.");
-        for (const line of truncated.split("\n")) lines.push(line);
+      const memoryRaw = fs.readFileSync(memoryPath, "utf-8").trim();
+      if (memoryRaw.length > 0) {
+        const memoryJson = JSON.parse(memoryRaw);
+        const keys = Object.keys(memoryJson);
+        if (keys.length > 0) {
+          lines.push("");
+          lines.push("═══ MEMORY (tree-level durable memory) ═══");
+          lines.push("This is your persistent key-value memory. To UPDATE it, call:");
+          lines.push(`  POST http://127.0.0.1:3100/api/trees/${treeId}/sandbox/memory`);
+          lines.push('  Headers: { "Authorization": "Bearer <HERMES_API_SERVER_KEY>" }');
+          lines.push('  Body: { "action": "write", "key": "<key>", "value": "<text>" }');
+          lines.push('  To READ: { "action": "read", "key": "<key>" }');
+          lines.push('  To LIST keys: { "action": "list" }');
+          lines.push("NEVER use the built-in 'memory' tool — it writes to the wrong location.");
+          lines.push("Current memory contents:");
+          for (const [k, v] of Object.entries(memoryJson)) {
+            const truncated = (v as string).length > 500
+              ? (v as string).slice(0, 497) + "..."
+              : v;
+            lines.push(`  ${k}: ${truncated}`);
+          }
+        }
       }
     } catch { /* non-blocking */ }
   }
