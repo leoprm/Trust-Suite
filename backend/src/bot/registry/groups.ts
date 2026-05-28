@@ -41,12 +41,12 @@ export function register(bot: Bot<BotContext>, prisma: PrismaClient): void {
     _introCounts.set(treeId, count);
     if (count === 2 || count === 3) {
       // Save if not already set
-      const tree = await (prisma as any).tree.findUnique({
+      const tree = await prisma.tree.findUnique({
         where: { id: treeId },
         select: { introMessageId: true },
       });
       if (!tree?.introMessageId) {
-        await (prisma as any).tree.update({
+        await prisma.tree.update({
           where: { id: treeId },
           data: { introMessageId: BigInt(messageId) },
         });
@@ -65,7 +65,7 @@ export function register(bot: Bot<BotContext>, prisma: PrismaClient): void {
         if (newStatus === "kicked" || newStatus === "left") {
         const chatId = chat.id.toString();
         try {
-          await (prisma as any).tree.updateMany({
+          await prisma.tree.updateMany({
             where: { telegramChatId: chatId },
             data: { pendingDeletionAt: new Date(Date.now() + 60 * 60 * 1000) },
           });
@@ -91,18 +91,18 @@ export function register(bot: Bot<BotContext>, prisma: PrismaClient): void {
           // Código original preservado. Reactivar: descomentar y quitar if(false)
           if (false) {
           const MAX_TREES = parseInt(process.env.MAX_TREES || "5", 10);
-          const treeCount = await (prisma as any).tree.count({
+          const treeCount = await prisma.tree.count({
             where: { telegramChatId: { not: null } },
           });
 
           if (!isBetaAdmin && treeCount >= MAX_TREES) {
             // Check if tree already exists (rejoin case — don't block re-adds)
-            const existingTree = await (prisma as any).tree.findUnique({
+            const existingTree = await prisma.tree.findUnique({
               where: { telegramChatId: chatId },
             });
             if (existingTree) {
               // Rejoin: existing tree, cancel pending deletion, sync adder as member
-              await (prisma as any).tree.update({
+              await prisma.tree.update({
                 where: { id: existingTree.id },
                 data: { pendingDeletionAt: null, standby: false, leaveAttempts: 0 },
               });
@@ -152,7 +152,7 @@ export function register(bot: Bot<BotContext>, prisma: PrismaClient): void {
 
             // Optional: save to waitlist
             try {
-              await (prisma as any).waitlist.create({
+              await prisma.waitlist.create({
                 data: {
                   treeName: chat.title || `Grupo ${chatId}`,
                   telegramChatId: chatId,
@@ -173,13 +173,13 @@ export function register(bot: Bot<BotContext>, prisma: PrismaClient): void {
           // ── Gate: 1 group per user during beta ──────────────────────────
           // Check if the adder already administers a tree
           const adderTgId = BigInt(adderId);
-          const adderUser = await (prisma as any).user.findUnique({
+          const adderUser = await prisma.user.findUnique({
             where: { telegramUserId: adderTgId },
             select: { id: true },
           });
 
           if (adderUser) {
-            const adminTrees = await (prisma as any).treeMember.count({
+            const adminTrees = await prisma.treeMember.count({
               where: {
                 userId: adderUser.id,
                 role: "ADMIN",
@@ -193,7 +193,7 @@ export function register(bot: Bot<BotContext>, prisma: PrismaClient): void {
             const MAX_USER_TREES = parseInt(process.env.MAX_TREES_PER_USER || "2", 10);
             if (!isBetaAdmin && adminTrees >= MAX_USER_TREES) {
               // Check if tree already exists (rejoin to same tree)
-              const existingTree = await (prisma as any).tree.findUnique({
+              const existingTree = await prisma.tree.findUnique({
                 where: { telegramChatId: chatId },
               });
               if (!existingTree) {
@@ -214,12 +214,12 @@ export function register(bot: Bot<BotContext>, prisma: PrismaClient): void {
           }
 
           // Check if tree already exists for this group
-          let tree = await (prisma as any).tree.findUnique({
+          let tree = await prisma.tree.findUnique({
             where: { telegramChatId: chatId },
           });
           let isNewTree = false;
           if (!tree) {
-            tree = await (prisma as any).tree.create({
+            tree = await prisma.tree.create({
               data: {
                 name: chat.title || `Grupo ${chatId}`,
                 telegramChatId: chatId,
@@ -311,7 +311,7 @@ export function register(bot: Bot<BotContext>, prisma: PrismaClient): void {
               );
             } else {
               // Rejoin: existing tree, cancel any pending deletion
-              await (prisma as any).tree.update({
+              await prisma.tree.update({
                 where: { id: tree!.id },
                 data: { pendingDeletionAt: null, standby: false },
               });
@@ -380,7 +380,7 @@ export function register(bot: Bot<BotContext>, prisma: PrismaClient): void {
       if (tree) {
         if (!todoText) {
           // Show ranked list — urgent unassigned first, then by likes
-          const todos = await (prisma as any).todo.findMany({
+          const todos = await prisma.todo.findMany({
             where: { treeId: tree.id, status: "PENDING" },
             orderBy: { likeCount: "desc" },
             take: 20,
@@ -421,7 +421,7 @@ export function register(bot: Bot<BotContext>, prisma: PrismaClient): void {
           // Add todo item — parse deadline from text
           const deadline = parseDeadline(todoText);
           const summary = summarizeTodo(todoText);
-          const todo = await (prisma as any).todo.create({
+          const todo = await prisma.todo.create({
             data: {
               treeId: tree.id,
               chatId: BigInt(chatId),
@@ -449,7 +449,7 @@ export function register(bot: Bot<BotContext>, prisma: PrismaClient): void {
           // Resolve tree language for i18n
           let lng = "es";
           try {
-            const treeData = await (prisma as any).tree.findUnique({
+            const treeData = await prisma.tree.findUnique({
               where: { id: tree.id },
               select: { language: true },
             });
@@ -457,7 +457,7 @@ export function register(bot: Bot<BotContext>, prisma: PrismaClient): void {
           } catch { /* fallback es */ }
 
           // Check for duplicate: exact summary match in PENDING todos
-          const existing = await (prisma as any).todo.findFirst({
+          const existing = await prisma.todo.findFirst({
             where: {
               treeId: tree.id,
               status: "PENDING",
@@ -476,7 +476,7 @@ export function register(bot: Bot<BotContext>, prisma: PrismaClient): void {
           // Parse deadline from text
           const deadline = parseDeadline(addIntent);
           const summary = addIntent.length > 80 ? summarizeTodo(addIntent) : addIntent;
-          await (prisma as any).todo.create({
+          await prisma.todo.create({
             data: {
               treeId: tree.id,
               chatId: BigInt(chatId),
@@ -509,14 +509,14 @@ export function register(bot: Bot<BotContext>, prisma: PrismaClient): void {
         // Resolve tree language for i18n
         let lng = "es";
         try {
-          const treeData = await (prisma as any).tree.findUnique({
+          const treeData = await prisma.tree.findUnique({
             where: { id: tree.id },
             select: { language: true },
           });
           if (treeData?.language) lng = treeData.language;
         } catch { /* fallback es */ }
 
-        const pendingTodos = await (prisma as any).todo.findMany({
+        const pendingTodos = await prisma.todo.findMany({
           where: { treeId: tree.id, status: "PENDING" },
           orderBy: { likeCount: "desc" },
           take: 50,
@@ -583,7 +583,7 @@ export function register(bot: Bot<BotContext>, prisma: PrismaClient): void {
               }
 
               // Assign
-              await (prisma as any).todo.update({
+              await prisma.todo.update({
                 where: { id: todo.id },
                 data: {
                   assignedTo: tgUserId,
@@ -637,7 +637,7 @@ export function register(bot: Bot<BotContext>, prisma: PrismaClient): void {
               const urgency = checkUrgency(todo.deadline);
 
               // Release
-              await (prisma as any).todo.update({
+              await prisma.todo.update({
                 where: { id: todo.id },
                 data: {
                   assignedTo: null,
@@ -662,7 +662,7 @@ export function register(bot: Bot<BotContext>, prisma: PrismaClient): void {
                 // Get tree member count
                 let memberCount = 0;
                 try {
-                  memberCount = await (prisma as any).treeMember.count({
+                  memberCount = await prisma.treeMember.count({
                     where: { treeId: tree.id, status: "ACTIVE" },
                   });
                 } catch { /* fallback */ }
@@ -671,7 +671,7 @@ export function register(bot: Bot<BotContext>, prisma: PrismaClient): void {
                   // Get member Telegram IDs for mentions
                   let members: any[] = [];
                   try {
-                    members = await (prisma as any).treeMember.findMany({
+                    members = await prisma.treeMember.findMany({
                       where: { treeId: tree.id, status: "ACTIVE" },
                       include: {
                         user: { select: { telegramUserId: true, username: true } },
@@ -719,7 +719,7 @@ export function register(bot: Bot<BotContext>, prisma: PrismaClient): void {
     if (chatId) {
       const tree = await findTreeByChat(prisma, chatId);
       if (tree) {
-        const pendingTodos = await (prisma as any).todo.findMany({
+        const pendingTodos = await prisma.todo.findMany({
           where: { treeId: tree.id, status: "PENDING" },
           orderBy: { likeCount: "desc" },
           take: 50,
@@ -761,7 +761,7 @@ export function register(bot: Bot<BotContext>, prisma: PrismaClient): void {
             }
 
             // Mark as DONE
-            await (prisma as any).todo.update({
+            await prisma.todo.update({
               where: { id: result.todoId },
               data: { status: "DONE" },
             });
@@ -842,7 +842,7 @@ export function register(bot: Bot<BotContext>, prisma: PrismaClient): void {
           // Fallback: if getChatMemberCount fails (e.g. in DMs), check DB
           const soloTree = await findTreeByChat(prisma, chatId!);
           if (soloTree) {
-            const dbCount = await (prisma as any).treeMember.count({
+            const dbCount = await prisma.treeMember.count({
               where: { treeId: soloTree.id, status: "ACTIVE" },
             });
             if (dbCount <= 1) {
@@ -985,7 +985,7 @@ export function register(bot: Bot<BotContext>, prisma: PrismaClient): void {
       // Fetch recent messages for decision context (same query, different mapping)
       let recentMessages: { senderName: string; content: string }[] = [];
       try {
-        const rawMessages = await (prisma as any).chatMessage.findMany({
+        const rawMessages = await prisma.chatMessage.findMany({
           where: { treeId: tree.id },
           orderBy: { createdAt: "desc" },
           take: 10,

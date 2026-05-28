@@ -308,7 +308,7 @@ export async function runWatchdogCycle(
   prisma: PrismaClient,
   bot: Bot<BotContext>,
 ): Promise<void> {
-  const trackedTasks = await (prisma as any).botKanbanTask.findMany({
+  const trackedTasks = await prisma.botKanbanTask.findMany({
     where: { status: { not: "done" } },
   });
 
@@ -329,7 +329,7 @@ export async function runWatchdogCycle(
 
       // Mark done in DB (auto-cleanup or real completion)
       if (isDone) {
-        await (prisma as any).botKanbanTask.update({
+        await prisma.botKanbanTask.update({
           where: { id: t.id },
           data: { status: "done", lastNotifiedAt: new Date() },
         });
@@ -353,7 +353,7 @@ export async function runWatchdogCycle(
             console.log(
               `[KanbanWatchdog] Chat ${t.chatId} unavailable — marking done.`,
             );
-            await (prisma as any).botKanbanTask.update({
+            await prisma.botKanbanTask.update({
               where: { id: t.id },
               data: { status: "done" },
             });
@@ -368,7 +368,7 @@ export async function runWatchdogCycle(
       }
 
       // Sync status + lastNotifiedAt in DB
-      await (prisma as any).botKanbanTask.update({
+      await prisma.botKanbanTask.update({
         where: { id: t.id },
         data: {
           status: newStatus,

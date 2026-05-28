@@ -134,7 +134,7 @@ async function analyzeVotingPatterns(
   userId: string,
   treeId: string,
 ): Promise<VotingPatterns> {
-  const votes = await (prisma as any).ideaVote.findMany({
+  const votes = await prisma.ideaVote.findMany({
     where: {
       userId,
       idea: { need: { treeId } },
@@ -164,7 +164,7 @@ async function analyzeVotingPatterns(
   }
 
   // Get tree average for consistency check
-  const treeVoteStats = await (prisma as any).ideaVote.groupBy({
+  const treeVoteStats = await prisma.ideaVote.groupBy({
     by: ['userId'],
     where: {
       idea: { need: { treeId } },
@@ -194,7 +194,7 @@ async function analyzeTaskCompletion(
   userId: string,
   treeId: string,
 ): Promise<number> {
-  const tasks = await (prisma as any).task.findMany({
+  const tasks = await prisma.task.findMany({
     where: {
       treeId,
       assigneeId: userId,
@@ -217,7 +217,7 @@ async function analyzeChatActivity(
   userId: string,
   treeId: string,
 ): Promise<ChatActivity> {
-  const messages = await (prisma as any).chatMessage.findMany({
+  const messages = await prisma.chatMessage.findMany({
     where: { userId, treeId, role: 'user' },
     select: { content: true, createdAt: true },
     orderBy: { createdAt: 'desc' },
@@ -325,7 +325,7 @@ export async function analyzeTreeSocialMap(treeId: string): Promise<SocialProfil
     );
 
     // ── Persist ───────────────────────────────────────────────────────
-    await (prisma as any).memberSocialProfile.upsert({
+    await prisma.memberSocialProfile.upsert({
       where: { userId_treeId: { userId, treeId } },
       create: {
         userId,
@@ -366,7 +366,7 @@ export async function analyzeTreeSocialMap(treeId: string): Promise<SocialProfil
  * Faster than analyzeTreeSocialMap — returns last computed state.
  */
 export async function getTreeSocialProfiles(treeId: string): Promise<SocialProfile[]> {
-  const profiles = await (prisma as any).memberSocialProfile.findMany({
+  const profiles = await prisma.memberSocialProfile.findMany({
     where: { treeId },
     include: {
       user: { select: { username: true } },

@@ -28,7 +28,7 @@ async function getTreeState(
   prisma: PrismaClient,
   treeId: string,
 ): Promise<TreeDdosState | null> {
-  const tree = await (prisma as any).tree.findUnique({
+  const tree = await prisma.tree.findUnique({
     where: { id: treeId },
     select: {
       id: true,
@@ -42,7 +42,7 @@ async function getTreeState(
   });
   if (!tree) return null;
 
-  const memberCount = await (prisma as any).treeMember.count({
+  const memberCount = await prisma.treeMember.count({
     where: { treeId, status: "ACTIVE" },
   });
 
@@ -55,7 +55,7 @@ async function getAdminTelegramIds(
   treeId: string,
 ): Promise<number[]> {
   // Get ADMIN TreeMembers with linked Telegram user
-  const admins = await (prisma as any).treeMember.findMany({
+  const admins = await prisma.treeMember.findMany({
     where: { treeId, role: "ADMIN", status: "ACTIVE" },
     include: { user: { select: { telegramUserId: true } } },
   });
@@ -69,12 +69,12 @@ async function getAdminTelegramIds(
 
   // Fallback: also check creator (may not have TreeMember row yet)
   if (ids.length === 0) {
-    const tree = await (prisma as any).tree.findUnique({
+    const tree = await prisma.tree.findUnique({
       where: { id: treeId },
       select: { creatorId: true },
     });
     if (tree?.creatorId) {
-      const creator = await (prisma as any).user.findUnique({
+      const creator = await prisma.user.findUnique({
         where: { id: tree.creatorId },
         select: { telegramUserId: true },
       });
@@ -135,7 +135,7 @@ export async function checkMemberLimit(
     // Not exceeded — nothing to do (reset standby if it was set but count dropped)
     if (memberCount <= maxMembers) {
       if (standby) {
-        await (prisma as any).tree.update({
+        await prisma.tree.update({
           where: { id: treeId },
           data: { standby: false, blockedUntil: null },
         });
@@ -177,7 +177,7 @@ export async function checkMemberLimit(
         data.telegramChatId = null; // unlink — tree is banned
       }
 
-      await (prisma as any).tree.update({ where: { id: treeId }, data });
+      await prisma.tree.update({ where: { id: treeId }, data });
 
       if (isBlocked) {
         await notifyAdmins(
@@ -200,7 +200,7 @@ export async function checkMemberLimit(
     // Phase 1: first time exceeded → enter standby
     if (!standby) {
       const graceEnd = new Date(Date.now() + 60 * 60 * 1000); // +1 hour
-      await (prisma as any).tree.update({
+      await prisma.tree.update({
         where: { id: treeId },
         data: { standby: true, blockedUntil: graceEnd },
       });
@@ -232,7 +232,7 @@ export async function shouldRejectInvite(
   telegramChatId: string,
 ): Promise<{ reject: boolean; reason?: string }> {
   try {
-    const tree = await (prisma as any).tree.findUnique({
+    const tree = await prisma.tree.findUnique({
       where: { telegramChatId },
       select: {
         id: true,
@@ -258,7 +258,7 @@ export async function shouldRejectInvite(
 
     // In standby and still over limit → reject (prevents re-add during grace period)
     if (tree.standby) {
-      const memberCount = await (prisma as any).treeMember.count({
+      const memberCount = await prisma.treeMember.count({
         where: { treeId: tree.id, status: "ACTIVE" },
       });
       if (memberCount > tree.maxMembers) {
@@ -285,7 +285,7 @@ export async function isTreeBlocked(
   treeId: string,
 ): Promise<boolean> {
   try {
-    const tree = await (prisma as any).tree.findUnique({
+    const tree = await prisma.tree.findUnique({
       where: { id: treeId },
       select: { blockedUntil: true, leaveAttempts: true },
     });

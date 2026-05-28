@@ -283,7 +283,7 @@ export async function handleLanguageCallback(
   const telegramId = BigInt(tgUser.id);
 
   try {
-    await (prisma as any).user.updateMany({
+    await prisma.user.updateMany({
       where: { telegramUserId: telegramId },
       data: { language },
     });
@@ -328,7 +328,7 @@ export async function resolveUserLanguage(
   const telegramId = BigInt(tgUser.id);
 
   try {
-    const user = await (prisma as any).user.findUnique({
+    const user = await prisma.user.findUnique({
       where: { telegramUserId: telegramId },
       select: { language: true },
     });

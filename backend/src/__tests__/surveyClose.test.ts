@@ -160,7 +160,7 @@ describe('Survey close integration', () => {
     const closesAt = new Date(now.getTime() - 60_000); // 1 minute ago
     const skill = `typescript_${Date.now()}`;
 
-    const survey: any = await (prisma as any).satisfactionSurvey.create({
+    const survey: any = await prisma.satisfactionSurvey.create({
       data: {
         treeId,
         targetUserId: adminUserId,
@@ -178,7 +178,7 @@ describe('Survey close integration', () => {
     for (let i = 0; i < 3; i++) {
       const member = members[i];
       const hash = voterHash(member.userId, surveyId);
-      await (prisma as any).surveyVote.create({
+      await prisma.surveyVote.create({
         data: {
           surveyId,
           voterId: hash,
@@ -199,13 +199,13 @@ describe('Survey close integration', () => {
     expect(closedResult!.avgScore).toBeCloseTo(5.33, 1); // (1+5+10)/3 = 5.33
 
     // -- Step 5: Verify survey is now visible --
-    const updatedSurvey = await (prisma as any).satisfactionSurvey.findUnique({
+    const updatedSurvey = await prisma.satisfactionSurvey.findUnique({
       where: { id: surveyId },
     });
     expect(updatedSurvey.visible).toBe(true);
 
     // -- Step 6: Verify SatisfactionScore was created/updated --
-    const score = await (prisma as any).satisfactionScore.findUnique({
+    const score = await prisma.satisfactionScore.findUnique({
       where: {
         userId_skill: {
           userId: adminUserId,
@@ -225,7 +225,7 @@ describe('Survey close integration', () => {
     expect(closedAgain).toBeUndefined();
 
     // -- Step 8: Verify no change in SatisfactionScore --
-    const scoreAfterReRun = await (prisma as any).satisfactionScore.findUnique({
+    const scoreAfterReRun = await prisma.satisfactionScore.findUnique({
       where: {
         userId_skill: {
           userId: adminUserId,

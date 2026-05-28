@@ -63,7 +63,7 @@ export async function sendSatisfactionPoll(
   resultId: string,
 ): Promise<boolean> {
   try {
-    const result = await (prisma as any).result.findUnique({
+    const result = await prisma.result.findUnique({
       where: { id: resultId },
       include: {
         need: {
@@ -94,7 +94,7 @@ export async function sendSatisfactionPoll(
       allows_multiple_answers: false,
     });
 
-    await (prisma as any).satisfactionPoll.create({
+    await prisma.satisfactionPoll.create({
       data: {
         pollId: sentPoll.poll.id,
         resultId,
@@ -121,7 +121,7 @@ export async function handleSatisfactionPollAnswer(
   voterId: number,
 ): Promise<boolean> {
   try {
-    const satisfactionPoll = await (prisma as any).satisfactionPoll.findUnique({
+    const satisfactionPoll = await prisma.satisfactionPoll.findUnique({
       where: { pollId },
     });
 
@@ -129,7 +129,7 @@ export async function handleSatisfactionPollAnswer(
 
     const satisfaction = optionIds[0] + 1; // 0-indexed → 1-3
 
-    await (prisma as any).result.update({
+    await prisma.result.update({
       where: { id: satisfactionPoll.resultId },
       data: {
         satisfactionScore: { increment: satisfaction },
@@ -184,7 +184,7 @@ async function createRatingsFromSatisfaction(
   satisfaction: number,
 ): Promise<void> {
   // 1. Get result with need.tree and need.creatorId
-  const result = await (prisma as any).result.findUnique({
+  const result = await prisma.result.findUnique({
     where: { id: resultId },
     include: {
       need: {
@@ -295,7 +295,7 @@ export async function handleSatisfactionCommentReply(
   // Fetch satisfaction average for context
   let satisfactionAvg = 0;
   try {
-    const result = await (prisma as any).result.findUnique({
+    const result = await prisma.result.findUnique({
       where: { id: pending.resultId },
       select: { satisfactionScore: true, satisfactionCount: true },
     });
@@ -316,7 +316,7 @@ export async function handleSatisfactionCommentReply(
 
   if (analysis) {
     try {
-      await (prisma as any).result.update({
+      await prisma.result.update({
         where: { id: pending.resultId },
         data: {
           judgeComment: comment,

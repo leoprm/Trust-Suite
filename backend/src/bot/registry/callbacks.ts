@@ -28,7 +28,7 @@ export function register(bot: Bot<BotContext>, prisma: PrismaClient): void {
 
     try {
       // Resolve user by telegramUserId
-      const user = await (prisma as any).user.findUnique({
+      const user = await prisma.user.findUnique({
         where: { telegramUserId: BigInt(tgUser.id) },
         select: { id: true },
       });
@@ -38,6 +38,7 @@ export function register(bot: Bot<BotContext>, prisma: PrismaClient): void {
       }
 
       // Verify proposal exists and is OPEN
+      // FIXME: table "kanbanProposal" not in DB — add to Prisma schema + create migration
       const proposal = await (prisma as any).kanbanProposal.findUnique({
         where: { id: proposalId },
       });
@@ -66,7 +67,7 @@ export function register(bot: Bot<BotContext>, prisma: PrismaClient): void {
       }
 
       // Tree threshold check: trees with ≤voteThreshold members skip voting → direct execution
-      const tree = await (prisma as any).tree.findUnique({
+      const tree = await prisma.tree.findUnique({
         where: { id: proposal.treeId },
         select: { voteThreshold: true },
       });
@@ -75,6 +76,7 @@ export function register(bot: Bot<BotContext>, prisma: PrismaClient): void {
       });
       if (memberCount <= (tree?.voteThreshold ?? 20)) {
         // Direct execution — auto-approve without voting
+        // FIXME: table "kanbanProposal" not in DB — add to Prisma schema + create migration
         await (prisma as any).kanbanProposal.update({
           where: { id: proposalId },
           data: { status: "APPROVED", resolvedAt: new Date() },
@@ -84,6 +86,7 @@ export function register(bot: Bot<BotContext>, prisma: PrismaClient): void {
       }
 
       // Prevent double vote (unique constraint on proposalId+userId)
+      // FIXME: table "kanbanVote" not in DB — add to Prisma schema + create migration
       const existingVote = await (prisma as any).kanbanVote.findUnique({
         where: { proposalId_userId: { proposalId, userId: user.id } },
       });
@@ -94,6 +97,7 @@ export function register(bot: Bot<BotContext>, prisma: PrismaClient): void {
       }
 
       // Record the vote
+      // FIXME: table "kanbanVote" not in DB — add to Prisma schema + create migration
       await (prisma as any).kanbanVote.create({
         data: { proposalId, userId: user.id, vote },
       });
@@ -103,6 +107,7 @@ export function register(bot: Bot<BotContext>, prisma: PrismaClient): void {
         vote === "yes"
           ? { votesYes: { increment: 1 } }
           : { votesNo: { increment: 1 } };
+      // FIXME: table "kanbanProposal" not in DB — add to Prisma schema + create migration
       await (prisma as any).kanbanProposal.update({
         where: { id: proposalId },
         data: updateData,
@@ -151,12 +156,12 @@ export function register(bot: Bot<BotContext>, prisma: PrismaClient): void {
       // Verify membership
       const tgUser = ctx.from;
       if (!tgUser) { await ctx.answerCallbackQuery(); return; }
-      const user = await (prisma as any).user.findUnique({
+      const user = await prisma.user.findUnique({
         where: { telegramUserId: BigInt(tgUser.id) },
         select: { id: true },
       });
       if (!user) { await ctx.answerCallbackQuery({ text: "⚠️ Sin cuenta" }); return; }
-      const member = await (prisma as any).treeMember.findFirst({
+      const member = await prisma.treeMember.findFirst({
         where: { userId: user.id, treeId, status: "ACTIVE" },
         include: { tree: { select: { name: true } } },
       });
@@ -189,7 +194,7 @@ export function register(bot: Bot<BotContext>, prisma: PrismaClient): void {
 
           // Save language to tree
           try {
-            await (prisma as any).tree.update({
+            await prisma.tree.update({
               where: { id: treeId },
               data: { language: lang },
             });
@@ -263,13 +268,13 @@ export function register(bot: Bot<BotContext>, prisma: PrismaClient): void {
             const admins = await ctx.getChatAdministrators();
             const creator = admins.find((a: any) => a.status === "creator");
             const inviterId = creator ? BigInt(creator.user.id) : BigInt(ctx.from.id);
-            await (prisma as any).tree.update({
+            await prisma.tree.update({
               where: { id: treeId },
               data: { onboardingInviterId: inviterId },
             });
           } catch {
             // Fallback: usar quien seleccionó el idioma
-            await (prisma as any).tree.update({
+            await prisma.tree.update({
               where: { id: treeId },
               data: { onboardingInviterId: BigInt(ctx.from.id) },
             });
@@ -290,7 +295,7 @@ export function register(bot: Bot<BotContext>, prisma: PrismaClient): void {
       }
 
       try {
-        await (prisma as any).tree.update({
+        await prisma.tree.update({
           where: { id: treeId },
           data: { monthlyReportsEnabled: enabled },
         });
@@ -304,7 +309,7 @@ export function register(bot: Bot<BotContext>, prisma: PrismaClient): void {
       // Load tree language for confirmation message
       let lang = "es";
       try {
-        const t = await (prisma as any).tree.findUnique({
+        const t = await prisma.tree.findUnique({
           where: { id: treeId },
           select: { language: true },
         });
@@ -341,7 +346,7 @@ export function register(bot: Bot<BotContext>, prisma: PrismaClient): void {
         // Read language from tree
         let lang = "es";
         try {
-          const t = await (prisma as any).tree.findUnique({
+          const t = await prisma.tree.findUnique({
             where: { id: treeId },
             select: { language: true },
           });
@@ -404,7 +409,7 @@ export function register(bot: Bot<BotContext>, prisma: PrismaClient): void {
         // Language already selected, go to org question
         let lang = "es";
         try {
-          const t = await (prisma as any).tree.findUnique({
+          const t = await prisma.tree.findUnique({
             where: { id: treeId },
             select: { language: true },
           });
@@ -506,17 +511,17 @@ export function register(bot: Bot<BotContext>, prisma: PrismaClient): void {
 
       // Link child tree to parent
       try {
-        await (prisma as any).tree.update({
+        await prisma.tree.update({
           where: { id: childId },
           data: { parentTreeId: parentId },
         });
 
         // T4: Notify parent chat about new sub-tree linkage
-        const parentTree = await (prisma as any).tree.findUnique({
+        const parentTree = await prisma.tree.findUnique({
           where: { id: parentId },
           select: { telegramChatId: true, name: true },
         });
-        const childTree = await (prisma as any).tree.findUnique({
+        const childTree = await prisma.tree.findUnique({
           where: { id: childId },
           select: { name: true },
         });
@@ -551,7 +556,7 @@ export function register(bot: Bot<BotContext>, prisma: PrismaClient): void {
       // Language already selected, go to org question
       let lang = "es";
       try {
-        const t = await (prisma as any).tree.findUnique({
+        const t = await prisma.tree.findUnique({
           where: { id: childId },
           select: { language: true },
         });
@@ -610,7 +615,7 @@ export function register(bot: Bot<BotContext>, prisma: PrismaClient): void {
           select: { id: true },
         });
 
-        await (prisma as any).tree.update({
+        await prisma.tree.update({
           where: { id: session.onboardingTreeId },
           data: {
             paymentMode: "CENTRALIZED",
@@ -632,7 +637,7 @@ export function register(bot: Bot<BotContext>, prisma: PrismaClient): void {
         });
       } else {
         // Individual mode
-        await (prisma as any).tree.update({
+        await prisma.tree.update({
           where: { id: session.onboardingTreeId },
           data: { paymentMode: "INDIVIDUAL" },
         });
@@ -682,7 +687,7 @@ export function register(bot: Bot<BotContext>, prisma: PrismaClient): void {
       }
 
       try {
-        const todo = await (prisma as any).todo.findUnique({
+        const todo = await prisma.todo.findUnique({
           where: { id: todoId },
           select: { id: true, text: true, summary: true },
         });
@@ -691,7 +696,7 @@ export function register(bot: Bot<BotContext>, prisma: PrismaClient): void {
           return;
         }
         const fileNote = `\n📎 Archivo vinculado: ${filePath}`;
-        await (prisma as any).todo.update({
+        await prisma.todo.update({
           where: { id: todo.id },
           data: { text: (todo.text || "") + fileNote },
         });
@@ -824,7 +829,7 @@ export function register(bot: Bot<BotContext>, prisma: PrismaClient): void {
 
       const lng = await resolveUserLanguage(prisma, ctx) ?? tgUser.language_code ?? "es";
 
-      const user = await (prisma as any).user.findUnique({
+      const user = await prisma.user.findUnique({
         where: { telegramUserId: BigInt(tgUser.id) },
         select: { id: true, firstName: true },
       });
@@ -834,7 +839,7 @@ export function register(bot: Bot<BotContext>, prisma: PrismaClient): void {
       }
 
       // Verify user is active member of the tree (treeId from callback, no ExternalTask needed)
-      const member = await (prisma as any).treeMember.findUnique({
+      const member = await prisma.treeMember.findUnique({
         where: { userId_treeId: { userId: user.id, treeId } },
         select: { status: true },
       });
@@ -844,7 +849,7 @@ export function register(bot: Bot<BotContext>, prisma: PrismaClient): void {
       }
 
       // Check for duplicate application
-      const existing = await (prisma as any).candidate.findFirst({
+      const existing = await prisma.candidate.findFirst({
         where: { userId: user.id, taskId },
       });
       if (existing) {
@@ -854,13 +859,13 @@ export function register(bot: Bot<BotContext>, prisma: PrismaClient): void {
 
       // Register candidate
       try {
-        await (prisma as any).candidate.create({
+        await prisma.candidate.create({
           data: { userId: user.id, taskId, treeId },
         });
         await ctx.answerCallbackQuery({ text: t("v1_candidate.applied_ok", lng) });
 
         // Get updated candidate count
-        const candidateCount = await (prisma as any).candidate.count({
+        const candidateCount = await prisma.candidate.count({
           where: { taskId },
         });
 
@@ -912,7 +917,7 @@ export function register(bot: Bot<BotContext>, prisma: PrismaClient): void {
         return;
       }
 
-      const user = await (prisma as any).user.findUnique({
+      const user = await prisma.user.findUnique({
         where: { telegramUserId: BigInt(tgUser.id) },
         select: { id: true, firstName: true },
       });
@@ -926,7 +931,7 @@ export function register(bot: Bot<BotContext>, prisma: PrismaClient): void {
       const lng = (userLang === "en" ? "en" : "es") as "es" | "en";
 
       // Check for duplicate
-      const existing = await (prisma as any).hiringApplicant.findUnique({
+      const existing = await prisma.hiringApplicant.findUnique({
         where: { taskId_userId: { taskId, userId: user.id } },
       });
       if (existing) {
@@ -941,7 +946,7 @@ export function register(bot: Bot<BotContext>, prisma: PrismaClient): void {
       let treeId = "";
       let endDate: string | null = null;
 
-      const externalTask = await (prisma as any).externalTask.findFirst({
+      const externalTask = await prisma.externalTask.findFirst({
         where: { kanbanTaskId: taskId },
         select: { id: true, endDate: true, treeId: true },
       });
@@ -996,7 +1001,7 @@ export function register(bot: Bot<BotContext>, prisma: PrismaClient): void {
       if (isApply) {
         // Verify user is in the filtered candidates list (ExternalTaskNotification)
         if (externalTask) {
-          const notified = await (prisma as any).externalTaskNotification.findUnique({
+          const notified = await prisma.externalTaskNotification.findUnique({
             where: { externalTaskId_userId: { externalTaskId: externalTask.id, userId: user.id } },
           });
           if (!notified) {
@@ -1009,7 +1014,7 @@ export function register(bot: Bot<BotContext>, prisma: PrismaClient): void {
       const newStatus = isApply ? "APPLIED" : "IGNORED";
 
       try {
-        await (prisma as any).hiringApplicant.create({
+        await prisma.hiringApplicant.create({
           data: {
             taskId,
             userId: user.id,
@@ -1062,7 +1067,7 @@ export function register(bot: Bot<BotContext>, prisma: PrismaClient): void {
       }
 
       // Find parent tree by telegramChatId
-      const parentTree = await (prisma as any).tree.findFirst({
+      const parentTree = await prisma.tree.findFirst({
         where: { telegramChatId: ctx.chat!.id.toString() },
         select: { id: true, name: true },
       });
@@ -1098,7 +1103,7 @@ export function register(bot: Bot<BotContext>, prisma: PrismaClient): void {
       }
 
       // Verify child tree exists and is actually a child of this parent
-      const childTree = await (prisma as any).tree.findFirst({
+      const childTree = await prisma.tree.findFirst({
         where: { id: childTreeId, parentTreeId: parentTree.id },
         select: { id: true, name: true, telegramChatId: true },
       });
@@ -1111,7 +1116,7 @@ export function register(bot: Bot<BotContext>, prisma: PrismaClient): void {
 
       // Unlink: set parentTreeId to null
       try {
-        await (prisma as any).tree.update({
+        await prisma.tree.update({
           where: { id: childTreeId },
           data: { parentTreeId: null },
         });

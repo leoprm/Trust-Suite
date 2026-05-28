@@ -173,7 +173,7 @@ export async function handleNeedPollAnswer(
     if (!voterTgId) return false; // anonymous polls don't expose user — can't handle
 
     // Find the poll → need mapping
-    const mapping = await (prisma as any).pollMapping.findUnique({
+    const mapping = await prisma.pollMapping.findUnique({
       where: { pollId },
     });
     if (!mapping) return false;

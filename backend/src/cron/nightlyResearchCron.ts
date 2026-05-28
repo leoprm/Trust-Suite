@@ -150,7 +150,7 @@ async function spawnResearchTask(
 export async function runNightlyResearch(
   prisma: PrismaClient,
 ): Promise<NightlyResearchResult[]> {
-  const trees = await (prisma as any).tree.findMany({
+  const trees = await prisma.tree.findMany({
     where: { telegramChatId: { not: null } },
     select: { id: true, name: true },
   });

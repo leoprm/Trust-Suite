@@ -64,7 +64,7 @@ export const createCancelledPlan = async (req: Request, res: Response) => {
       });
     }
 
-    const plan = await (prisma as any).cancelledPlan.create({
+    const plan = await prisma.cancelledPlan.create({
       data: {
         title: title.trim(),
         description: fullDescription.trim(),
@@ -100,7 +100,7 @@ export const getCancelledPlans = async (req: Request, res: Response) => {
       return res.status(400).json({ error: "treeId (query param) is required" });
     }
 
-    const plans = await (prisma as any).cancelledPlan.findMany({
+    const plans = await prisma.cancelledPlan.findMany({
       where: { treeId },
       orderBy: { createdAt: "desc" },
     });

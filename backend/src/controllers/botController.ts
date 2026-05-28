@@ -45,7 +45,7 @@ export const sendDocument = async (req: Request, res: Response) => {
 
     // Resolve telegramChatId from tree
     const { prisma } = await import("../index");
-    const tree = await (prisma as any).tree.findUnique({
+    const tree = await prisma.tree.findUnique({
       where: { id: treeId },
       select: { telegramChatId: true, name: true },
     });
@@ -141,7 +141,7 @@ export const sendMessage = async (req: Request, res: Response) => {
 
     // Resolve telegramChatId from tree
     const { prisma } = await import("../index");
-    const tree = await (prisma as any).tree.findUnique({
+    const tree = await prisma.tree.findUnique({
       where: { id: treeId },
       select: { telegramChatId: true, name: true },
     });
@@ -176,7 +176,7 @@ export const sendMessage = async (req: Request, res: Response) => {
     let announcement = null;
     if (kanbanTaskId && typeof kanbanTaskId === "string") {
       const deadline = new Date(Date.now() + 4 * 60 * 60 * 1000); // 4h from now
-      announcement = await (prisma as any).candidateAnnouncement.create({
+      announcement = await prisma.candidateAnnouncement.create({
         data: {
           taskId: kanbanTaskId,
           treeId,
@@ -224,7 +224,7 @@ export const triggerCommentReview = async (req: Request, res: Response) => {
       targetTreeIds = [treeId];
     } else {
       // Scan all parent trees: trees that have children (other trees referencing them as parent)
-      const parentTrees = await (prisma as any).tree.findMany({
+      const parentTrees = await prisma.tree.findMany({
         where: {
           childTrees: { some: {} },  // has at least one child
           telegramChatId: { not: null },
@@ -243,7 +243,7 @@ export const triggerCommentReview = async (req: Request, res: Response) => {
 
     for (const tid of targetTreeIds) {
       try {
-        const tree = await (prisma as any).tree.findUnique({
+        const tree = await prisma.tree.findUnique({
           where: { id: tid },
           select: { id: true, name: true, telegramChatId: true },
         });

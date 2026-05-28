@@ -27,7 +27,7 @@ async function resolveTelegramUser(
 ) {
   const telegramId = BigInt(tgUser.id);
   try {
-    const existing = await (prisma as any).user.findUnique({
+    const existing = await prisma.user.findUnique({
       where: { telegramUserId: telegramId },
       select: {
         id: true, username: true, skills: true,
@@ -37,7 +37,7 @@ async function resolveTelegramUser(
     if (existing) return existing;
 
     if (tgUser.username) {
-      const byUsername = await (prisma as any).user.findUnique({
+      const byUsername = await prisma.user.findUnique({
         where: { username: tgUser.username },
         select: {
           id: true, username: true, skills: true,
@@ -45,7 +45,7 @@ async function resolveTelegramUser(
         },
       });
       if (byUsername) {
-        await (prisma as any).user.update({
+        await prisma.user.update({
           where: { id: byUsername.id },
           data: { telegramUserId: telegramId },
         });
@@ -53,7 +53,7 @@ async function resolveTelegramUser(
       }
     }
 
-    return await (prisma as any).user.create({
+    return await prisma.user.create({
       data: {
         username: tgUser.username || `tg_${tgUser.id}`,
         firstName: tgUser.first_name,
@@ -204,7 +204,7 @@ export async function handleWorkerConfirmCallback(
 
   if (choice !== "yes") return;
 
-  await (prisma as any).user.update({
+  await prisma.user.update({
     where: { telegramUserId: BigInt(tgUser.id) },
     data: {
       hourlyRate: ctx.session.workerHourlyRate,
@@ -237,7 +237,7 @@ export async function showWorkerProfile(
   if (!user) { await ctx.reply(hWK("error_profile", lng)); return; }
 
   // Read skills from WorkerSkill table
-  const workerSkills = await (prisma as any).workerSkill.findMany({
+  const workerSkills = await prisma.workerSkill.findMany({
     where: { userId: user.id },
     orderBy: { xp: "desc" as const },
   });
@@ -331,14 +331,14 @@ export async function handleWorkerEditResponse(
     case "rate": {
       const rate = parseInt(text, 10);
       if (isNaN(rate) || rate <= 0) { await ctx.reply(hWK("rate_invalid", lng)); return true; }
-      await (prisma as any).user.update({ where: { telegramUserId: BigInt(tgUser.id) }, data: { hourlyRate: rate } });
+      await prisma.user.update({ where: { telegramUserId: BigInt(tgUser.id) }, data: { hourlyRate: rate } });
       ctx.session.workerEditField = undefined;
       await ctx.reply(hWK("profile_updated", lng), { parse_mode: "Markdown" });
       return true;
     }
     case "location": {
       if (!text || text.length < 2) { await ctx.reply(hWK("location_invalid", lng)); return true; }
-      await (prisma as any).user.update({ where: { telegramUserId: BigInt(tgUser.id) }, data: { location: text } });
+      await prisma.user.update({ where: { telegramUserId: BigInt(tgUser.id) }, data: { location: text } });
       ctx.session.workerEditField = undefined;
       await ctx.reply(hWK("profile_updated", lng), { parse_mode: "Markdown" });
       return true;
@@ -363,7 +363,7 @@ export async function handleWorkerEditCurrencyCallback(
     return;
   }
 
-  await (prisma as any).user.update({
+  await prisma.user.update({
     where: { telegramUserId: BigInt(tgUser.id) },
     data: { currency },
   });
@@ -386,13 +386,13 @@ export async function showAvailableTasks(
   if (!user) { await ctx.reply(hWK("error_profile", lng)); return; }
 
   // Read skills from WorkerSkill table
-  const workerSkills = await (prisma as any).workerSkill.findMany({
+  const workerSkills = await prisma.workerSkill.findMany({
     where: { userId: user.id },
     select: { skill: true },
   });
   const skills: string[] = workerSkills.map((ws: any) => ws.skill.toLowerCase());
 
-  const tasks = await (prisma as any).externalTask.findMany({
+  const tasks = await prisma.externalTask.findMany({
     where: { status: "OPEN" },
     include: { tree: { select: { name: true, icono: true } } },
     orderBy: { createdAt: "desc" },
@@ -437,7 +437,7 @@ export async function handleExternalClaim(
   const user = await resolveTelegramUser(prisma, tgUser);
   if (!user) { await ctx.answerCallbackQuery({ text: hWK("error_profile", lng) }); return; }
 
-  const task = await (prisma as any).externalTask.findUnique({
+  const task = await prisma.externalTask.findUnique({
     where: { id: taskId },
     select: { id: true, status: true, title: true },
   });
@@ -447,7 +447,7 @@ export async function handleExternalClaim(
     return;
   }
 
-  await (prisma as any).externalTask.update({
+  await prisma.externalTask.update({
     where: { id: taskId },
     data: { status: "CLAIMED", workerId: user.id },
   });
@@ -467,7 +467,7 @@ export async function handleExternalDeliver(
   taskId: string,
 ): Promise<void> {
   const lng = getUserLanguage(ctx);
-  const task = await (prisma as any).externalTask.findUnique({
+  const task = await prisma.externalTask.findUnique({
     where: { id: taskId },
     select: { id: true, status: true, title: true },
   });
@@ -500,7 +500,7 @@ export async function handleWorkerDeliveryUpload(
   const tgUser = ctx.from;
   if (!tgUser) return;
 
-  await (prisma as any).externalTask.update({
+  await prisma.externalTask.update({
     where: { id: taskId },
     data: {
       status: "DELIVERED",
@@ -541,7 +541,7 @@ export async function handleWorkerToggleCallback(
   if (!tgUser) return false;
 
   const on = data === "worker_toggle:on";
-  await (prisma as any).user.update({
+  await prisma.user.update({
     where: { telegramUserId: BigInt(tgUser.id) },
     data: { availableForHire: on },
   });

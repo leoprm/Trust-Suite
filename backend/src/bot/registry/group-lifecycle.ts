@@ -22,7 +22,7 @@ export function register(bot: Bot<BotContext>, prisma: PrismaClient): void {
     ) {
       const chatId = chat.id.toString();
       try {
-        const tree = await (prisma as any).tree.findUnique({
+        const tree = await prisma.tree.findUnique({
           where: { telegramChatId: chatId },
           select: { id: true },
         });
@@ -34,7 +34,7 @@ export function register(bot: Bot<BotContext>, prisma: PrismaClient): void {
         });
         if (humanCount <= 1) {
           // Last human leaving → schedule deletion in 60 min
-          await (prisma as any).tree.update({
+          await prisma.tree.update({
             where: { id: tree.id },
             data: { pendingDeletionAt: new Date(Date.now() + 60 * 60 * 1000) },
           });
@@ -65,7 +65,7 @@ export function register(bot: Bot<BotContext>, prisma: PrismaClient): void {
 
     try {
       // Find tree for this group
-      const tree = await (prisma as any).tree.findUnique({
+      const tree = await prisma.tree.findUnique({
         where: { telegramChatId: chatId },
         select: { id: true, introMessageId: true, language: true },
       });
@@ -148,7 +148,7 @@ export function register(bot: Bot<BotContext>, prisma: PrismaClient): void {
     // Resolve tree (skip if not linked)
     let tree: any;
     try {
-      tree = await (prisma as any).tree.findUnique({
+      tree = await prisma.tree.findUnique({
         where: { telegramChatId: chatId },
         select: { id: true, language: true, name: true },
       });

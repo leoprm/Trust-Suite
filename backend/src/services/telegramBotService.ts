@@ -66,7 +66,7 @@ async function resolveUserByTelegramId(
 ): Promise<string | null> {
   try {
     const bigIntId = BigInt(telegramId);
-    const user = await (prisma as any).user.findUnique({
+    const user = await prisma.user.findUnique({
       where: { telegramUserId: bigIntId },
       select: { id: true },
     });
@@ -97,7 +97,7 @@ export async function computePaymentObligations(
   if (!userId) return null;
 
   // 1. Trees where user is sponsor (CENTRALIZED mode)
-  const sponsoredTrees = await (prisma as any).tree.findMany({
+  const sponsoredTrees = await prisma.tree.findMany({
     where: {
       sponsorId: userId,
       paymentMode: "CENTRALIZED",
@@ -113,14 +113,14 @@ export async function computePaymentObligations(
 
   const sponsorObligations: SponsorObligation[] = [];
   for (const tree of sponsoredTrees) {
-    const memberCount = await (prisma as any).treeMember.count({
+    const memberCount = await prisma.treeMember.count({
       where: { treeId: tree.id, status: "ACTIVE" },
     });
 
     // Get subscription from the tree's creator
     let totalAmount = tree.totalBudget ?? 0;
     if (tree.id) {
-      const sub = await (prisma as any).subscription.findFirst({
+      const sub = await prisma.subscription.findFirst({
         where: { userId: userId, status: "ACTIVE" },
         select: { monthlyCost: true },
       });
@@ -138,7 +138,7 @@ export async function computePaymentObligations(
   }
 
   // 2. Trees where user is a member (INDIVIDUAL mode)
-  const memberships = await (prisma as any).treeMember.findMany({
+  const memberships = await prisma.treeMember.findMany({
     where: {
       userId,
       status: "ACTIVE",
@@ -161,14 +161,14 @@ export async function computePaymentObligations(
 
   const memberObligations: MemberObligation[] = [];
   for (const m of memberships) {
-    const memberCount = await (prisma as any).treeMember.count({
+    const memberCount = await prisma.treeMember.count({
       where: { treeId: m.tree.id, status: "ACTIVE" },
     });
 
     // Calculate divided fee: tree cost / active members
     let dividedFee = m.monthlyFee ?? 0;
     if (!dividedFee) {
-      const sub = await (prisma as any).subscription.findFirst({
+      const sub = await prisma.subscription.findFirst({
         where: {
           userId: userId,
           status: "ACTIVE",

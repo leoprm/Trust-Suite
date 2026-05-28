@@ -61,7 +61,7 @@ export function register(bot: Bot<BotContext>, prisma: PrismaClient): void {
     }
 
     const telegramId = BigInt(tgUser.id);
-    const user = await (prisma as any).user.findUnique({
+    const user = await prisma.user.findUnique({
       where: { telegramUserId: telegramId },
       select: { id: true },
     });
@@ -73,7 +73,7 @@ export function register(bot: Bot<BotContext>, prisma: PrismaClient): void {
       return;
     }
 
-    const memberships = await (prisma as any).treeMember.findMany({
+    const memberships = await prisma.treeMember.findMany({
       where: { userId: user.id, status: "ACTIVE" },
       include: {
         tree: { select: { name: true, icono: true } },
@@ -115,7 +115,7 @@ export function register(bot: Bot<BotContext>, prisma: PrismaClient): void {
     // Resolve user language for i18n
     const lng = await resolveUserLanguage(prisma, ctx) ?? "es";
 
-    const user = await (prisma as any).user.findUnique({
+    const user = await prisma.user.findUnique({
       where: { telegramUserId: BigInt(tgUser.id) },
       select: { id: true },
     });
@@ -146,7 +146,7 @@ export function register(bot: Bot<BotContext>, prisma: PrismaClient): void {
     const tgUser = ctx.from;
     if (!tgUser) return;
 
-    const user = await (prisma as any).user.findUnique({
+    const user = await prisma.user.findUnique({
       where: { telegramUserId: BigInt(tgUser.id) },
       select: { id: true },
     });
@@ -155,7 +155,7 @@ export function register(bot: Bot<BotContext>, prisma: PrismaClient): void {
       return;
     }
 
-    const allMemberships = await (prisma as any).treeMember.findMany({
+    const allMemberships = await prisma.treeMember.findMany({
       where: { userId: user.id, status: "ACTIVE" },
       include: { tree: { select: { id: true, name: true } } },
       orderBy: { joinedAt: "desc" },

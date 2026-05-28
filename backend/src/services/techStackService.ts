@@ -100,7 +100,7 @@ export async function addToTechStack(
   const tags = detectTags(solution);
 
   // 1. Find or create TechStackItem
-  let item = await (prisma as any).techStackItem.findFirst({
+  let item = await prisma.techStackItem.findFirst({
     where: {
       OR: [
         solution.repoUrl ? { repoUrl: solution.repoUrl } : {},
@@ -110,7 +110,7 @@ export async function addToTechStack(
   });
 
   if (!item) {
-    item = await (prisma as any).techStackItem.create({
+    item = await prisma.techStackItem.create({
       data: {
         name: solution.name,
         category: solution.category,
@@ -124,7 +124,7 @@ export async function addToTechStack(
   }
 
   // 2. Link to tree (upsert — may have been removed and re-added)
-  await (prisma as any).treeTechStack.upsert({
+  await prisma.treeTechStack.upsert({
     where: {
       treeId_stackItemId: { treeId, stackItemId: item.id },
     },
@@ -161,7 +161,7 @@ export async function recommendTechStack(
   const stackFrequency: Record<string, { item: any; count: number }> = {};
 
   for (const { tree } of similar) {
-    const stacks = await (prisma as any).treeTechStack.findMany({
+    const stacks = await prisma.treeTechStack.findMany({
       where: { treeId: tree.id, status: 'active' },
       include: { stackItem: true },
     });
@@ -227,7 +227,7 @@ export async function getTreeTechStack(treeId: string): Promise<{
   stackByCategory: Record<string, any[]>;
   totalTools: number;
 }> {
-  const stacks = await (prisma as any).treeTechStack.findMany({
+  const stacks = await prisma.treeTechStack.findMany({
     where: { treeId },
     include: { stackItem: true },
     orderBy: { installedAt: 'desc' },

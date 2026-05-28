@@ -44,7 +44,7 @@ function voterHash(userId: string, surveyId: string): string {
 
 /** Check if user is admin of the given tree */
 async function isTreeAdmin(prisma: PrismaClient, userId: string, treeId: string): Promise<boolean> {
-  const member = await (prisma as any).treeMember.findFirst({
+  const member = await prisma.treeMember.findFirst({
     where: { userId, treeId, role: "ADMIN", status: "ACTIVE" },
   });
   return !!member;
@@ -86,7 +86,7 @@ export async function handleEncuestaCommand(
   }
 
   // Admin check
-  const user = await (prisma as any).user.findUnique({
+  const user = await prisma.user.findUnique({
     where: { telegramUserId: BigInt(tgUser.id) },
     select: { id: true },
   });
@@ -101,7 +101,7 @@ export async function handleEncuestaCommand(
   }
 
   // Start wizard — step 1: pick target member
-  const members = await (prisma as any).treeMember.findMany({
+  const members = await prisma.treeMember.findMany({
     where: { treeId: tree.id, status: "ACTIVE" },
     include: { user: { select: { id: true, username: true, firstName: true } } },
     orderBy: { joinedAt: "asc" },
@@ -164,7 +164,7 @@ export async function handleEncuestaCallback(
     wizard.step = "skill";
 
     // Fetch target name for display
-    const targetUser = await (prisma as any).user.findUnique({
+    const targetUser = await prisma.user.findUnique({
       where: { id: targetUserId },
       select: { firstName: true, username: true },
     });
@@ -247,14 +247,14 @@ export async function handleEncuestaText(
     const treeId = wizard.treeId;
 
     // Fetch target user name
-    const targetUser = await (prisma as any).user.findUnique({
+    const targetUser = await prisma.user.findUnique({
       where: { id: targetUserId },
       select: { firstName: true, username: true },
     });
     const targetName = targetUser?.firstName || targetUser?.username || targetUserId.slice(0, 8);
 
     // Resolve creator user
-    const creator = await (prisma as any).user.findUnique({
+    const creator = await prisma.user.findUnique({
       where: { telegramUserId: BigInt(msg.from.id) },
       select: { id: true },
     });
@@ -267,7 +267,7 @@ export async function handleEncuestaText(
     // Create survey
     const closesAt = new Date(Date.now() + hours * 60 * 60 * 1000);
 
-    const survey = await (prisma as any).satisfactionSurvey.create({
+    const survey = await prisma.satisfactionSurvey.create({
       data: {
         treeId,
         targetUserId,
@@ -307,7 +307,7 @@ export async function handleVotarCommand(
   if (!tgUser) return;
 
   // Resolve user
-  const user = await (prisma as any).user.findUnique({
+  const user = await prisma.user.findUnique({
     where: { telegramUserId: BigInt(tgUser.id) },
     select: { id: true, firstName: true, username: true },
   });
@@ -317,7 +317,7 @@ export async function handleVotarCommand(
   }
 
   // Find active surveys where this user is a member of the tree
-  const memberships = await (prisma as any).treeMember.findMany({
+  const memberships = await prisma.treeMember.findMany({
     where: { userId: user.id, status: "ACTIVE" },
     select: { treeId: true },
   });
@@ -331,7 +331,7 @@ export async function handleVotarCommand(
   const now = new Date();
 
   // Find open surveys in those trees
-  const surveys = await (prisma as any).satisfactionSurvey.findMany({
+  const surveys = await prisma.satisfactionSurvey.findMany({
     where: {
       treeId: { in: treeIds },
       closesAt: { gt: now },
@@ -356,7 +356,7 @@ export async function handleVotarCommand(
   // Multiple surveys — show selector
   const keyboard = new InlineKeyboard();
   for (const survey of surveys) {
-    const targetUser = await (prisma as any).user.findUnique({
+    const targetUser = await prisma.user.findUnique({
       where: { id: survey.targetUserId },
       select: { firstName: true, username: true },
     });
@@ -379,7 +379,7 @@ async function sendVotingKeyboard(
   survey: any,
   voterUserId: string,
 ): Promise<void> {
-  const targetUser = await (prisma as any).user.findUnique({
+  const targetUser = await prisma.user.findUnique({
     where: { id: survey.targetUserId },
     select: { firstName: true, username: true },
   });
@@ -449,7 +449,7 @@ export async function handleVotarCallback(
   if (data.startsWith("votar_select:")) {
     const surveyId = data.slice("votar_select:".length);
 
-    const survey = await (prisma as any).satisfactionSurvey.findUnique({
+    const survey = await prisma.satisfactionSurvey.findUnique({
       where: { id: surveyId },
       include: { tree: { select: { name: true } } },
     });
@@ -459,7 +459,7 @@ export async function handleVotarCallback(
     }
 
     // Resolve user
-    const user = await (prisma as any).user.findUnique({
+    const user = await prisma.user.findUnique({
       where: { telegramUserId: BigInt(tgUser.id) },
       select: { id: true },
     });
@@ -481,7 +481,7 @@ export async function handleVotarCallback(
     const surveyId = parts[1];
     const score = parseInt(parts[2], 10);
 
-    const user = await (prisma as any).user.findUnique({
+    const user = await prisma.user.findUnique({
       where: { telegramUserId: BigInt(tgUser.id) },
       select: { id: true },
     });
@@ -491,7 +491,7 @@ export async function handleVotarCallback(
     }
 
     // Check survey still open
-    const survey = await (prisma as any).satisfactionSurvey.findUnique({
+    const survey = await prisma.satisfactionSurvey.findUnique({
       where: { id: surveyId },
     });
     if (!survey || new Date(survey.closesAt) < new Date()) {
@@ -508,17 +508,17 @@ export async function handleVotarCallback(
     const hash = voterHash(user.id, surveyId);
 
     // Check if already voted
-    const existing = await (prisma as any).surveyVote.findFirst({
+    const existing = await prisma.surveyVote.findFirst({
       where: { surveyId, voterId: hash },
     });
     if (existing) {
       // Update existing vote
-      await (prisma as any).surveyVote.update({
+      await prisma.surveyVote.update({
         where: { id: existing.id },
         data: { score },
       });
     } else {
-      await (prisma as any).surveyVote.create({
+      await prisma.surveyVote.create({
         data: { surveyId, voterId: hash, score },
       });
     }
@@ -549,7 +549,7 @@ async function sendVotingKeyboardDirect(
   survey: any,
   voterUserId: string,
 ): Promise<void> {
-  const targetUser = await (prisma as any).user.findUnique({
+  const targetUser = await prisma.user.findUnique({
     where: { id: survey.targetUserId },
     select: { firstName: true, username: true },
   });

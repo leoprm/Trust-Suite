@@ -20,7 +20,7 @@ export async function checkTodoReminders(
   const now = new Date();
 
   // Find all active trees with Telegram chat
-  const trees = await (prisma as any).tree.findMany({
+  const trees = await prisma.tree.findMany({
     where: { telegramChatId: { not: null } },
     select: { id: true, telegramChatId: true },
   });
@@ -30,7 +30,7 @@ export async function checkTodoReminders(
     if (!chatId) continue;
 
     // Find pending todos with deadlines
-    const todos = await (prisma as any).todo.findMany({
+    const todos = await prisma.todo.findMany({
       where: {
         treeId: tree.id,
         status: "PENDING",
@@ -45,7 +45,7 @@ export async function checkTodoReminders(
 
       // ── Overdue: mark and skip ──────────────────────────────────
       if (diffHours <= 0) {
-        await (prisma as any).todo.update({
+        await prisma.todo.update({
           where: { id: todo.id },
           data: { status: "OVERDUE" },
         });
@@ -109,7 +109,7 @@ export async function checkTodoReminders(
       }
 
       // ── Mark as reminded ─────────────────────────────────────────
-      await (prisma as any).todo.update({
+      await prisma.todo.update({
         where: { id: todo.id },
         data: {
           reminderSent: true,

@@ -223,7 +223,7 @@ export function register(bot: Bot<BotContext>, prisma: PrismaClient): void {
         } catch {
           const voiceTree = await findTreeByChat(prisma, chatId);
           if (voiceTree) {
-            const dbCount = await (prisma as any).treeMember.count({
+            const dbCount = await prisma.treeMember.count({
               where: { treeId: voiceTree.id, status: "ACTIVE" },
             });
             if (dbCount <= 1) isOneOnOneVoice = true;

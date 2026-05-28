@@ -22,7 +22,7 @@ const POLL_DURATION_MS = 24 * 60 * 60 * 1000;
 
 async function resolveTreeLanguage(prisma: PrismaClient, treeId: string): Promise<string> {
   try {
-    const tree = await (prisma as any).tree.findUnique({
+    const tree = await prisma.tree.findUnique({
       where: { id: treeId },
       select: { language: true },
     });
@@ -43,7 +43,7 @@ export async function runCandidateAnnouncementCron(
   let pollsCreated = 0;
   let pollsClosed = 0;
 
-  const announcements = await (prisma as any).candidateAnnouncement.findMany({
+  const announcements = await prisma.candidateAnnouncement.findMany({
     where: { pollClosed: false },
   });
 
@@ -60,7 +60,7 @@ export async function runCandidateAnnouncementCron(
           t("v1.reminder", lng),
           { parse_mode: "MarkdownV2" },
         );
-        await (prisma as any).candidateAnnouncement.update({
+        await prisma.candidateAnnouncement.update({
           where: { id: ann.id },
           data: { reminderSentAt: now, reminderMsgId: reminder.message_id },
         });
@@ -75,13 +75,13 @@ export async function runCandidateAnnouncementCron(
     // 2. Deadline reached: create poll
     if (!ann.pollId && msUntilDeadline <= 0) {
       try {
-        const candidates = await (prisma as any).candidate.findMany({
+        const candidates = await prisma.candidate.findMany({
           where: { taskId: ann.taskId },
           include: { user: { select: { id: true, firstName: true, username: true } } },
           orderBy: { createdAt: "asc" },
         });
 
-        const extTask = await (prisma as any).externalTask.findFirst({
+        const extTask = await prisma.externalTask.findFirst({
           where: { kanbanTaskId: ann.taskId },
           select: { budget: true, currency: true, title: true },
         });
@@ -113,7 +113,7 @@ export async function runCandidateAnnouncementCron(
           allows_multiple_answers: false,
         });
 
-        await (prisma as any).candidateAnnouncement.update({
+        await prisma.candidateAnnouncement.update({
           where: { id: ann.id },
           data: { pollId: poll.poll.id, pollMessageId: poll.message_id },
         });
@@ -158,7 +158,7 @@ export async function runCandidateAnnouncementCron(
             } catch { /* best effort */ }
           }
 
-          await (prisma as any).candidateAnnouncement.update({
+          await prisma.candidateAnnouncement.update({
             where: { id: ann.id },
             data: { pollClosed: true },
           });
@@ -166,7 +166,7 @@ export async function runCandidateAnnouncementCron(
           console.log(`[CandidateCron] Poll closed: winner="${winnerOption}" (${winnerVotes} votes)`);
         } catch (err: any) {
           if (err.message?.includes("closed") || err.message?.includes("stopped")) {
-            await (prisma as any).candidateAnnouncement.update({
+            await prisma.candidateAnnouncement.update({
               where: { id: ann.id },
               data: { pollClosed: true },
             });

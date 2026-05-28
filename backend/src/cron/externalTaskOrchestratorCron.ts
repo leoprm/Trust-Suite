@@ -162,7 +162,7 @@ async function evaluateTask(
 
   if (approveMatch) {
     try {
-      await (prisma as any).externalTask.update({
+      await prisma.externalTask.update({
         where: { id: task.id },
         data: { status: "APPROVED", approvedBy: "ari" },
       });
@@ -181,7 +181,7 @@ async function evaluateTask(
   if (rejectMatch) {
     const reason = rejectMatch[1].trim().slice(0, 2000);
     try {
-      await (prisma as any).externalTask.update({
+      await prisma.externalTask.update({
         where: { id: task.id },
         data: { status: "REJECTED", rejectReason: reason },
       });
@@ -219,7 +219,7 @@ async function evaluateTask(
 
   if (hasApprove && !hasReject) {
     try {
-      await (prisma as any).externalTask.update({
+      await prisma.externalTask.update({
         where: { id: task.id },
         data: { status: "APPROVED", approvedBy: "ari" },
       });
@@ -243,7 +243,7 @@ async function evaluateTask(
 
   if (hasReject && !hasApprove) {
     try {
-      await (prisma as any).externalTask.update({
+      await prisma.externalTask.update({
         where: { id: task.id },
         data: { status: "REJECTED", rejectReason: decision.slice(0, 2000) },
       });
@@ -288,7 +288,7 @@ async function checkOpenTimeouts(
   const cutoff = new Date(Date.now() - OPEN_TIMEOUT_HOURS * 60 * 60 * 1000);
   const renotifyCutoff = Date.now() - TIMEOUT_RENOTIFY_HOURS * 60 * 60 * 1000;
 
-  const staleTasks = await (prisma as any).externalTask.findMany({
+  const staleTasks = await prisma.externalTask.findMany({
     where: {
       status: "OPEN",
       createdAt: { lt: cutoff },
@@ -377,7 +377,7 @@ export async function runExternalTaskOrchestrator(
   timeouts: OrchestratorResult[];
 }> {
   // 1. Evaluate DELIVERED tasks
-  const deliveredTasks = await (prisma as any).externalTask.findMany({
+  const deliveredTasks = await prisma.externalTask.findMany({
     where: { status: "DELIVERED" },
     orderBy: { updatedAt: "asc" },
   });

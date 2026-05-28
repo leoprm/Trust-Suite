@@ -93,7 +93,7 @@ export async function calculateSha256(filePath: string): Promise<string> {
 }
 
 export async function verifyFileChecksum(fileId: string): Promise<boolean> {
-  const file = await (prisma as any).evidenceFile.findUnique({ where: { id: fileId } });
+  const file = await prisma.evidenceFile.findUnique({ where: { id: fileId } });
   if (!file?.checksumSha256) return false;
   const realPath = resolveStoragePath(file.storagePath);
   const checksum = await calculateSha256(realPath);
@@ -115,7 +115,7 @@ export async function canAccessEvidenceFile(file: any, req: Request): Promise<bo
   if (task && (task.assignedTo === viewerId || task.creatorId === viewerId)) return true;
 
   if (task) {
-    const audit = await (prisma as any).auditoria.findFirst({
+    const audit = await prisma.auditoria.findFirst({
       where: { taskId: task.id, usuarioId: viewerId },
       select: { id: true },
     });
@@ -123,7 +123,7 @@ export async function canAccessEvidenceFile(file: any, req: Request): Promise<bo
   }
 
   if (treeId) {
-    const membership = await (prisma as any).treeMember.findUnique({
+    const membership = await prisma.treeMember.findUnique({
       where: { userId_treeId: { userId: viewerId, treeId } },
       select: { role: true },
     });

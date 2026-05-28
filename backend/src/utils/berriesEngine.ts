@@ -21,7 +21,7 @@ export const BERRIES_CYCLE_HOURS = 168; // 1 week
  * Verifica si el árbol tiene >= 100 usuarios activos (Nivel >= 3).
  */
 export async function isBerriesUnlocked(treeId: string): Promise<boolean> {
-  const activeUsersCount = await (prisma as any).treeMember.count({
+  const activeUsersCount = await prisma.treeMember.count({
     where: {
       treeId,
       level: { gte: 3 }
@@ -62,7 +62,7 @@ export function calculateOxidation(
  * Retorna el saldo final oxidado.
  */
 export async function syncBerriesBalance(treeMemberId: string): Promise<number> {
-  const member = await (prisma as any).treeMember.findUnique({
+  const member = await prisma.treeMember.findUnique({
     where: { id: treeMemberId },
     include: { tree: true }
   });
@@ -94,7 +94,7 @@ export async function syncBerriesBalance(treeMemberId: string): Promise<number> 
   }
 
   if (preciseBalance !== member.bayasBalance) {
-    await (prisma as any).treeMember.update({
+    await prisma.treeMember.update({
       where: { id: member.id },
       data: {
         bayasBalance: preciseBalance,

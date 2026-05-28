@@ -109,7 +109,7 @@ export async function createKanbanTask(
 
   // ── 6. Persist to DB ─────────────────────────────────────────────────
   try {
-    await (prisma as any).botKanbanTask.create({
+    await prisma.botKanbanTask.create({
       data: {
         kanbanTaskId,
         chatId,
@@ -135,7 +135,7 @@ export async function getTasksForChat(
   prisma: PrismaClient,
   chatId: string,
 ): Promise<string[]> {
-  const records = await (prisma as any).botKanbanTask.findMany({
+  const records = await prisma.botKanbanTask.findMany({
     where: { chatId, status: { not: "done" } },
     select: { kanbanTaskId: true },
   });

@@ -86,7 +86,7 @@ export async function generateVoice(text: string, lang?: string): Promise<Buffer
 /** Resolve user language for TTS voice selection. Returns null if not found. */
 export async function getUserLanguage(prisma: PrismaClient, telegramId: number): Promise<string | undefined> {
   try {
-    const user = await (prisma as any).user.findUnique({
+    const user = await prisma.user.findUnique({
       where: { telegramUserId: BigInt(telegramId) },
       select: { language: true },
     });
@@ -131,7 +131,7 @@ export const parentTreeSelectors = new Map<string, Map<string, string>>();
 /** Resuelve el idioma desde el Tree (usado en grupo en vez de resolveUserLanguage). */
 export async function resolveTreeLanguage(prisma: PrismaClient, treeId: string): Promise<string | null> {
   try {
-    const tree = await (prisma as any).tree.findUnique({
+    const tree = await prisma.tree.findUnique({
       where: { id: treeId },
       select: { language: true },
     });
@@ -146,7 +146,7 @@ export async function getTreeDepth(prisma: PrismaClient, treeId: string): Promis
   let depth = 0;
   let currentId: string | null = treeId;
   while (currentId) {
-    const tree = await (prisma as any).tree.findUnique({
+    const tree = await prisma.tree.findUnique({
       where: { id: currentId },
       select: { parentTreeId: true },
     });
@@ -167,7 +167,7 @@ export async function trackBotMessage(
 
   if (count === 2 || count === 3) {
     try {
-      await (prisma as any).tree.update({
+      await prisma.tree.update({
         where: { id: treeId },
         data: { introMessageId: BigInt(messageId) },
       });
@@ -211,7 +211,7 @@ export async function requireTreeAdmin(
   // 3. User lookup by Telegram ID
   const tgUser = ctx.from;
   if (!tgUser) return null;
-  const user = await (prisma as any).user.findUnique({
+  const user = await prisma.user.findUnique({
     where: { telegramUserId: BigInt(tgUser.id) },
     select: { id: true },
   });
@@ -221,7 +221,7 @@ export async function requireTreeAdmin(
   }
 
   // 4. Admin membership check
-  const adminMember = await (prisma as any).treeMember.findFirst({
+  const adminMember = await prisma.treeMember.findFirst({
     where: { userId: user.id, treeId: tree.id, role: "ADMIN", status: "ACTIVE" },
   });
   if (!adminMember) {

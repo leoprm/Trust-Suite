@@ -155,7 +155,7 @@ async function findAgentForNeed(
   treeId: string
 ): Promise<string | null> {
   // 1. Buscar tasks AI asignadas a esta necesidad
-  const aiTasks = await (prisma as any).task.findMany({
+  const aiTasks = await prisma.task.findMany({
     where: { needId, assignedTo: { not: null } },
     include: { assignedAI: true },
     take: 1,
@@ -164,7 +164,7 @@ async function findAgentForNeed(
   for (const task of aiTasks) {
     const member = task.assignedAI;
     if (member?.isAI && member?.aiProfile) {
-      const agent = await (prisma as any).agent.findUnique({
+      const agent = await prisma.agent.findUnique({
         where: { name: member.aiProfile },
       });
       if (agent) return agent.id;
@@ -172,7 +172,7 @@ async function findAgentForNeed(
   }
 
   // 2. Fallback: cualquier Agent con membresía en este árbol
-  const anyMembership = await (prisma as any).agentMembership.findFirst({
+  const anyMembership = await prisma.agentMembership.findFirst({
     where: { treeId },
     select: { agentId: true },
   });
@@ -190,7 +190,7 @@ async function findAgentByRole(
   treeId: string,
   role: string
 ): Promise<string | null> {
-  const assignment = await (prisma as any).agentRoleHistory.findFirst({
+  const assignment = await prisma.agentRoleHistory.findFirst({
     where: { treeId, role, releasedAt: null },
     select: { agentId: true },
     orderBy: { assignedAt: "desc" },
@@ -210,7 +210,7 @@ async function resolveTaskId(
   needTitle: string
 ): Promise<string | null> {
   // Buscar task existente
-  const existing = await (prisma as any).task.findFirst({
+  const existing = await prisma.task.findFirst({
     where: { needId },
     select: { id: true },
   });
@@ -218,7 +218,7 @@ async function resolveTaskId(
 
   // Crear placeholder task (la FK de Rating a Task lo exige)
   try {
-    const created = await (prisma as any).task.create({
+    const created = await prisma.task.create({
       data: {
         treeId,
         needId,
@@ -259,7 +259,7 @@ export async function analyzeMessage(
     const text: string = msg.text;
 
     // ── 1. Buscar el árbol ──────────────────────────────────────────────
-    const tree = await (prisma as any).tree.findUnique({
+    const tree = await prisma.tree.findUnique({
       where: { telegramChatId: chatId },
       select: { id: true },
     });
@@ -268,7 +268,7 @@ export async function analyzeMessage(
     const treeId: string = tree.id;
 
     // ── 2. Necesidades OPEN del árbol ───────────────────────────────────
-    const openNeeds = await (prisma as any).need.findMany({
+    const openNeeds = await prisma.need.findMany({
       where: { treeId, status: "OPEN" },
       select: { id: true, title: true },
     });

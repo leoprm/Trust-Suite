@@ -11,7 +11,7 @@ async function addXP(treeId: string, userId: string, amount: number): Promise<vo
   const newXP = (member as any).xp + amount;
   const newLevel = Math.floor(newXP / 100) + 1;
 
-  await (prisma as any).treeMember.update({
+  await prisma.treeMember.update({
     where: { userId_treeId: { userId, treeId } },
     data: { xp: newXP, level: newLevel },
   });
@@ -36,7 +36,7 @@ export const createIdea = async (req: any, res: Response) => {
     const userId = req.user.id;
 
     // 1. Create the idea
-    const idea = await (prisma as any).idea.create({
+    const idea = await prisma.idea.create({
       data: {
         content: content.trim(),
         creatorId: userId,
@@ -50,7 +50,7 @@ export const createIdea = async (req: any, res: Response) => {
 
     if (treeId) {
       // Match only to needs of the specified tree
-      targetNeeds = await (prisma as any).need.findMany({
+      targetNeeds = await prisma.need.findMany({
         where: {
           treeId,
           status: 'OPEN',
@@ -70,7 +70,7 @@ export const createIdea = async (req: any, res: Response) => {
         return res.status(201).json({ idea, matches: [] });
       }
 
-      targetNeeds = await (prisma as any).need.findMany({
+      targetNeeds = await prisma.need.findMany({
         where: {
           treeId: { in: userTreeIds },
           status: 'OPEN',
@@ -116,7 +116,7 @@ export const createIdea = async (req: any, res: Response) => {
     // 4. Create NeedIdea entries for matches
     const needIdeas = [];
     for (const match of topMatches) {
-      const ni = await (prisma as any).needIdea.create({
+      const ni = await prisma.needIdea.create({
         data: {
           needId: match.needId,
           ideaId: idea.id,
@@ -136,7 +136,7 @@ export const createIdea = async (req: any, res: Response) => {
           // Only add if the need belongs to user's trees (or specified tree)
           const need = targetNeeds.find((n: any) => n.id === ftsNeed.id);
           if (need) {
-            await (prisma as any).needIdea.create({
+            await prisma.needIdea.create({
               data: {
                 needId: ftsNeed.id,
                 ideaId: idea.id,
@@ -169,7 +169,7 @@ export const getIdeas = async (req: any, res: Response) => {
     }
 
     // Get ideas linked to this need via NeedIdea
-    const needIdeas = await (prisma as any).needIdea.findMany({
+    const needIdeas = await prisma.needIdea.findMany({
       where: { needId },
       include: {
         idea: {
@@ -214,15 +214,15 @@ export const voteIdea = async (req: any, res: Response) => {
     }
 
     // Verify idea exists
-    const idea = await (prisma as any).idea.findUnique({ where: { id } });
+    const idea = await prisma.idea.findUnique({ where: { id } });
     if (!idea) return res.status(404).json({ error: 'Idea not found' });
 
     // Verify need exists
-    const need = await (prisma as any).need.findUnique({ where: { id: needId } });
+    const need = await prisma.need.findUnique({ where: { id: needId } });
     if (!need) return res.status(404).json({ error: 'Need not found' });
 
     // Upsert vote (allow changing weight)
-    await (prisma as any).ideaVote.upsert({
+    await prisma.ideaVote.upsert({
       where: {
         ideaId_userId_needId: { ideaId: id, userId, needId },
       },
@@ -231,13 +231,13 @@ export const voteIdea = async (req: any, res: Response) => {
     });
 
     // Recalculate totalLikes = SUM(weight)
-    const aggregate = await (prisma as any).ideaVote.aggregate({
+    const aggregate = await prisma.ideaVote.aggregate({
       where: { ideaId: id },
       _sum: { weight: true },
     });
     const newTotal = aggregate._sum?.weight ?? 0;
 
-    const updated = await (prisma as any).idea.update({
+    const updated = await prisma.idea.update({
       where: { id },
       data: { totalLikes: newTotal },
     });
@@ -272,7 +272,7 @@ export const unvoteIdea = async (req: any, res: Response) => {
     }
 
     // Find and delete the vote
-    const vote = await (prisma as any).ideaVote.findUnique({
+    const vote = await prisma.ideaVote.findUnique({
       where: {
         ideaId_userId_needId: { ideaId: id, userId, needId },
       },
@@ -282,15 +282,15 @@ export const unvoteIdea = async (req: any, res: Response) => {
       return res.status(404).json({ error: 'Vote not found' });
     }
 
-    await (prisma as any).ideaVote.delete({
+    await prisma.ideaVote.delete({
       where: { id: vote.id },
     });
 
     // Decrement totalLikes by vote weight (don't go below 0)
-    const idea = await (prisma as any).idea.findUnique({ where: { id } });
+    const idea = await prisma.idea.findUnique({ where: { id } });
     const newTotal = Math.max(0, (idea?.totalLikes || 0) - vote.weight);
 
-    await (prisma as any).idea.update({
+    await prisma.idea.update({
       where: { id },
       data: { totalLikes: newTotal },
     });
@@ -309,14 +309,14 @@ export const getTopIdeas = async (req: any, res: Response) => {
   try {
     const { id: needId } = req.params;
 
-    const need = await (prisma as any).need.findUnique({
+    const need = await prisma.need.findUnique({
       where: { id: needId },
       select: { treeId: true },
     });
     if (!need) return res.status(404).json({ error: 'Need not found' });
 
     // Get top 3 ideas by totalLikes
-    const needIdeas = await (prisma as any).needIdea.findMany({
+    const needIdeas = await prisma.needIdea.findMany({
       where: { needId },
       include: {
         idea: {
@@ -369,13 +369,13 @@ export const getTopIdeas = async (req: any, res: Response) => {
 // Marks all its ideas as isGlobal: true so they survive and can be re-proposed.
 export const markIdeasGlobal = async (needId: string): Promise<void> => {
   try {
-    const needIdeas = await (prisma as any).needIdea.findMany({
+    const needIdeas = await prisma.needIdea.findMany({
       where: { needId },
       select: { ideaId: true, idea: { select: { sourceTreeId: true } } },
     });
 
     for (const ni of needIdeas) {
-      await (prisma as any).idea.update({
+      await prisma.idea.update({
         where: { id: ni.ideaId },
         data: {
           isGlobal: true,

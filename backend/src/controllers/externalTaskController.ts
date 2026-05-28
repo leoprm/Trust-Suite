@@ -507,7 +507,7 @@ export const approveTask = async (req: Request, res: Response) => {
 
         if (member) {
           // Create ledger entry (credit to worker)
-          await (prisma as any).transactionLedger.create({
+          await prisma.transactionLedger.create({
             data: {
               treeId: task.treeId,
               memberId: member.id,
@@ -523,7 +523,7 @@ export const approveTask = async (req: Request, res: Response) => {
           });
 
           // Upsert MemberBalance
-          await (prisma as any).memberBalance.upsert({
+          await prisma.memberBalance.upsert({
             where: { memberId: member.id },
             create: {
               memberId: member.id,

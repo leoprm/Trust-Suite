@@ -102,7 +102,7 @@ async function findHumanCandidates(
   if (keywords.length === 0) return [];
 
   // Query human members in the tree
-  const humanMembers = await (prisma as any).treeMember.findMany({
+  const humanMembers = await prisma.treeMember.findMany({
     where: {
       treeId,
       isAI: false,

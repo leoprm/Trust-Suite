@@ -118,7 +118,7 @@ export async function createBot(prisma: PrismaClient): Promise<Bot<BotContext> |
       session.awaitingLinkTreeId = null;
 
       try {
-        const todos = await (prisma as any).todo.findMany({
+        const todos = await prisma.todo.findMany({
           where: {
             treeId,
             status: "PENDING",
@@ -137,7 +137,7 @@ export async function createBot(prisma: PrismaClient): Promise<Bot<BotContext> |
         } else if (todos.length === 1) {
           const todo = todos[0];
           const fileNote = `\n📎 Archivo vinculado: ${filePath}`;
-          await (prisma as any).todo.update({
+          await prisma.todo.update({
             where: { id: todo.id },
             data: { text: (todo.text || "") + fileNote },
           });
@@ -180,7 +180,7 @@ export async function createBot(prisma: PrismaClient): Promise<Bot<BotContext> |
     if (!chatId || !msgId) return;
 
     try {
-      const todo = await (prisma as any).todo.findFirst({
+      const todo = await prisma.todo.findFirst({
         where: { chatId: BigInt(chatId), messageId: BigInt(msgId) },
       });
       if (todo) {
@@ -188,7 +188,7 @@ export async function createBot(prisma: PrismaClient): Promise<Bot<BotContext> |
         const newLen = (ctx.messageReaction?.new_reaction || []).length;
         const delta = newLen - oldLen;
         if (delta !== 0) {
-          await (prisma as any).todo.update({
+          await prisma.todo.update({
             where: { id: todo.id },
             data: { likeCount: Math.max(0, todo.likeCount + delta) },
           });
@@ -244,12 +244,12 @@ export async function createBot(prisma: PrismaClient): Promise<Bot<BotContext> |
     // ── Cleanup: delete trees past pendingDeletionAt every 5 min ───────────
     setInterval(async () => {
       try {
-        const expired = await (prisma as any).tree.findMany({
+        const expired = await prisma.tree.findMany({
           where: { pendingDeletionAt: { lte: new Date() } },
           select: { id: true, name: true, telegramChatId: true },
         });
         for (const tree of expired) {
-          await (prisma as any).tree.delete({ where: { id: tree.id } });
+          await prisma.tree.delete({ where: { id: tree.id } });
           console.log(`[Cleanup] Deleted tree "${tree.name}" (${tree.id}) — auto-cleanup after removal`);
         }
       } catch (err: any) {

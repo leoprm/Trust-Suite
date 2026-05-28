@@ -10,7 +10,7 @@ export function register(bot: Bot<BotContext>, prisma: PrismaClient): void {
     if (!admin) return;
     const { tree } = admin;
 
-    await (prisma as any).tree.update({
+    await prisma.tree.update({
       where: { id: tree.id },
       data: { paused: true },
     });
@@ -22,7 +22,7 @@ export function register(bot: Bot<BotContext>, prisma: PrismaClient): void {
     if (!admin) return;
     const { tree } = admin;
 
-    await (prisma as any).tree.update({
+    await prisma.tree.update({
       where: { id: tree.id },
       data: { paused: false },
     });
@@ -35,7 +35,7 @@ export function register(bot: Bot<BotContext>, prisma: PrismaClient): void {
     const { tree } = admin;
 
     // Reset AI member states to IDLE (clear message queue)
-    await (prisma as any).treeMember.updateMany({
+    await prisma.treeMember.updateMany({
       where: { treeId: tree.id, isAI: true },
       data: { aiStatus: "IDLE" },
     });
@@ -66,7 +66,7 @@ export function register(bot: Bot<BotContext>, prisma: PrismaClient): void {
       return;
     }
 
-    await (prisma as any).tree.update({
+    await prisma.tree.update({
       where: { id: tree.id },
       data: { interactionMode: mode },
     });

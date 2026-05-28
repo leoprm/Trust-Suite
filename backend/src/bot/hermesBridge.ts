@@ -251,7 +251,7 @@ export async function getChatHistory(
   // ── Primary: read from DB ───────────────────────────────────────────
   try {
     const { prisma } = await import("../index");
-    const rows = await (prisma as any).chatMessage.findMany({
+    const rows = await prisma.chatMessage.findMany({
       where: { treeId },
       orderBy: { createdAt: "desc" },
       take: count,
@@ -570,7 +570,7 @@ async function buildSystemPrompt(
   const lines: string[] = [];
 
   // ── Tree info ─────────────────────────────────────────────────────────
-  const tree = await (prisma as any).tree.findUnique({
+  const tree = await prisma.tree.findUnique({
     where: { id: treeId },
     select: {
       name: true,
@@ -693,7 +693,7 @@ async function buildSystemPrompt(
   const ancestorChain: Array<{ id: string; name: string; icono: string }> = [];
   let cursor: string | null = tree.parentTreeId;
   while (cursor) {
-    const a = await (prisma as any).tree.findUnique({
+    const a = await prisma.tree.findUnique({
       where: { id: cursor },
       select: { id: true, name: true, icono: true, parentTreeId: true },
     });
@@ -703,7 +703,7 @@ async function buildSystemPrompt(
   }
 
   // ── Sub-trees ─────────────────────────────────────────────────────────
-  const childTrees = await (prisma as any).tree.findMany({
+  const childTrees = await prisma.tree.findMany({
     where: { parentTreeId: treeId },
     select: { id: true, name: true },
   });
@@ -730,7 +730,7 @@ async function buildSystemPrompt(
   }
 
   // ── Active needs ──────────────────────────────────────────────────────
-  const needs = await (prisma as any).need.findMany({
+  const needs = await prisma.need.findMany({
     where: { treeId, status: "OPEN" },
     select: { title: true, description: true, importance: true },
     orderBy: { importance: "desc" },
@@ -750,7 +750,7 @@ async function buildSystemPrompt(
   }
 
   // ── Members ───────────────────────────────────────────────────────────
-  const members = await (prisma as any).treeMember.findMany({
+  const members = await prisma.treeMember.findMany({
     where: { treeId, status: "ACTIVE" },
     include: { user: { select: { id: true, username: true, firstName: true } } },
     take: 20,
@@ -767,7 +767,7 @@ async function buildSystemPrompt(
   }
 
   // ── Community TODOs ───────────────────────────────────────────────────
-  const todos = await (prisma as any).todo.findMany({
+  const todos = await prisma.todo.findMany({
     where: { treeId, status: "PENDING" },
     orderBy: { likeCount: "desc" },
     take: 10,
@@ -783,7 +783,7 @@ async function buildSystemPrompt(
   }
 
   // ── User context ──────────────────────────────────────────────────────
-  const tgUser = await (prisma as any).user.findFirst({
+  const tgUser = await prisma.user.findFirst({
     where: { telegramUserId: BigInt(userId) },
     select: { username: true, firstName: true, id: true },
   });
@@ -1070,7 +1070,7 @@ export async function routeToHermes(
     // Look up user role for priority queue
     let role: string | undefined;
     try {
-      const member = await (prisma as any).treeMember.findFirst({
+      const member = await prisma.treeMember.findFirst({
         where: {
           treeId,
           user: { telegramUserId: BigInt(userId) },
@@ -1307,11 +1307,11 @@ export async function routeToHermes(
     // ── Multi-tree name prefix ──────────────────────────────────────────
     if (chatId !== undefined && treeId) {
       try {
-        const treeCount = await (prisma as any).tree.count({
+        const treeCount = await prisma.tree.count({
           where: { telegramChatId: String(chatId) },
         });
         if (treeCount > 1) {
-          const tree = await (prisma as any).tree.findUnique({
+          const tree = await prisma.tree.findUnique({
             where: { id: treeId },
             select: { name: true, icono: true },
           });
@@ -1370,11 +1370,11 @@ export async function routeToHermes(
       // ── Multi-tree name prefix (same as happy path) ──────────────────
       if (chatId !== undefined && treeId) {
         try {
-          const treeCount = await (prisma as any).tree.count({
+          const treeCount = await prisma.tree.count({
             where: { telegramChatId: String(chatId) },
           });
           if (treeCount > 1) {
-            const tree = await (prisma as any).tree.findUnique({
+            const tree = await prisma.tree.findUnique({
               where: { id: treeId },
               select: { name: true, icono: true },
             });

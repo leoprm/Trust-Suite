@@ -31,7 +31,7 @@ export function register(bot: Bot<BotContext>, prisma: PrismaClient): void {
       if (!tgUser) return;
 
       // Find first active tree membership
-      const user = await (prisma as any).user.findUnique({
+      const user = await prisma.user.findUnique({
         where: { telegramUserId: BigInt(tgUser.id) },
         select: { id: true, username: true, language: true },
       });
@@ -41,7 +41,7 @@ export function register(bot: Bot<BotContext>, prisma: PrismaClient): void {
       }
 
       // Find all active tree memberships for this user
-      const allMemberships = await (prisma as any).treeMember.findMany({
+      const allMemberships = await prisma.treeMember.findMany({
         where: { userId: user.id, status: "ACTIVE" },
         include: { tree: { select: { id: true, name: true } } },
         orderBy: { lastDmAt: "desc" },
@@ -93,7 +93,7 @@ export function register(bot: Bot<BotContext>, prisma: PrismaClient): void {
       const fullMessage = `${displayName}: ${text}`;
 
       // Track last DM interaction for auto-select
-      (prisma as any).treeMember.updateMany({
+      prisma.treeMember.updateMany({
         where: { userId: user.id, treeId, status: "ACTIVE" },
         data: { lastDmAt: new Date() },
       }).catch(e => console.error('[bot:dm] treeMember.updateMany failed:', e.message)); // fire-and-forget

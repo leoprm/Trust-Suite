@@ -30,7 +30,7 @@ export async function findTreeByChat(
   prisma: PrismaClient,
   telegramChatId: string
 ): Promise<TreeInfo | null> {
-  const tree = await (prisma as any).tree.findUnique({
+  const tree = await prisma.tree.findUnique({
     where: { telegramChatId },
     include: {
       _count: {
@@ -45,12 +45,12 @@ export async function findTreeByChat(
 
   if (!tree) return null;
 
-  const openNeedCount = await (prisma as any).need.count({
+  const openNeedCount = await prisma.need.count({
     where: { treeId: tree.id, status: "OPEN" },
   });
 
   // Count ideas linked to needs in this tree
-  const ideaCount = await (prisma as any).needIdea.count({
+  const ideaCount = await prisma.needIdea.count({
     where: { need: { treeId: tree.id } },
   });
 
@@ -79,7 +79,7 @@ export async function findTreeByCode(
   prisma: PrismaClient,
   code: string
 ): Promise<{ id: string; name: string } | null> {
-  const tree = await (prisma as any).tree.findUnique({
+  const tree = await prisma.tree.findUnique({
     where: { code: code.toUpperCase() },
     select: { id: true, name: true },
   });

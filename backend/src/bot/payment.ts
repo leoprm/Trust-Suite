@@ -52,7 +52,7 @@ export async function checkPaymentAccess(
   if (!tree) return { blocked: false }; // sin árbol → permitir
 
   // 4. Buscar membresía del usuario en este árbol
-  const member = await (prisma as any).treeMember.findUnique({
+  const member = await prisma.treeMember.findUnique({
     where: {
       userId_treeId: { userId, treeId: tree.id },
     },
@@ -109,7 +109,7 @@ async function resolveUserId(
   const telegramId = BigInt(tgUser.id);
 
   // 1. Buscar por telegramUserId
-  const byTgId = await (prisma as any).user.findUnique({
+  const byTgId = await prisma.user.findUnique({
     where: { telegramUserId: telegramId },
     select: { id: true },
   });
@@ -117,7 +117,7 @@ async function resolveUserId(
 
   // 2. Fallback: username de Telegram
   if (tgUser.username) {
-    const byUsername = await (prisma as any).user.findUnique({
+    const byUsername = await prisma.user.findUnique({
       where: { username: tgUser.username },
       select: { id: true },
     });

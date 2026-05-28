@@ -132,6 +132,7 @@ export async function runDisputeResolution(
   const results: DisputeResolutionResult[] = [];
 
   // ── Find all OPEN disputes past the 24h resolution window ──────────────
+  // FIXME: table "disputeMessage" not in DB — add to Prisma schema + create migration
   const pending = await (prisma as any).disputeMessage.findMany({
     where: {
       status: "OPEN",
@@ -160,7 +161,7 @@ export async function runDisputeResolution(
   for (const dm of pending) {
     try {
       // ── Quórum: 30% de miembros activos del árbol ─────────────────────
-      const memberCount = await (prisma as any).treeMember.count({
+      const memberCount = await prisma.treeMember.count({
         where: { treeId: dm.treeId, status: "ACTIVE" },
       });
       const quorumRequired = Math.max(1, Math.ceil(memberCount * QUORUM_PCT));
@@ -196,12 +197,13 @@ export async function runDisputeResolution(
       }
 
       // ── Transacción: update DisputeMessage + Task ─────────────────────
-      await (prisma as any).$transaction([
+      await prisma.$transaction([
+        // FIXME: table "disputeMessage" not in DB — add to Prisma schema + create migration
         (prisma as any).disputeMessage.update({
           where: { id: dm.id },
           data: { status: outcome, resolvedAt: now },
         }),
-        (prisma as any).task.update({
+        prisma.task.update({
           where: { id: dm.taskId },
           data: {
             status: newStatus,
@@ -260,7 +262,7 @@ export async function runDisputeResolution(
   // ── Fallback: tareas DISPUTED sin DisputeMessage (disputeExpiresAt vencido) ──
   const resolvedIds = new Set(pending.map((m: any) => m.taskId));
 
-  const orphans = await (prisma as any).task.findMany({
+  const orphans = await prisma.task.findMany({
     where: {
       status: "DISPUTED",
       disputeExpiresAt: { lte: now },
@@ -275,7 +277,7 @@ export async function runDisputeResolution(
 
   for (const task of orphans) {
     try {
-      await (prisma as any).task.update({
+      await prisma.task.update({
         where: { id: task.id },
         data: {
           status: "ASSIGNED",

@@ -33,6 +33,7 @@ export async function runProposalResolver(
   const resolutions: ProposalResolution[] = [];
 
   // 1. Buscar propuestas OPEN vencidas
+  // FIXME: table "kanbanProposal" not in DB — add to Prisma schema + create migration
   const proposals = await (prisma as any).kanbanProposal.findMany({
     where: {
       status: "OPEN",
@@ -53,11 +54,12 @@ export async function runProposalResolver(
       });
 
       // a2. Threshold check: trees with ≤voteThreshold members → auto-APPROVE (direct execution)
-      const tree = await (prisma as any).tree.findUnique({
+      const tree = await prisma.tree.findUnique({
         where: { id: p.treeId },
         select: { voteThreshold: true },
       });
       if (activeMembers <= (tree?.voteThreshold ?? 20)) {
+        // FIXME: table "kanbanProposal" not in DB — add to Prisma schema + create migration
         await (prisma as any).kanbanProposal.update({
           where: { id: p.id },
           data: { status: "APPROVED", resolvedAt: now },
@@ -102,6 +104,7 @@ export async function runProposalResolver(
       }
 
       // f. Actualizar en DB
+      // FIXME: table "kanbanProposal" not in DB — add to Prisma schema + create migration
       await (prisma as any).kanbanProposal.update({
         where: { id: p.id },
         data: {

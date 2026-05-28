@@ -145,7 +145,7 @@ async function sendQuotaAlert(
 ): Promise<void> {
   try {
     // Look up tree chat
-    const tree = await (prisma as any).tree.findUnique({
+    const tree = await prisma.tree.findUnique({
       where: { id: treeId },
       select: { telegramChatId: true, name: true },
     });

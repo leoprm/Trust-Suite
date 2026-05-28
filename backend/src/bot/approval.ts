@@ -31,7 +31,7 @@ export async function sendApprovalPoll(
   lng = "es",
 ): Promise<boolean> {
   try {
-    const need = await (prisma as any).need.findUnique({
+    const need = await prisma.need.findUnique({
       where: { id: needId },
       select: { title: true, description: true },
     });
@@ -55,7 +55,7 @@ export async function sendApprovalPoll(
       },
     );
 
-    await (prisma as any).need.update({
+    await prisma.need.update({
       where: { id: needId },
       data: {
         approvalPollId: sentPoll.poll.id,
@@ -82,7 +82,7 @@ export async function closeApprovalPoll(
   lng = "es",
 ): Promise<void> {
   try {
-    const need = await (prisma as any).need.findUnique({
+    const need = await prisma.need.findUnique({
       where: { id: needId },
       select: {
         status: true,
@@ -109,7 +109,7 @@ export async function closeApprovalPoll(
     const noVotes = results.options[1]?.voter_count ?? 0;
 
     if (yesVotes > noVotes) {
-      await (prisma as any).need.update({
+      await prisma.need.update({
         where: { id: needId },
         data: { status: "OPEN" },
       });
@@ -127,7 +127,7 @@ export async function closeApprovalPoll(
         `[approval] ✅ Need ${needId} approved (${yesVotes} vs ${noVotes})`,
       );
     } else {
-      await (prisma as any).need.update({
+      await prisma.need.update({
         where: { id: needId },
         data: { status: "REJECTED" },
       });
@@ -173,7 +173,7 @@ export async function recoverPendingApprovals(
   prisma: PrismaClient,
 ): Promise<void> {
   try {
-    const pending = await (prisma as any).need.findMany({
+    const pending = await prisma.need.findMany({
       where: { status: "PENDING_APPROVAL" },
       select: {
         id: true,

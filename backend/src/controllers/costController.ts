@@ -7,7 +7,7 @@ export const getCostSummary = async (req: Request, res: Response) => {
     const userId = req.user!.id;
 
     // 1. Leer costos fijos de PlatformConfig
-    const configs = await (prisma as any).platformConfig.findMany();
+    const configs = await prisma.platformConfig.findMany();
     const getConfig = (key: string): string => {
       const c = configs.find((c: any) => c.key === key);
       return c?.value ?? '0';
@@ -24,7 +24,7 @@ export const getCostSummary = async (req: Request, res: Response) => {
     startOfMonth.setDate(1);
     startOfMonth.setHours(0, 0, 0, 0);
 
-    const apiUsageThisMonth = await (prisma as any).apiUsage.findMany({
+    const apiUsageThisMonth = await prisma.apiUsage.findMany({
       where: { createdAt: { gte: startOfMonth } },
     });
 
@@ -42,7 +42,7 @@ export const getCostSummary = async (req: Request, res: Response) => {
     const totalApiCost = Object.values(byProvider).reduce((sum, v) => sum + v.cost, 0);
 
     // 2b. Costo absorbido por período gratuito este mes
-    const absorbedThisMonth = await (prisma as any).apiUsage.aggregate({
+    const absorbedThisMonth = await prisma.apiUsage.aggregate({
       where: { createdAt: { gte: startOfMonth }, isFreePeriod: true },
       _sum: { absorbedByPlatform: true },
     });
@@ -57,13 +57,13 @@ export const getCostSummary = async (req: Request, res: Response) => {
     // ── NUEVO: Cálculo por árbol ─────────────────────────────────────────
 
     // Obtener membresías del usuario
-    const memberships = await (prisma as any).treeMember.findMany({
+    const memberships = await prisma.treeMember.findMany({
       where: { userId, status: 'ACTIVE' },
       include: { tree: { select: { id: true, name: true } } },
     });
 
     // Árboles activos totales (para dividir costos fijos)
-    const activeTrees = await (prisma as any).treeMember.groupBy({
+    const activeTrees = await prisma.treeMember.groupBy({
       by: ['treeId'],
       where: { status: 'ACTIVE' },
     });
@@ -76,7 +76,7 @@ export const getCostSummary = async (req: Request, res: Response) => {
         const treeId = m.treeId;
 
         // Uso de APIs este mes en este árbol (sin período gratuito)
-        const apiUsage = await (prisma as any).apiUsage.aggregate({
+        const apiUsage = await prisma.apiUsage.aggregate({
           where: {
             treeId,
             createdAt: { gte: startOfMonth },
@@ -88,7 +88,7 @@ export const getCostSummary = async (req: Request, res: Response) => {
         const apiCost = apiUsage._sum?.cost || 0;
 
         // Miembros activos del árbol
-        const memberCount = await (prisma as any).treeMember.count({
+        const memberCount = await prisma.treeMember.count({
           where: { treeId, status: 'ACTIVE' },
         });
 

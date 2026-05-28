@@ -1135,7 +1135,7 @@ export const getMigrationSuggestions = async (req: any, res: Response) => {
   try {
     const treeId = req.params.id;
 
-    const suggestions = await (prisma as any).talentMigrationSuggestion.findMany({
+    const suggestions = await prisma.talentMigrationSuggestion.findMany({
       where: { fromTreeId: treeId },
       orderBy: { createdAt: "desc" },
       take: 50,
@@ -1144,15 +1144,15 @@ export const getMigrationSuggestions = async (req: any, res: Response) => {
     const formatted = await Promise.all(
       suggestions.map(async (s: any) => {
         const [member, fromTree, toTree] = await Promise.all([
-          (prisma as any).treeMember.findUnique({
+          prisma.treeMember.findUnique({
             where: { id: s.memberId },
             select: { userId: true, user: { select: { username: true } } },
           }),
-          (prisma as any).tree.findUnique({
+          prisma.tree.findUnique({
             where: { id: s.fromTreeId },
             select: { id: true, name: true },
           }),
-          (prisma as any).tree.findUnique({
+          prisma.tree.findUnique({
             where: { id: s.toTreeId },
             select: { id: true, name: true },
           }),
@@ -1387,7 +1387,7 @@ export const getCrossTreeSkills = async (req: Request, res: Response) => {
     // Fetch TreeSkill records for this user in their active trees.
     // Only return skills where visibility is INTERNAL or PUBLIC.
     // PRIVATE skills are excluded from cross-tree views.
-    const skills = await (prisma as any).treeSkill.findMany({
+    const skills = await prisma.treeSkill.findMany({
       where: {
         userId,
         treeId: { in: activeTreeIds },

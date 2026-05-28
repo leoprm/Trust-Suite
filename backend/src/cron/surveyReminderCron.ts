@@ -34,7 +34,7 @@ export async function runSurveyReminders(
   const windowStart = new Date(now.getTime() + 60 * 60 * 60 * 1000);
   const windowEnd = new Date(now.getTime() + 84 * 60 * 60 * 1000);
 
-  const surveys = await (prisma as any).satisfactionSurvey.findMany({
+  const surveys = await prisma.satisfactionSurvey.findMany({
     where: {
       closesAt: { gte: windowStart, lte: windowEnd },
       reminderSent: false,
@@ -63,7 +63,7 @@ export async function runSurveyReminders(
 
     try {
       // Get target user name
-      const targetUser = await (prisma as any).user.findUnique({
+      const targetUser = await prisma.user.findUnique({
         where: { id: survey.targetUserId },
         select: { firstName: true, username: true },
       });
@@ -94,7 +94,7 @@ export async function runSurveyReminders(
       );
 
       // Mark as reminded
-      await (prisma as any).satisfactionSurvey.update({
+      await prisma.satisfactionSurvey.update({
         where: { id: survey.id },
         data: { reminderSent: true },
       });

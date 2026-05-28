@@ -44,17 +44,17 @@ async function resolveTelegramUser(
   const telegramId = BigInt(tgUser.id);
 
   try {
-    const byTgId = await (prisma as any).user.findUnique({
+    const byTgId = await prisma.user.findUnique({
       where: { telegramUserId: telegramId },
     });
     if (byTgId) return byTgId.id;
 
     if (tgUser.username) {
-      const byUsername = await (prisma as any).user.findUnique({
+      const byUsername = await prisma.user.findUnique({
         where: { username: tgUser.username },
       });
       if (byUsername) {
-        await (prisma as any).user.update({
+        await prisma.user.update({
           where: { id: byUsername.id },
           data: { telegramUserId: telegramId },
         });
@@ -62,7 +62,7 @@ async function resolveTelegramUser(
       }
     }
 
-    const created = await (prisma as any).user.create({
+    const created = await prisma.user.create({
       data: {
         username: tgUser.username || `tg_${tgUser.id}`,
         firstName: tgUser.first_name,
@@ -81,7 +81,7 @@ async function isAlreadyMember(
   userId: string,
   treeId: string
 ): Promise<boolean> {
-  const member = await (prisma as any).treeMember.findUnique({
+  const member = await prisma.treeMember.findUnique({
     where: { userId_treeId: { userId, treeId } },
     select: { id: true },
   });
@@ -147,7 +147,7 @@ export async function initTrustManagerBot(
     }
 
     try {
-      const tree = await (prisma as any).tree.findUnique({
+      const tree = await prisma.tree.findUnique({
         where: { id: treeId },
         select: { id: true, name: true, admissionPolicy: true },
       });
@@ -403,7 +403,7 @@ export async function initTrustManagerBot(
       }
 
       // Verificar membresía duplicada
-      const existing = await (prisma as any).treeMember.findUnique({
+      const existing = await prisma.treeMember.findUnique({
         where: { userId_treeId: { userId, treeId } },
       });
       if (existing) {
@@ -417,7 +417,7 @@ export async function initTrustManagerBot(
       }
 
       // Registrar TreeMember
-      await (prisma as any).treeMember.create({
+      await prisma.treeMember.create({
         data: {
           userId,
           treeId,
@@ -470,7 +470,7 @@ export async function initTrustManagerBot(
 
     try {
       // Resolve user
-      const user = await (prisma as any).user.findUnique({
+      const user = await prisma.user.findUnique({
         where: { telegramUserId: BigInt(tgUser.id) },
         select: { id: true, availableForHire: true },
       });
@@ -483,7 +483,7 @@ export async function initTrustManagerBot(
       }
 
       // Load task
-      const task = await (prisma as any).externalTask.findUnique({
+      const task = await prisma.externalTask.findUnique({
         where: { id: taskId },
         select: { id: true, status: true, title: true, treeId: true },
       });
@@ -501,7 +501,7 @@ export async function initTrustManagerBot(
       }
 
       // Claim the task
-      await (prisma as any).externalTask.update({
+      await prisma.externalTask.update({
         where: { id: taskId },
         data: { status: "CLAIMED", workerId: user.id },
       });

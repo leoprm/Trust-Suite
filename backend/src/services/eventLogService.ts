@@ -81,7 +81,7 @@ export async function logEvent(input: LogEventInput): Promise<void> {
   try {
     if (!input.action || !input.entityType) return;
 
-    await (prisma as any).eventLog.create({
+    await prisma.eventLog.create({
       data: {
         treeId: input.treeId ?? null,
         actorId: input.actorId ?? null,

@@ -5,7 +5,7 @@ export async function processExpiredDeletions(prisma: PrismaClient): Promise<num
   const now = new Date();
   let deleted = 0;
 
-  const expired = await (prisma as any).tree.findMany({
+  const expired = await prisma.tree.findMany({
     where: { pendingDeletionAt: { lte: now } },
     select: {
       id: true,
@@ -21,7 +21,7 @@ export async function processExpiredDeletions(prisma: PrismaClient): Promise<num
 
       if (childrenCount > 0) {
         if (tree.parentTreeId) {
-          await (prisma as any).tree.updateMany({
+          await prisma.tree.updateMany({
             where: { parentTreeId: tree.id },
             data: { parentTreeId: tree.parentTreeId },
           });
@@ -29,7 +29,7 @@ export async function processExpiredDeletions(prisma: PrismaClient): Promise<num
             `[TreeCleanup] ${childrenCount} hijos de "${tree.name}" → conectados al abuelo`
           );
         } else {
-          await (prisma as any).tree.updateMany({
+          await prisma.tree.updateMany({
             where: { parentTreeId: tree.id },
             data: { parentTreeId: null },
           });
@@ -44,7 +44,7 @@ export async function processExpiredDeletions(prisma: PrismaClient): Promise<num
         console.error(`[TreeCleanup] notebooklm delete failed for "${tree.name}":`, err?.message || err);
       });
 
-      await (prisma as any).tree.delete({ where: { id: tree.id } });
+      await prisma.tree.delete({ where: { id: tree.id } });
       deleted++;
       console.log(`[TreeCleanup] Árbol eliminado: "${tree.name}" (${tree.id})`);
     } catch (err: any) {

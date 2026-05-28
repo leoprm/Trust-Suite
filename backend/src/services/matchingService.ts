@@ -126,7 +126,7 @@ export async function notifyMatchingWorkers(task: TaskForMatching): Promise<numb
       .filter(Boolean);
 
     // 1. Query available workers with Telegram
-    const workers = await (prisma as any).user.findMany({
+    const workers = await prisma.user.findMany({
       where: {
         availableForHire: true,
         telegramUserId: { not: null },
@@ -172,7 +172,7 @@ export async function notifyMatchingWorkers(task: TaskForMatching): Promise<numb
 
       // Batch query WorkerSkill for all matched workers + task skills
       const workerSkills: Array<{ userId: string; skill: string; level: number }> =
-        await (prisma as any).workerSkill.findMany({
+        await prisma.workerSkill.findMany({
           where: {
             userId: { in: matchedIds },
             skill: { in: taskSkills },
@@ -210,7 +210,7 @@ export async function notifyMatchingWorkers(task: TaskForMatching): Promise<numb
     }
 
     // 4. Filter out already-notified workers
-    const alreadyNotified = await (prisma as any).externalTaskNotification.findMany({
+    const alreadyNotified = await prisma.externalTaskNotification.findMany({
       where: {
         externalTaskId: task.id,
         userId: { in: matched.map((w: any) => w.id) },
@@ -263,7 +263,7 @@ export async function notifyMatchingWorkers(task: TaskForMatching): Promise<numb
 
       // Record notification regardless of send success (to avoid retry spam)
       try {
-        await (prisma as any).externalTaskNotification.create({
+        await prisma.externalTaskNotification.create({
           data: {
             externalTaskId: task.id,
             userId: w.id,

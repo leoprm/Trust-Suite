@@ -362,7 +362,7 @@ export async function buildDelta(treeId: string): Promise<TreeDelta> {
   ] = await Promise.all([
     // ── Average agent ratings by provider (across all trees, anonymized) ──
     (async () => {
-      const ratings = await (prisma as any).$queryRawUnsafe(`
+      const ratings = await prisma.$queryRawUnsafe(`
         SELECT
           CASE
             WHEN a.name LIKE '%deepseek%' OR a.name LIKE '%ds%' THEN 'deepseek'
@@ -389,7 +389,7 @@ export async function buildDelta(treeId: string): Promise<TreeDelta> {
 
     // ── Token costs per provider ───────────────────────────────────────────
     (async () => {
-      const configs = await (prisma as any).platformConfig.findMany({
+      const configs = await prisma.platformConfig.findMany({
         where: { category: 'api_cost' },
       });
       const result: TokenCost[] = [];
@@ -427,7 +427,7 @@ export async function buildDelta(treeId: string): Promise<TreeDelta> {
 
     // ── Maintenance costs ──────────────────────────────────────────────────
     (async () => {
-      const configs = await (prisma as any).platformConfig.findMany({
+      const configs = await prisma.platformConfig.findMany({
         where: { category: { in: ['fixed', 'margin', 'infrastructure'] } },
       });
       const getVal = (key: string): number => {
@@ -466,7 +466,7 @@ export async function buildDelta(treeId: string): Promise<TreeDelta> {
       // Total collected this month from payments
       let balance = 0;
       try {
-        const payments = await (prisma as any).$queryRawUnsafe(`
+        const payments = await prisma.$queryRawUnsafe(`
           SELECT COALESCE(SUM(tl.amount), 0) as total
           FROM TransactionLedger tl
           WHERE tl.treeId = ? AND tl.type = 'SPLIT_CREDIT'
@@ -486,7 +486,7 @@ export async function buildDelta(treeId: string): Promise<TreeDelta> {
       } catch {}
 
       // Margin months: how many months can the tree operate with current balance
-      const monthlyCost = await (prisma as any).platformConfig.findUnique({
+      const monthlyCost = await prisma.platformConfig.findUnique({
         where: { key: 'cost_fixed' },
       });
       let monthlyFixed = 0;
@@ -509,7 +509,7 @@ export async function buildDelta(treeId: string): Promise<TreeDelta> {
       // Get global averages for trees in similar size range (±50%)
       const minMembers = Math.floor(memberCount * 0.5);
       const maxMembers = Math.ceil(memberCount * 1.5);
-      const similarTrees = await (prisma as any).$queryRawUnsafe(`
+      const similarTrees = await prisma.$queryRawUnsafe(`
         SELECT
           AVG(memberCount) as avgMembers,
           AVG(needCount) as avgNeeds,
@@ -563,15 +563,15 @@ export async function buildDelta(treeId: string): Promise<TreeDelta> {
       const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
 
       const [todayUsage, weekUsage, monthUsage] = await Promise.all([
-        (prisma as any).$queryRawUnsafe(
+        prisma.$queryRawUnsafe(
           `SELECT COALESCE(SUM(tokensIn + tokensOut), 0) as total FROM ApiUsage WHERE treeId = ? AND createdAt >= ?`,
           treeId, today
         ),
-        (prisma as any).$queryRawUnsafe(
+        prisma.$queryRawUnsafe(
           `SELECT COALESCE(SUM(tokensIn + tokensOut), 0) as total FROM ApiUsage WHERE treeId = ? AND createdAt >= ?`,
           treeId, weekAgo
         ),
-        (prisma as any).$queryRawUnsafe(
+        prisma.$queryRawUnsafe(
           `SELECT COALESCE(SUM(tokensIn + tokensOut), 0) as total FROM ApiUsage WHERE treeId = ? AND createdAt >= ?`,
           treeId, monthStart
         ),
@@ -587,7 +587,7 @@ export async function buildDelta(treeId: string): Promise<TreeDelta> {
       // Budget tokens: from platform config
       let budgetTokens: number | null = null;
       try {
-        const budgetConfig = await (prisma as any).platformConfig.findUnique({
+        const budgetConfig = await prisma.platformConfig.findUnique({
           where: { key: 'budget_tokens_per_month' },
         });
         if (budgetConfig) budgetTokens = parseInt(JSON.parse(budgetConfig.value), 10);
@@ -631,7 +631,7 @@ export async function buildDelta(treeId: string): Promise<TreeDelta> {
       // Average response time (from apiUsage latency if tracked)
       let avgResponseTimeMs: number | null = null;
       try {
-        const responseTime = await (prisma as any).$queryRawUnsafe(`
+        const responseTime = await prisma.$queryRawUnsafe(`
           SELECT AVG(latencyMs) as avgMs
           FROM ApiUsage
           WHERE treeId = ? AND createdAt >= DATE_SUB(NOW(), INTERVAL 1 HOUR)

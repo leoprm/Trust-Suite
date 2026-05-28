@@ -171,19 +171,19 @@ async function resolveTelegramUser(
 
   try {
     // 1. Buscar por telegramUserId (mismo enfoque que voting.ts)
-    const byTgId = await (prisma as any).user.findUnique({
+    const byTgId = await prisma.user.findUnique({
       where: { telegramUserId: telegramId },
     });
     if (byTgId) return byTgId.id;
 
     // 2. Fallback: buscar por username de Telegram (si tiene)
     if (tgUser.username) {
-      const byUsername = await (prisma as any).user.findUnique({
+      const byUsername = await prisma.user.findUnique({
         where: { username: tgUser.username },
       });
       if (byUsername) {
         // Actualizar su telegramUserId para futuros lookups
-        await (prisma as any).user.update({
+        await prisma.user.update({
           where: { id: byUsername.id },
           data: { telegramUserId: telegramId },
         });
@@ -192,7 +192,7 @@ async function resolveTelegramUser(
     }
 
     // 3. Crear nuevo usuario con telegramUserId asignado y language null (forzar selector onboarding)
-    const created = await (prisma as any).user.create({
+    const created = await prisma.user.create({
       data: {
         username: tgUser.username || `tg_${tgUser.id}`,
         telegramUserId: telegramId,
@@ -226,7 +226,7 @@ async function handleLista(
 ): Promise<string> {
   if (!tree) return noTreeError(lng);
 
-  const needs = await (prisma as any).need.findMany({
+  const needs = await prisma.need.findMany({
     where: { treeId: tree.id },
     include: {
       _count: { select: { ideas: true } },
@@ -256,7 +256,7 @@ async function handleCrea(
   const importance = Math.floor(Math.random() * 10) + 1;
   const complex = isComplexNeed(descripcion);
 
-  const need = await (prisma as any).need.create({
+  const need = await prisma.need.create({
     data: {
       title: titulo,
       description: descripcion,
@@ -317,7 +317,7 @@ async function handleCrea(
     );
 
     // Save poll_id → need_id mapping
-    await (prisma as any).pollMapping.create({
+    await prisma.pollMapping.create({
       data: {
         pollId: pollMessage.poll.id,
         needId: need.id,
@@ -327,7 +327,7 @@ async function handleCrea(
     });
 
     // Optionally store the poll message ID on the need for reference
-    await (prisma as any).need.update({
+    await prisma.need.update({
       where: { id: need.id },
       data: { telegramMessageId: pollMessage.message_id },
     });
@@ -349,7 +349,7 @@ async function handleVota(
 ): Promise<{ text: string; react: boolean }> {
   if (!tree) return { text: noTreeError(lng), react: false };
 
-  const need = await (prisma as any).need.findUnique({
+  const need = await prisma.need.findUnique({
     where: { id: needId },
     select: { id: true, title: true, treeId: true },
   });
@@ -364,7 +364,7 @@ async function handleVota(
   if (userId) {
     try {
       // Find top ideas for this need and vote for the top one, or just create a generic vote
-      const topIdeas = await (prisma as any).needIdea.findMany({
+      const topIdeas = await prisma.needIdea.findMany({
         where: { needId },
         include: { idea: { select: { id: true } } },
         orderBy: { idea: { totalLikes: "desc" } },
@@ -374,21 +374,21 @@ async function handleVota(
       if (topIdeas.length > 0) {
         const ideaId = topIdeas[0].idea.id;
         // Check if already voted
-        const existing = await (prisma as any).ideaVote.findUnique({
+        const existing = await prisma.ideaVote.findUnique({
           where: {
             ideaId_userId_needId: { ideaId, userId, needId },
           },
         });
         if (!existing) {
-          await (prisma as any).ideaVote.create({
+          await prisma.ideaVote.create({
             data: { ideaId, userId, needId },
           });
-          await (prisma as any).idea.update({
+          await prisma.idea.update({
             where: { id: ideaId },
             data: { totalLikes: { increment: 1 } },
           });
           // Increment daily votes on the need (only once per user-need)
-          await (prisma as any).need.update({
+          await prisma.need.update({
             where: { id: needId },
             data: { dailyVotes: { increment: 1 } },
           });
@@ -413,7 +413,7 @@ async function handleIdeas(
   if (!tree) return noTreeError(lng);
 
   // Find needs matching the query (by title substring)
-  const needs = await (prisma as any).need.findMany({
+  const needs = await prisma.need.findMany({
     where: {
       treeId: tree.id,
       title: { contains: query },
@@ -429,7 +429,7 @@ async function handleIdeas(
   if (needs.length === 1) {
     // Show ideas for the single match
     const need = needs[0];
-    const needIdeas = await (prisma as any).needIdea.findMany({
+    const needIdeas = await prisma.needIdea.findMany({
       where: { needId: need.id },
       include: {
         idea: {
@@ -484,7 +484,7 @@ async function handleCuota(
   if (!userId) return t("errors:not_identified_cuota", lng);
 
   // Buscar membresía en este árbol
-  const member = await (prisma as any).treeMember.findUnique({
+  const member = await prisma.treeMember.findUnique({
     where: { userId_treeId: { userId, treeId: tree.id } },
     select: { monthlyFee: true },
   });
@@ -493,14 +493,14 @@ async function handleCuota(
   // Recalcular breakdown para mostrar base + tasks
   let costoBase = 0;
   if (tree.creatorId) {
-    const sub = await (prisma as any).subscription.findFirst({
+    const sub = await prisma.subscription.findFirst({
       where: { userId: tree.creatorId, status: "ACTIVE" },
       select: { monthlyCost: true },
     });
     costoBase = sub?.monthlyCost ?? 0;
   }
 
-  const budgetAgg = await (prisma as any).task.aggregate({
+  const budgetAgg = await prisma.task.aggregate({
     where: {
       treeId: tree.id,
       status: { in: ACTIVE_TASK_STATUSES_CUOTA },
@@ -509,7 +509,7 @@ async function handleCuota(
   });
   const taskBudgetSum = budgetAgg._sum.budget ?? 0;
 
-  const memberCount = await (prisma as any).treeMember.count({
+  const memberCount = await prisma.treeMember.count({
     where: { treeId: tree.id, status: "ACTIVE" },
   });
 
@@ -559,7 +559,7 @@ async function handleTodo(
 
   if (!text || text.trim() === "") {
     // Mostrar lista rankeada
-    const todos = await (prisma as any).todo.findMany({
+    const todos = await prisma.todo.findMany({
       where: { treeId: tree.id, chatId: BigInt(chatId), status: "PENDING" },
       orderBy: { likeCount: "desc" },
       take: 20,
@@ -573,7 +573,7 @@ async function handleTodo(
   const messageId = ctx.message?.message_id;
   const deadline = parseDeadline(text.trim());
 
-  await (prisma as any).todo.create({
+  await prisma.todo.create({
     data: {
       treeId: tree.id,
       chatId: BigInt(chatId),
@@ -588,7 +588,7 @@ async function handleTodo(
   });
 
   // Posición en el ranking (cuántos tienen más likes)
-  const higherCount = await (prisma as any).todo.count({
+  const higherCount = await prisma.todo.count({
     where: {
       treeId: tree.id,
       chatId: BigInt(chatId),
@@ -622,13 +622,13 @@ async function handleInformeToggle(
   const tgUser = ctx.from;
   if (!tgUser) return t("common:not_identified", lng);
 
-  const user = await (prisma as any).user.findUnique({
+  const user = await prisma.user.findUnique({
     where: { telegramUserId: BigInt(tgUser.id) },
     select: { id: true },
   });
   if (!user) return t("common:no_account", lng);
 
-  const adminMember = await (prisma as any).treeMember.findFirst({
+  const adminMember = await prisma.treeMember.findFirst({
     where: { userId: user.id, treeId: tree.id, role: "ADMIN", status: "ACTIVE" },
   });
   if (!adminMember) return t("common:informe_no_admin", lng);
@@ -636,7 +636,7 @@ async function handleInformeToggle(
   const enabled = action === "activar";
 
   try {
-    await (prisma as any).tree.update({
+    await prisma.tree.update({
       where: { id: tree.id },
       data: { monthlyReportsEnabled: enabled },
     });
@@ -705,7 +705,7 @@ async function getAllDescendantIds(
   prisma: PrismaClient,
   treeId: string,
 ): Promise<string[]> {
-  const children = await (prisma as any).tree.findMany({
+  const children = await prisma.tree.findMany({
     where: { parentTreeId: treeId },
     select: { id: true },
   });
@@ -734,13 +734,13 @@ async function handleInforme(
   const tgUser = ctx.from;
   if (!tgUser) return t("common:not_identified", lng);
 
-  const user = await (prisma as any).user.findUnique({
+  const user = await prisma.user.findUnique({
     where: { telegramUserId: BigInt(tgUser.id) },
     select: { id: true },
   });
   if (!user) return t("common:no_account", lng);
 
-  const adminMember = await (prisma as any).treeMember.findFirst({
+  const adminMember = await prisma.treeMember.findFirst({
     where: { userId: user.id, treeId: tree.id, role: "ADMIN", status: "ACTIVE" },
   });
   if (!adminMember) return t("common:informe_no_admin", lng);
@@ -753,7 +753,7 @@ async function handleInforme(
         return t("common:informe_child_not_found", lng, { treeId: target });
       }
       // Validate it's a direct child
-      const child = await (prisma as any).tree.findUnique({
+      const child = await prisma.tree.findUnique({
         where: { id: target },
         select: { id: true, name: true, parentTreeId: true },
       });
@@ -787,7 +787,7 @@ async function handleInforme(
       const allIds = await getAllDescendantIds(prisma, tree.id);
       if (allIds.length === 0) return t("common:informe_no_children", lng);
 
-      const trees = await (prisma as any).tree.findMany({
+      const trees = await prisma.tree.findMany({
         where: { id: { in: allIds } },
         select: { id: true, name: true },
       });
@@ -803,7 +803,7 @@ async function handleInforme(
     }
 
     // ── /informe (no args) — immediate children ──
-    const children = await (prisma as any).tree.findMany({
+    const children = await prisma.tree.findMany({
       where: { parentTreeId: tree.id },
       select: { id: true, name: true },
     });
@@ -837,7 +837,7 @@ async function isDescendantOf(
   while (current && !visited.has(current)) {
     visited.add(current);
     if (current === ancestorId) return true;
-    const tree = await (prisma as any).tree.findUnique({
+    const tree = await prisma.tree.findUnique({
       where: { id: current },
       select: { parentTreeId: true },
     });

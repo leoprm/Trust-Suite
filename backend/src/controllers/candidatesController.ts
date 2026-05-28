@@ -56,13 +56,13 @@ export const registerCandidate = async (req: Request, res: Response) => {
     }
 
     // Verify task exists as a kanban task (check ExternalTask for reference)
-    const externalTask = await (prisma as any).externalTask.findFirst({
+    const externalTask = await prisma.externalTask.findFirst({
       where: { kanbanTaskId: taskId },
       select: { id: true, title: true, treeId: true },
     });
 
     // Verify user is a member of the tree
-    const member = await (prisma as any).treeMember.findUnique({
+    const member = await prisma.treeMember.findUnique({
       where: { userId_treeId: { userId, treeId } },
       select: { id: true, status: true },
     });
@@ -71,14 +71,14 @@ export const registerCandidate = async (req: Request, res: Response) => {
     }
 
     // Prevent duplicate applications
-    const existing = await (prisma as any).candidate.findFirst({
+    const existing = await prisma.candidate.findFirst({
       where: { userId, taskId },
     });
     if (existing) {
       return res.status(409).json({ error: "Already applied for this task", candidateId: existing.id });
     }
 
-    const candidate = await (prisma as any).candidate.create({
+    const candidate = await prisma.candidate.create({
       data: { userId, taskId, treeId },
     });
 
@@ -107,7 +107,7 @@ export const getCandidates = async (req: Request, res: Response) => {
       return res.status(400).json({ error: "taskId (query param) is required" });
     }
 
-    const candidates = await (prisma as any).candidate.findMany({
+    const candidates = await prisma.candidate.findMany({
       where: { taskId },
       orderBy: { createdAt: "asc" },
     });
@@ -147,7 +147,7 @@ export const resolveCandidate = async (req: Request, res: Response) => {
     }
 
     // Fetch all PENDING candidates for this task
-    const candidates = await (prisma as any).candidate.findMany({
+    const candidates = await prisma.candidate.findMany({
       where: { taskId, status: "PENDING" },
       include: {
         // Prisma doesn't auto-join; we fetch user data separately
@@ -179,13 +179,13 @@ export const resolveCandidate = async (req: Request, res: Response) => {
       }
 
       // Fetch winner's user info for notification
-      const winnerUser = await (prisma as any).user.findUnique({
+      const winnerUser = await prisma.user.findUnique({
         where: { id: winnerId },
         select: { id: true, firstName: true, username: true, telegramUserId: true },
       });
 
       // Accept winner
-      await (prisma as any).candidate.update({
+      await prisma.candidate.update({
         where: { id: winner.id },
         data: { status: "ACCEPTED" },
       });
@@ -194,7 +194,7 @@ export const resolveCandidate = async (req: Request, res: Response) => {
       // Reject all others
       for (const c of candidates) {
         if (c.userId !== winnerId) {
-          await (prisma as any).candidate.update({
+          await prisma.candidate.update({
             where: { id: c.id },
             data: { status: "REJECTED" },
           });
@@ -203,7 +203,7 @@ export const resolveCandidate = async (req: Request, res: Response) => {
       }
 
       // Get the ExternalTask info for the task
-      const extTask = await (prisma as any).externalTask.findFirst({
+      const extTask = await prisma.externalTask.findFirst({
         where: { kanbanTaskId: taskId },
         select: { id: true, title: true, kanbanTaskId: true, kanbanBoard: true },
       });
@@ -225,7 +225,7 @@ export const resolveCandidate = async (req: Request, res: Response) => {
       // ── External hire ────────────────────────────────────────────────
       // Reject all pending candidates (no internal winner)
       for (const c of candidates) {
-        await (prisma as any).candidate.update({
+        await prisma.candidate.update({
           where: { id: c.id },
           data: { status: "REJECTED" },
         });
@@ -233,7 +233,7 @@ export const resolveCandidate = async (req: Request, res: Response) => {
       }
 
       // Get ExternalTask info for context
-      const extTask = await (prisma as any).externalTask.findFirst({
+      const extTask = await prisma.externalTask.findFirst({
         where: { kanbanTaskId: taskId },
         select: { id: true, title: true, kanbanTaskId: true, treeId: true },
       });
@@ -253,7 +253,7 @@ export const resolveCandidate = async (req: Request, res: Response) => {
 
       // Reject all pending candidates
       for (const c of candidates) {
-        await (prisma as any).candidate.update({
+        await prisma.candidate.update({
           where: { id: c.id },
           data: { status: "REJECTED" },
         });
@@ -261,7 +261,7 @@ export const resolveCandidate = async (req: Request, res: Response) => {
       }
 
       // Get task info for CancelledPlan
-      const extTask = await (prisma as any).externalTask.findFirst({
+      const extTask = await prisma.externalTask.findFirst({
         where: { kanbanTaskId: taskId },
         select: { title: true, description: true, skills: true, budget: true },
       });

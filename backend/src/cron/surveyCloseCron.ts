@@ -33,7 +33,7 @@ export async function runSurveyClose(
 ): Promise<SurveyCloseResult[]> {
   const now = new Date();
 
-  const surveys = await (prisma as any).satisfactionSurvey.findMany({
+  const surveys = await prisma.satisfactionSurvey.findMany({
     where: {
       closesAt: { lt: now },
       visible: false,
@@ -53,7 +53,7 @@ export async function runSurveyClose(
 
     try {
       // Get target user name
-      const targetUser = await (prisma as any).user.findUnique({
+      const targetUser = await prisma.user.findUnique({
         where: { id: survey.targetUserId },
         select: { firstName: true, username: true },
       });
@@ -71,7 +71,7 @@ export async function runSurveyClose(
         const newAvg = Math.round((sum / voteCount) * 10) / 10; // 1 decimal
 
         // Upsert SatisfactionScore: weighted average
-        const oldScore = await (prisma as any).satisfactionScore.findUnique({
+        const oldScore = await prisma.satisfactionScore.findUnique({
           where: {
             userId_skill: {
               userId: survey.targetUserId,
@@ -93,7 +93,7 @@ export async function runSurveyClose(
           finalTotal = voteCount;
         }
 
-        await (prisma as any).satisfactionScore.upsert({
+        await prisma.satisfactionScore.upsert({
           where: {
             userId_skill: {
               userId: survey.targetUserId,
@@ -170,7 +170,7 @@ export async function runSurveyClose(
       }
 
       // Mark as visible (closed and results revealed)
-      await (prisma as any).satisfactionSurvey.update({
+      await prisma.satisfactionSurvey.update({
         where: { id: survey.id },
         data: { visible: true },
       });

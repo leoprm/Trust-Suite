@@ -19,7 +19,7 @@ export async function countSpecialists(
   hashtag: string
 ): Promise<number> {
   // Get all members who claim this skill
-  const allMembers = await (prisma as any).treeMember.findMany({
+  const allMembers = await prisma.treeMember.findMany({
     where: { treeId },
     select: { userId: true, skills: true },
   });
@@ -34,7 +34,7 @@ export async function countSpecialists(
   // Count how many have >= 7 completed tasks
   let count = 0;
   for (const m of membersWithSkill) {
-    const completed = await (prisma as any).task.count({
+    const completed = await prisma.task.count({
       where: {
         assignedTo: m.userId,
         status: 'COMPLETED',

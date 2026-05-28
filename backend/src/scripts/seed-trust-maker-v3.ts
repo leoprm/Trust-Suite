@@ -263,19 +263,19 @@ async function main() {
 
   // Delete in dependency order (children first) — V3 models only
   const cleanupOps: Array<() => Promise<any>> = [
-    () => (prisma as any).ideaVote?.deleteMany() ?? Promise.resolve(),
-    () => (prisma as any).needIdea?.deleteMany() ?? Promise.resolve(),
-    () => (prisma as any).result?.deleteMany() ?? Promise.resolve(),
-    () => (prisma as any).idea?.deleteMany() ?? Promise.resolve(),
-    () => (prisma as any).need?.deleteMany({ where: { tree: { name: { in: DEMO_TREE_NAMES } } } }),
-    () => (prisma as any).need?.deleteMany({ where: { treeId: null, creator: { email: { contains: '@demo' } } } }),
-    () => (prisma as any).treeMember?.deleteMany({ where: { tree: { name: { in: DEMO_TREE_NAMES } } } }),
+    () => prisma.ideaVote?.deleteMany() ?? Promise.resolve(),
+    () => prisma.needIdea?.deleteMany() ?? Promise.resolve(),
+    () => prisma.result?.deleteMany() ?? Promise.resolve(),
+    () => prisma.idea?.deleteMany() ?? Promise.resolve(),
+    () => prisma.need?.deleteMany({ where: { tree: { name: { in: DEMO_TREE_NAMES } } } }),
+    () => prisma.need?.deleteMany({ where: { treeId: null, creator: { email: { contains: '@demo' } } } }),
+    () => prisma.treeMember?.deleteMany({ where: { tree: { name: { in: DEMO_TREE_NAMES } } } }),
     // Rating table has FK to AgentMembership (ON DELETE RESTRICT — must delete first)
     () => prisma.$executeRawUnsafe('DELETE FROM Rating') as any,
-    () => (prisma as any).agentMembership?.deleteMany() ?? Promise.resolve(),
-    () => (prisma as any).agent?.deleteMany() ?? Promise.resolve(),
-    () => (prisma as any).managedServer?.deleteMany() ?? Promise.resolve(),
-    () => (prisma as any).tree?.deleteMany({ where: { name: { in: DEMO_TREE_NAMES } } }),
+    () => prisma.agentMembership?.deleteMany() ?? Promise.resolve(),
+    () => prisma.agent?.deleteMany() ?? Promise.resolve(),
+    () => prisma.managedServer?.deleteMany() ?? Promise.resolve(),
+    () => prisma.tree?.deleteMany({ where: { name: { in: DEMO_TREE_NAMES } } }),
   ];
 
   for (const op of cleanupOps) {

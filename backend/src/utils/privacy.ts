@@ -29,18 +29,18 @@ export function isVisibilityLevel(value: unknown): value is VisibilityLevel {
 }
 
 export async function getOrCreatePrivacySettings(userId: string): Promise<PrivacySettingsShape> {
-  const existing = await (prisma as any).privacySettings.findUnique({
+  const existing = await prisma.privacySettings.findUnique({
     where: { userId },
   });
 
-  if (existing) return existing;
+  if (existing) return existing as unknown as PrivacySettingsShape;
 
-  return (prisma as any).privacySettings.create({
+  return prisma.privacySettings.create({
     data: {
       userId,
       ...DEFAULT_PRIVACY_SETTINGS,
-    },
-  });
+    } as any,
+  }) as unknown as PrivacySettingsShape;
 }
 
 export function withDefaultPrivacySettings(userId: string, settings?: Partial<PrivacySettingsShape> | null): PrivacySettingsShape {
@@ -54,14 +54,14 @@ export function withDefaultPrivacySettings(userId: string, settings?: Partial<Pr
 export async function hasSharedTree(viewerId: string, ownerId: string): Promise<boolean> {
   if (viewerId === ownerId) return true;
 
-  const viewerMemberships = await (prisma as any).treeMember.findMany({
+  const viewerMemberships = await prisma.treeMember.findMany({
     where: { userId: viewerId },
     select: { treeId: true },
   });
   const viewerTreeIds = viewerMemberships.map((m: any) => m.treeId);
   if (viewerTreeIds.length === 0) return false;
 
-  const shared = await (prisma as any).treeMember.findFirst({
+  const shared = await prisma.treeMember.findFirst({
     where: {
       userId: ownerId,
       treeId: { in: viewerTreeIds },

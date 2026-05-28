@@ -35,7 +35,7 @@ export async function runTalentMigration(
   let treesAnalyzed = 0;
 
   // 1. Encontrar árboles con parentTreeId = null (padres con subárboles)
-  const parentTrees = await (prisma as any).tree.findMany({
+  const parentTrees = await prisma.tree.findMany({
     where: { parentTreeId: null },
     include: {
       childTrees: {
@@ -97,7 +97,7 @@ export async function runTalentMigration(
               `$${betterRate?.ratePerHour}/hr (${betterTree.name})`
           );
 
-          await (prisma as any).talentMigrationSuggestion.create({
+          await prisma.talentMigrationSuggestion.create({
             data: {
               memberId: candidate.id,
               fromTreeId: child.id,

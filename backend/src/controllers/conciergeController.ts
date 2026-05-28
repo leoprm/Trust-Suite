@@ -245,14 +245,14 @@ async function resolveOrCreateUser(telegramUserId: string, displayName?: string)
   const tgId = BigInt(telegramUserId);
 
   // 1. Buscar existente
-  const existing = await (prisma as any).user.findUnique({
+  const existing = await prisma.user.findUnique({
     where: { telegramUserId: tgId },
     select: { id: true, username: true, role: true, createdAt: true },
   });
   if (existing) {
     // Update firstName if it's still the default tg_ pattern and we have a real name
     if (displayName && existing.username.startsWith('tg_')) {
-      await (prisma as any).user.update({
+      await prisma.user.update({
         where: { id: existing.id },
         data: { username: displayName, firstName: displayName },
       }).catch(() => {});
@@ -264,7 +264,7 @@ async function resolveOrCreateUser(telegramUserId: string, displayName?: string)
   // 2. Auto-registrar
   const username = displayName || `tg_${telegramUserId}`;
   try {
-    const created = await (prisma as any).user.create({
+    const created = await prisma.user.create({
       data: {
         username,
         firstName: displayName || undefined,
@@ -384,7 +384,7 @@ async function handleStatsQuery(treeId: string): Promise<string> {
   if (!tree) return 'Árbol no encontrado.';
 
   const openNeeds = await prisma.need.count({ where: { treeId, status: 'OPEN' } });
-  const ideaCount = await (prisma as any).needIdea.count({ where: { need: { treeId } } });
+  const ideaCount = await prisma.needIdea.count({ where: { need: { treeId } } });
 
   return [
     `📊 **${tree.icono} ${tree.name}**\n`,
@@ -427,7 +427,7 @@ async function handleWhoAmI(telegramUserId: string): Promise<string> {
 // ── Cost transparency query ─────────────────────────────────────────────
 
 async function handleCostQuery(telegramUserId: string): Promise<string> {
-  const configs = await (prisma as any).platformConfig.findMany();
+  const configs = await prisma.platformConfig.findMany();
   const getVal = (key: string): string => {
     const c = configs.find((c: any) => c.key === key);
     return c?.value ?? '0';
@@ -443,7 +443,7 @@ async function handleCostQuery(telegramUserId: string): Promise<string> {
   startOfMonth.setDate(1);
   startOfMonth.setHours(0, 0, 0, 0);
 
-  const usage = await (prisma as any).apiUsage.findMany({
+  const usage = await prisma.apiUsage.findMany({
     where: { createdAt: { gte: startOfMonth } },
   });
 
@@ -467,14 +467,14 @@ async function handleCostQuery(telegramUserId: string): Promise<string> {
   if (telegramUserId) {
     const user = await resolveOrCreateUser(telegramUserId);
     if (user) {
-      const memberships = await (prisma as any).treeMember.findMany({
+      const memberships = await prisma.treeMember.findMany({
         where: { userId: user.id, status: 'ACTIVE' },
         include: { tree: { select: { id: true, name: true } } },
       });
 
       if (memberships.length > 0) {
         // Active trees total (for fixed cost division)
-        const activeTrees = await (prisma as any).treeMember.groupBy({
+        const activeTrees = await prisma.treeMember.groupBy({
           by: ['treeId'],
           where: { status: 'ACTIVE' },
         });
@@ -486,7 +486,7 @@ async function handleCostQuery(telegramUserId: string): Promise<string> {
           const treeId = m.treeId;
 
           // API usage for this tree this month (excluding free period)
-          const apiUsage = await (prisma as any).apiUsage.aggregate({
+          const apiUsage = await prisma.apiUsage.aggregate({
             where: {
               treeId,
               createdAt: { gte: startOfMonth },
@@ -498,7 +498,7 @@ async function handleCostQuery(telegramUserId: string): Promise<string> {
           const apiCost = apiUsage._sum?.cost || 0;
 
           // Active members in this tree
-          const memberCount = await (prisma as any).treeMember.count({
+          const memberCount = await prisma.treeMember.count({
             where: { treeId, status: 'ACTIVE' },
           });
 
@@ -773,7 +773,7 @@ export const conciergeHandler = async (req: Request, res: Response) => {
     // ── Fetch member skills for organize intent ─────────────────────────────
     let memberSkillsContext = '';
     if (isOrganize) {
-      const members = await (prisma as any).treeMember.findMany({
+      const members = await prisma.treeMember.findMany({
         where: { treeId, status: 'ACTIVE' },
         include: {
           user: { select: { id: true, username: true, skills: true, totalXp: true } },
@@ -873,7 +873,7 @@ export const conciergeHandler = async (req: Request, res: Response) => {
 
     // Inject tech stack from DB (T26)
     try {
-      const techStack = await (prisma as any).treeTechStack.findMany({
+      const techStack = await prisma.treeTechStack.findMany({
         where: { treeId, status: 'active' },
         include: { stackItem: { select: { name: true, description: true, category: true } } },
         take: 10,
@@ -892,7 +892,7 @@ export const conciergeHandler = async (req: Request, res: Response) => {
 
     // Inject SSH servers from DB (F3-SSH)
     try {
-      const servers = await (prisma as any).managedServer.findMany({
+      const servers = await prisma.managedServer.findMany({
         where: { treeId },
         select: { id: true, name: true, ip: true, port: true, status: true },
       });
@@ -1084,7 +1084,7 @@ export const conciergeHandler = async (req: Request, res: Response) => {
       const tgId = BigInt(telegramUserId);
 
       // Skip usage tracking for platform admins
-      const isAdmin = await (prisma as any).user.findUnique({
+      const isAdmin = await prisma.user.findUnique({
         where: { telegramUserId: tgId },
         select: { isPlatformAdmin: true },
       });
@@ -1098,7 +1098,7 @@ export const conciergeHandler = async (req: Request, res: Response) => {
           if (user) {
             let freeMonths = 2;
             try {
-              const config = await (prisma as any).platformConfig.findUnique({ where: { key: 'free_period_months' } });
+              const config = await prisma.platformConfig.findUnique({ where: { key: 'free_period_months' } });
               if (config) freeMonths = parseInt(config.value, 10) || 2;
             } catch {}
             const billingStart = new Date(user.createdAt);
@@ -1115,8 +1115,8 @@ export const conciergeHandler = async (req: Request, res: Response) => {
         // Intentar leer precios de PlatformConfig
         let priceInput = 0.27, priceOutput = 1.10;
         try {
-          const configInput = await (prisma as any).platformConfig.findUnique({ where: { key: 'cost_api_input_1m' } });
-          const configOutput = await (prisma as any).platformConfig.findUnique({ where: { key: 'cost_api_output_1m' } });
+          const configInput = await prisma.platformConfig.findUnique({ where: { key: 'cost_api_input_1m' } });
+          const configOutput = await prisma.platformConfig.findUnique({ where: { key: 'cost_api_output_1m' } });
           if (configInput) priceInput = parseFloat(JSON.parse(configInput.value));
           if (configOutput) priceOutput = parseFloat(JSON.parse(configOutput.value));
         } catch {}
@@ -1125,7 +1125,7 @@ export const conciergeHandler = async (req: Request, res: Response) => {
         const costOutput = (usage.completion_tokens || 0) * priceOutput / 1_000_000;
         const cost = costInput + costOutput;
 
-        await (prisma as any).apiUsage.create({
+        await prisma.apiUsage.create({
           data: {
             userId: tgId,
             treeId,

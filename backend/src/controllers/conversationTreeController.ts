@@ -27,13 +27,13 @@ export const createBranch = async (req: Request, res: Response) => {
 
     // Verify parent exists if provided
     if (parentId) {
-      const parent = await (prisma as any).conversationNode.findUnique({
+      const parent = await prisma.conversationNode.findUnique({
         where: { id: parentId },
       });
       if (!parent) return res.status(404).json({ error: "Parent node not found" });
     }
 
-    const node = await (prisma as any).conversationNode.create({
+    const node = await prisma.conversationNode.create({
       data: {
         treeId,
         parentId: parentId || null,
@@ -57,7 +57,7 @@ export const getConversationTree = async (req: Request, res: Response) => {
 
     const prisma = getPrisma();
 
-    const nodes = await (prisma as any).conversationNode.findMany({
+    const nodes = await prisma.conversationNode.findMany({
       where: { treeId },
       orderBy: { createdAt: "asc" },
       select: {
@@ -105,7 +105,7 @@ export const checkoutBranch = async (req: Request, res: Response) => {
 
     const prisma = getPrisma();
 
-    const node = await (prisma as any).conversationNode.findUnique({
+    const node = await prisma.conversationNode.findUnique({
       where: { id: nodeId },
     });
 
@@ -154,7 +154,7 @@ export const summarizeNode = async (req: Request, res: Response) => {
     }
 
     const prisma = getPrisma();
-    await (prisma as any).conversationNode.update({
+    await prisma.conversationNode.update({
       where: { id: nodeId },
       data: { summary },
     });

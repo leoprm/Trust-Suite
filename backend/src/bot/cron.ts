@@ -46,7 +46,7 @@ async function closeTree(
   }
 
   // ── Encontrar todas las necesidades OPEN del árbol ──
-  const openNeeds = await (prisma as any).need.findMany({
+  const openNeeds = await prisma.need.findMany({
     where: { treeId: tree.id, status: "OPEN" },
     orderBy: { dailyVotes: "desc" },
   });
@@ -55,7 +55,7 @@ async function closeTree(
 
   if (totalNeeds === 0) {
     // Sin necesidades → solo regenerar puntos
-    const resetCount = await (prisma as any).treeMember.updateMany({
+    const resetCount = await prisma.treeMember.updateMany({
       where: { treeId: tree.id, status: "ACTIVE" },
       data: { dailyPoints: 100 },
     });
@@ -67,20 +67,20 @@ async function closeTree(
   const winner = openNeeds[0];
 
   if (winner.dailyVotes > 0) {
-    await (prisma as any).need.update({
+    await prisma.need.update({
       where: { id: winner.id },
       data: { status: "IN_PROGRESS" },
     });
   }
 
   // ── Resetear dailyVotes de TODAS las necesidades del árbol ──
-  await (prisma as any).need.updateMany({
+  await prisma.need.updateMany({
     where: { treeId: tree.id },
     data: { dailyVotes: 0 },
   });
 
   // ── Regenerar dailyPoints = 100 para todos los miembros ──
-  const resetCount = await (prisma as any).treeMember.updateMany({
+  const resetCount = await prisma.treeMember.updateMany({
     where: { treeId: tree.id, status: "ACTIVE" },
     data: { dailyPoints: 100 },
   });
@@ -102,7 +102,7 @@ export async function runDailyClose(
   prisma: PrismaClient,
   bot: Bot<BotContext> | null
 ): Promise<DailyCloseResult[]> {
-  const trees = await (prisma as any).tree.findMany({
+  const trees = await prisma.tree.findMany({
     where: { telegramChatId: { not: null } },
     select: { id: true, name: true, telegramChatId: true },
   });
@@ -169,7 +169,7 @@ async function calcMonthlyFee(
   // ── costoBase: suscripción del creador ──
   let costoBase = 0;
   if (tree.creatorId) {
-    const sub = await (prisma as any).subscription.findFirst({
+    const sub = await prisma.subscription.findFirst({
       where: { userId: tree.creatorId, status: "ACTIVE" },
       select: { monthlyCost: true },
     });
@@ -177,7 +177,7 @@ async function calcMonthlyFee(
   }
 
   // ── Σ presupuestos de tasks activas ──
-  const budgetAgg = await (prisma as any).task.aggregate({
+  const budgetAgg = await prisma.task.aggregate({
     where: {
       treeId: tree.id,
       status: { in: ACTIVE_TASK_STATUSES },
@@ -187,7 +187,7 @@ async function calcMonthlyFee(
   const taskBudgetSum = budgetAgg._sum.budget ?? 0;
 
   // ── N miembros activos ──
-  const memberCount = await (prisma as any).treeMember.count({
+  const memberCount = await prisma.treeMember.count({
     where: { treeId: tree.id, status: "ACTIVE" },
   });
 
@@ -198,14 +198,14 @@ async function calcMonthlyFee(
   const cuota = Math.round(costoBase + taskBudgetSum / memberCount);
 
   // ── Persistir monthlyFee en cada miembro activo ──
-  await (prisma as any).treeMember.updateMany({
+  await prisma.treeMember.updateMany({
     where: { treeId: tree.id, status: "ACTIVE" },
     data: { monthlyFee: cuota },
   });
 
   // ── Enviar DM a cada miembro con telegramUserId ──
   if (bot) {
-    const members = await (prisma as any).treeMember.findMany({
+    const members = await prisma.treeMember.findMany({
       where: { treeId: tree.id, status: "ACTIVE" },
       include: {
         user: { select: { telegramUserId: true } },
@@ -232,7 +232,7 @@ async function calcMonthlyFee(
       } catch (err: any) {
         // 403 = user blocked the bot → clean up telegramUserId
         if (err?.error_code === 403) {
-          await (prisma as any).user.update({
+          await prisma.user.update({
             where: { id: m.userId },
             data: { telegramUserId: null },
           });
@@ -258,7 +258,7 @@ export async function runMonthlyFee(
   prisma: PrismaClient,
   bot: Bot<BotContext> | null
 ): Promise<MonthlyFeeResult[]> {
-  const trees = await (prisma as any).tree.findMany({
+  const trees = await prisma.tree.findMany({
     select: { id: true, name: true, creatorId: true },
   });
 

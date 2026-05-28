@@ -10,7 +10,7 @@ const prisma = new PrismaClient();
  */
 export const getWaitlist = async (req: any, res: Response) => {
   try {
-    const entries = await (prisma as any).waitlist.findMany({
+    const entries = await prisma.waitlist.findMany({
       orderBy: { createdAt: "desc" },
     });
     res.json(entries);

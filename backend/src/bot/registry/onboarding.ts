@@ -21,7 +21,7 @@ export function register(bot: Bot<BotContext>, prisma: PrismaClient): void {
     // ── Guard: solo el creador del grupo puede responder al onboarding ──
     if (chatType === "group" || chatType === "supergroup") {
       const chatId = ctx.chat.id.toString();
-      const tree = await (prisma as any).tree.findFirst({
+      const tree = await prisma.tree.findFirst({
         where: { telegramChatId: chatId },
         select: { id: true, onboardingInviterId: true },
       });
@@ -45,7 +45,7 @@ export function register(bot: Bot<BotContext>, prisma: PrismaClient): void {
     // Resolver el árbol si no está en sesión (primera respuesta)
     if (!session.onboardingTreeId) {
       const chatId = ctx.chat.id.toString();
-      const tree = await (prisma as any).tree.findFirst({
+      const tree = await prisma.tree.findFirst({
         where: { telegramChatId: chatId },
       });
       if (!tree) {
@@ -68,7 +68,7 @@ export function register(bot: Bot<BotContext>, prisma: PrismaClient): void {
       const treeId = session.onboardingTreeId;
 
       // Guardar descripción y objetivos
-      await (prisma as any).tree.update({
+      await prisma.tree.update({
         where: { id: treeId },
         data: { description: text, objectives: text },
       });
@@ -146,7 +146,7 @@ export function register(bot: Bot<BotContext>, prisma: PrismaClient): void {
       }
 
       // Guardar WhatsApp group ID
-      await (prisma as any).tree.update({
+      await prisma.tree.update({
         where: { id: session.onboardingTreeId },
         data: { whatsappGroupId: text },
       });

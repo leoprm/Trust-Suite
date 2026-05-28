@@ -931,7 +931,7 @@ export const saveTreeSkill = async (req: Request, res: Response) => {
     if (!user) return res.status(404).json({ error: 'User not found' });
 
     // Upsert TreeSkill (idempotent)
-    const result = await (prisma as any).treeSkill.upsert({
+    const result = await prisma.treeSkill.upsert({
       where: {
         userId_treeId_skill: { userId, treeId, skill },
       },
@@ -1562,7 +1562,7 @@ export const chatHistoryTreeSandbox = async (req: Request, res: Response) => {
       return res.status(400).json({ error: "treeId is required" });
     }
 
-    const messages = await (prisma as any).chatMessage.findMany({
+    const messages = await prisma.chatMessage.findMany({
       where: { treeId },
       orderBy: { createdAt: "desc" },
       take: limit,

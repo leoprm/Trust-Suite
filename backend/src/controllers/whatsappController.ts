@@ -214,7 +214,7 @@ export const whatsappReceive = async (req: Request, res: Response) => {
     try {
       // Dynamic import to avoid circular dependency
       const { prisma } = await import('../index');
-      const firstTree = await (prisma as any).tree.findFirst({
+      const firstTree = await prisma.tree.findFirst({
         where: { admissionPolicy: 'OPEN' },
         select: { id: true },
         orderBy: { createdAt: 'asc' },

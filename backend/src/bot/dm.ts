@@ -41,7 +41,7 @@ async function resolveOrCreateDMUser(
   if (!telegramUserId) return null;
   const tgId = BigInt(telegramUserId);
 
-  const existing = await (prisma as any).user.findUnique({
+  const existing = await prisma.user.findUnique({
     where: { telegramUserId: tgId },
     select: {
       id: true,
@@ -57,7 +57,7 @@ async function resolveOrCreateDMUser(
 
   // Auto-register - language starts as null (forces onboarding selector)
   try {
-    return await (prisma as any).user.create({
+    return await prisma.user.create({
       data: {
         username: `tg_${telegramUserId}`,
         telegramUserId: tgId,
@@ -165,7 +165,7 @@ export async function handleDM(
   }
 
   // Mensaje natural -> concierge con el primer arbol
-  const memberships = await (prisma as any).treeMember.findMany({
+  const memberships = await prisma.treeMember.findMany({
     where: { userId: user.id, status: "ACTIVE" },
     include: { tree: { select: { id: true, name: true, icono: true } } },
     take: 1,
@@ -237,7 +237,7 @@ async function showProfile(
   lng: string,
 ): Promise<void> {
   // Parse skills from WorkerSkill table
-  const workerSkills = await (prisma as any).workerSkill.findMany({
+  const workerSkills = await prisma.workerSkill.findMany({
     where: { userId: user.id },
     orderBy: { xp: "desc" as const },
   });
@@ -250,13 +250,13 @@ async function showProfile(
   const level = Math.floor(Math.sqrt(totalXp) / 10) + 1;
 
   // Get memberships
-  const memberships = await (prisma as any).treeMember.findMany({
+  const memberships = await prisma.treeMember.findMany({
     where: { userId: user.id, status: "ACTIVE" },
     include: { tree: { select: { name: true, icono: true } } },
   });
 
   // Get pending tasks
-  const pendingTasks = await (prisma as any).task.findMany({
+  const pendingTasks = await prisma.task.findMany({
     where: {
       assigneeId: user.id,
       status: { in: ["PENDING", "ASSIGNED", "IN_PROGRESS"] },
@@ -333,7 +333,7 @@ export async function handleProfileCallback(
     }
 
     // Read skills from WorkerSkill table
-    const workerSkills = await (prisma as any).workerSkill.findMany({
+    const workerSkills = await prisma.workerSkill.findMany({
       where: { userId: user.id },
       orderBy: { xp: "desc" as const },
     });
@@ -360,7 +360,7 @@ export async function handleProfileCallback(
       return true;
     }
 
-    const tasks = await (prisma as any).task.findMany({
+    const tasks = await prisma.task.findMany({
       where: { assigneeId: user.id },
       orderBy: { createdAt: "desc" },
       take: 20,
@@ -416,7 +416,7 @@ export async function handleProfileCallback(
     }
 
     // Update user language in DB
-    await (prisma as any).user.update({
+    await prisma.user.update({
       where: { telegramUserId: BigInt(tgUser.id) },
       data: { language: selectedLng },
     });
@@ -447,7 +447,7 @@ async function getUserCosts(
   if (!user) return t("errors:profile_not_found", lng);
 
   // Platform config
-  const configs = await (prisma as any).platformConfig.findMany();
+  const configs = await prisma.platformConfig.findMany();
   const getVal = (key: string): string => {
     const c = configs.find((c: any) => c.key === key);
     return c?.value ?? "0";
@@ -464,7 +464,7 @@ async function getUserCosts(
   startOfMonth.setHours(0, 0, 0, 0);
 
   // User's memberships
-  const memberships = await (prisma as any).treeMember.findMany({
+  const memberships = await prisma.treeMember.findMany({
     where: { userId: user.id, status: "ACTIVE" },
     include: { tree: { select: { id: true, name: true, icono: true } } },
   });
@@ -474,7 +474,7 @@ async function getUserCosts(
   }
 
   // Active trees (for fixed cost division)
-  const activeTrees = await (prisma as any).treeMember.groupBy({
+  const activeTrees = await prisma.treeMember.groupBy({
     by: ["treeId"],
     where: { status: "ACTIVE" },
   });
@@ -490,7 +490,7 @@ async function getUserCosts(
     const icono = m.tree.icono;
 
     // API usage for this tree this month (non-free)
-    const apiAgg = await (prisma as any).apiUsage.aggregate({
+    const apiAgg = await prisma.apiUsage.aggregate({
       where: {
         treeId,
         createdAt: { gte: startOfMonth },
@@ -501,7 +501,7 @@ async function getUserCosts(
     const apiCost = apiAgg._sum?.cost || 0;
 
     // Active members in this tree
-    const memberCount = await (prisma as any).treeMember.count({
+    const memberCount = await prisma.treeMember.count({
       where: { treeId, status: "ACTIVE" },
     });
 
@@ -519,7 +519,7 @@ async function getUserCosts(
   }
 
   // Check if user is in free period
-  const freeUsage = await (prisma as any).apiUsage.findFirst({
+  const freeUsage = await prisma.apiUsage.findFirst({
     where: {
       userId: user.id,
       createdAt: { gte: startOfMonth },

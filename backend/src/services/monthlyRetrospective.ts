@@ -559,7 +559,7 @@ async function runQuarterlyRetrospective(
   const { quarterLabel, prevQuarterLabel, yearMonths } =
     getQuarterLabel(today);
 
-  const trees = await (prisma as any).tree.findMany({
+  const trees = await prisma.tree.findMany({
     where: { telegramChatId: { not: null } },
     select: { id: true, name: true, telegramChatId: true },
   });
@@ -630,7 +630,7 @@ export async function runMonthlyRetrospective(
 
   const { yearMonth, label: monthLabel } = getPreviousMonth();
 
-  const trees = await (prisma as any).tree.findMany({
+  const trees = await prisma.tree.findMany({
     where: { telegramChatId: { not: null } },
     select: { id: true, name: true, telegramChatId: true },
   });

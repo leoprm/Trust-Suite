@@ -3,7 +3,7 @@ import { prisma } from '../index';
 async function getTicketStatus(
   userId: string, treeId: string, skill: string
 ): Promise<{ tickets: number; streakProgress: number }> {
-  const membership = await (prisma as any).treeMember.findUnique({
+  const membership = await prisma.treeMember.findUnique({
     where: { userId_treeId: { userId, treeId } },
     select: { goldenTickets: true },
   });
@@ -41,11 +41,11 @@ export async function computeSkillTier(
   phase: 'GENESIS' | 'MADUREZ';
 }> {
   // Try to get data from UserSkillXP table first (faster, pre-aggregated)
-  const skillXP = await (prisma as any).userSkillXP.findUnique({
+  const skillXP = await prisma.userSkillXP.findUnique({
     where: { userId_skillTag_treeId: { userId, skillTag: skillName, treeId } },
   });
 
-  const completedTasks = skillXP?.completedTasks ?? await (prisma as any).task.count({
+  const completedTasks = skillXP?.completedTasks ?? await prisma.task.count({
     where: {
       assignedTo: userId,
       status: 'COMPLETED',
@@ -74,7 +74,7 @@ export async function computeSkillTier(
   if (skillXP?.cachedPercentile != null) {
     const tier = skillXP.cachedPercentile >= 80 ? 'ELITE_DORADO' : 'ESPECIALISTA';
     // Approximate rank from percentile
-    const allSpecialists = await (prisma as any).userSkillXP.count({
+    const allSpecialists = await prisma.userSkillXP.count({
       where: { skillTag: skillName, treeId, completedTasks: { gte: 7 } },
     });
     const rank = Math.max(1, Math.ceil((100 - skillXP.cachedPercentile) / 100 * allSpecialists));
@@ -82,7 +82,7 @@ export async function computeSkillTier(
   }
 
   // Fallback: real-time calculation using accumulatedPoints
-  const allRecords = await (prisma as any).userSkillXP.findMany({
+  const allRecords = await prisma.userSkillXP.findMany({
     where: { skillTag: skillName, treeId, completedTasks: { gte: 7 } },
     orderBy: { accumulatedPoints: 'desc' },
     select: { userId: true, accumulatedPoints: true },
@@ -121,7 +121,7 @@ export async function canAssumeTask(
   specialistCount?: number;
   hashtag?: string;
 }> {
-  const task = await (prisma as any).task.findUnique({
+  const task = await prisma.task.findUnique({
     where: { id: taskId },
     include: { tags: true, branch: { select: { treeId: true } } },
   });
