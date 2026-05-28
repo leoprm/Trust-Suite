@@ -2465,9 +2465,6 @@ export async function createBot(prisma: PrismaClient): Promise<Bot<BotContext> |
     const chatType = ctx.chat?.type;
     const voiceMimeType = msg.voice.mime_type;
 
-    // Responder inmediatamente — no bloquear al usuario
-    ctx.reply("🎙️ Estoy procesando tu audio, te respondo en un momento...").catch(() => {});
-
     // Procesar transcripción + pipeline en background (fire-and-forget)
     setTimeout(() => {
       (async () => {
