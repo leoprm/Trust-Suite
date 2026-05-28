@@ -1,43 +1,14 @@
 import { Bot } from "grammy";
 import { PrismaClient } from "@prisma/client";
 import { BotContext } from "../types";
-import { findTreeByChat } from "../treeResolver";
+import { requireTreeAdmin } from "../helpers";
 
 
 export function register(bot: Bot<BotContext>, prisma: PrismaClient): void {
   bot.command("pause", async (ctx) => {
-    const chatType = ctx.chat?.type;
-    if (chatType !== "group" && chatType !== "supergroup") {
-      await ctx.reply("🔕 /pause solo funciona en grupos.");
-      return;
-    }
-    const chatId = ctx.chat?.id.toString();
-    if (!chatId) return;
-
-    const tree = await findTreeByChat(prisma, chatId);
-    if (!tree) {
-      await ctx.reply("⚠️ Este grupo no está vinculado a ningún árbol.");
-      return;
-    }
-
-    // Admin check
-    const tgUser = ctx.from;
-    if (!tgUser) return;
-    const user = await (prisma as any).user.findUnique({
-      where: { telegramUserId: BigInt(tgUser.id) },
-      select: { id: true },
-    });
-    if (!user) {
-      await ctx.reply("⚠️ No tienes una cuenta vinculada.");
-      return;
-    }
-    const adminMember = await (prisma as any).treeMember.findFirst({
-      where: { userId: user.id, treeId: tree.id, role: "ADMIN", status: "ACTIVE" },
-    });
-    if (!adminMember) {
-      await ctx.reply("⚠️ Solo el admin del árbol puede usar /pause.");
-      return;
-    }
+    const admin = await requireTreeAdmin(prisma, ctx);
+    if (!admin) return;
+    const { tree } = admin;
 
     await (prisma as any).tree.update({
       where: { id: tree.id },
@@ -47,38 +18,9 @@ export function register(bot: Bot<BotContext>, prisma: PrismaClient): void {
   });
 
   bot.command("unpause", async (ctx) => {
-    const chatType = ctx.chat?.type;
-    if (chatType !== "group" && chatType !== "supergroup") {
-      await ctx.reply("🔔 /unpause solo funciona en grupos.");
-      return;
-    }
-    const chatId = ctx.chat?.id.toString();
-    if (!chatId) return;
-
-    const tree = await findTreeByChat(prisma, chatId);
-    if (!tree) {
-      await ctx.reply("⚠️ Este grupo no está vinculado a ningún árbol.");
-      return;
-    }
-
-    // Admin check
-    const tgUser = ctx.from;
-    if (!tgUser) return;
-    const user = await (prisma as any).user.findUnique({
-      where: { telegramUserId: BigInt(tgUser.id) },
-      select: { id: true },
-    });
-    if (!user) {
-      await ctx.reply("⚠️ No tienes una cuenta vinculada.");
-      return;
-    }
-    const adminMember = await (prisma as any).treeMember.findFirst({
-      where: { userId: user.id, treeId: tree.id, role: "ADMIN", status: "ACTIVE" },
-    });
-    if (!adminMember) {
-      await ctx.reply("⚠️ Solo el admin del árbol puede usar /unpause.");
-      return;
-    }
+    const admin = await requireTreeAdmin(prisma, ctx);
+    if (!admin) return;
+    const { tree } = admin;
 
     await (prisma as any).tree.update({
       where: { id: tree.id },
@@ -88,38 +30,9 @@ export function register(bot: Bot<BotContext>, prisma: PrismaClient): void {
   });
 
   bot.command("reset", async (ctx) => {
-    const chatType = ctx.chat?.type;
-    if (chatType !== "group" && chatType !== "supergroup") {
-      await ctx.reply("🔄 /reset solo funciona en grupos.");
-      return;
-    }
-    const chatId = ctx.chat?.id.toString();
-    if (!chatId) return;
-
-    const tree = await findTreeByChat(prisma, chatId);
-    if (!tree) {
-      await ctx.reply("⚠️ Este grupo no está vinculado a ningún árbol.");
-      return;
-    }
-
-    // Admin check
-    const tgUser = ctx.from;
-    if (!tgUser) return;
-    const user = await (prisma as any).user.findUnique({
-      where: { telegramUserId: BigInt(tgUser.id) },
-      select: { id: true },
-    });
-    if (!user) {
-      await ctx.reply("⚠️ No tienes una cuenta vinculada.");
-      return;
-    }
-    const adminMember = await (prisma as any).treeMember.findFirst({
-      where: { userId: user.id, treeId: tree.id, role: "ADMIN", status: "ACTIVE" },
-    });
-    if (!adminMember) {
-      await ctx.reply("⚠️ Solo el admin del árbol puede usar /reset.");
-      return;
-    }
+    const admin = await requireTreeAdmin(prisma, ctx);
+    if (!admin) return;
+    const { tree } = admin;
 
     // Reset AI member states to IDLE (clear message queue)
     await (prisma as any).treeMember.updateMany({
@@ -130,38 +43,9 @@ export function register(bot: Bot<BotContext>, prisma: PrismaClient): void {
   });
 
   bot.command("modo", async (ctx) => {
-    const chatType = ctx.chat?.type;
-    if (chatType !== "group" && chatType !== "supergroup") {
-      await ctx.reply("⚙️ /modo solo funciona en grupos.");
-      return;
-    }
-    const chatId = ctx.chat?.id.toString();
-    if (!chatId) return;
-
-    const tree = await findTreeByChat(prisma, chatId);
-    if (!tree) {
-      await ctx.reply("⚠️ Este grupo no está vinculado a ningún árbol.");
-      return;
-    }
-
-    // Admin check
-    const tgUser = ctx.from;
-    if (!tgUser) return;
-    const user = await (prisma as any).user.findUnique({
-      where: { telegramUserId: BigInt(tgUser.id) },
-      select: { id: true },
-    });
-    if (!user) {
-      await ctx.reply("⚠️ No tienes una cuenta vinculada.");
-      return;
-    }
-    const adminMember = await (prisma as any).treeMember.findFirst({
-      where: { userId: user.id, treeId: tree.id, role: "ADMIN", status: "ACTIVE" },
-    });
-    if (!adminMember) {
-      await ctx.reply("⚠️ Solo el admin del árbol puede usar /modo.");
-      return;
-    }
+    const admin = await requireTreeAdmin(prisma, ctx);
+    if (!admin) return;
+    const { tree } = admin;
 
     // Parse mode argument
     const raw = ctx.message?.text?.split(/\s+/, 2)[1]?.trim().toLowerCase();

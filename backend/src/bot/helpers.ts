@@ -4,6 +4,8 @@ import https from "https";
 import { PrismaClient } from "@prisma/client";
 import { textToSpeech } from "../services/ttsService";
 import { NotebookLMBridge } from "../services/notebooklmBridge";
+import { BotContext } from "./types";
+import { findTreeByChat } from "./treeResolver";
 
 // ── NotebookLM Bridge singleton for bot commands ──────────────
 let _notebooklmBridge: NotebookLMBridge | null = null;
@@ -146,4 +148,53 @@ export async function trackBotMessage(
       );
     }
   }
+}
+
+// ── Admin check helper: verifies group context → tree → user → ADMIN role ──
+// Returns {tree, user} if the caller is an admin of the tree linked to the chat.
+// Returns null if any check fails — the user has already been replied with an error.
+
+export async function requireTreeAdmin(
+  prisma: PrismaClient,
+  ctx: BotContext
+): Promise<{ tree: any; user: any } | null> {
+  // 1. Group-only guard
+  const chatType = ctx.chat?.type;
+  if (chatType !== "group" && chatType !== "supergroup") {
+    await ctx.reply("⚠️ Este comando solo funciona en grupos.");
+    return null;
+  }
+
+  const chatId = ctx.chat?.id.toString();
+  if (!chatId) return null;
+
+  // 2. Tree lookup
+  const tree = await findTreeByChat(prisma, chatId);
+  if (!tree) {
+    await ctx.reply("⚠️ Este grupo no está vinculado a ningún árbol.");
+    return null;
+  }
+
+  // 3. User lookup by Telegram ID
+  const tgUser = ctx.from;
+  if (!tgUser) return null;
+  const user = await (prisma as any).user.findUnique({
+    where: { telegramUserId: BigInt(tgUser.id) },
+    select: { id: true },
+  });
+  if (!user) {
+    await ctx.reply("⚠️ No tienes una cuenta vinculada.");
+    return null;
+  }
+
+  // 4. Admin membership check
+  const adminMember = await (prisma as any).treeMember.findFirst({
+    where: { userId: user.id, treeId: tree.id, role: "ADMIN", status: "ACTIVE" },
+  });
+  if (!adminMember) {
+    await ctx.reply("⚠️ Solo el admin del árbol puede usar este comando.");
+    return null;
+  }
+
+  return { tree, user };
 }
