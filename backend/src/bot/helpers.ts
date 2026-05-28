@@ -1,11 +1,44 @@
 // ── Bot helpers: shared utilities extracted from index.ts ──
 
 import https from "https";
+import { Bot } from "grammy";
 import { PrismaClient } from "@prisma/client";
 import { textToSpeech } from "../services/ttsService";
 import { NotebookLMBridge } from "../services/notebooklmBridge";
 import { BotContext } from "./types";
 import { findTreeByChat } from "./treeResolver";
+
+// ── Background job: fire-and-forget with error propagation ──────────────
+// Replaces setTimeout(() => { (async () => { try {...} catch{...} })(); }, 0)
+// with proper error logging + optional user-facing fallback message.
+//
+// Usage:
+//   backgroundJob(bot, chatId, async () => { ... work ... }, "❌ Falló, intentá de nuevo");
+//
+// For delayed execution, pass delayMs > 0 (replaces setTimeout with delay).
+
+export function backgroundJob(
+  bot: Bot<BotContext>,
+  chatId: number | string | undefined,
+  job: () => Promise<void>,
+  fallbackMsg?: string,
+  delayMs = 0,
+): void {
+  const run = () => {
+    job().catch((err: any) => {
+      console.error("[background] Job failed:", err?.stack || err?.message || err);
+      if (fallbackMsg && chatId !== undefined) {
+        bot.api.sendMessage(chatId, fallbackMsg).catch(() => {});
+      }
+    });
+  };
+
+  if (delayMs > 0) {
+    setTimeout(run, delayMs).unref?.();
+  } else {
+    process.nextTick(run);
+  }
+}
 
 // ── NotebookLM Bridge singleton for bot commands ──────────────
 let _notebooklmBridge: NotebookLMBridge | null = null;

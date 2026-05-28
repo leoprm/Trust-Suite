@@ -98,7 +98,7 @@ export function startTreeClassifierCron(prisma: PrismaClient): void {
         console.log(`[TreeClassifier] Startup: ${count} classification(s) synced`);
     })
     .catch((err) => {
-      console.error("[TreeClassifier] Startup error:", err?.message || err);
+      console.error("[TreeClassifier] Startup error:", err?.stack || err?.message || err);
     });
 
   // Calcular ms hasta medianoche
@@ -117,7 +117,7 @@ export function startTreeClassifierCron(prisma: PrismaClient): void {
           );
       })
       .catch((err) => {
-        console.error("[TreeClassifier] Daily error:", err?.message || err);
+        console.error("[TreeClassifier] Daily error:", err?.stack || err?.message || err);
       });
 
     // Repetir cada 24h
@@ -130,7 +130,7 @@ export function startTreeClassifierCron(prisma: PrismaClient): void {
             );
         })
         .catch((err) => {
-          console.error("[TreeClassifier] Daily error:", err?.message || err);
+          console.error("[TreeClassifier] Daily error:", err?.stack || err?.message || err);
         });
     }, 24 * 60 * 60 * 1000);
   }, msToMidnight);

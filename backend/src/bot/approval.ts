@@ -11,6 +11,7 @@ import { Bot } from "grammy";
 import { PrismaClient } from "@prisma/client";
 import { BotContext } from "./types";
 import { t } from "./i18n";
+import { backgroundJob } from "./helpers";
 
 // ── Detección de complejidad ──────────────────────────────────────────────
 
@@ -160,14 +161,7 @@ export function scheduleApprovalClose(
   lng = "es",
 ): void {
   const TWENTY_FOUR_HOURS = 24 * 60 * 60 * 1000;
-  setTimeout(() => {
-    closeApprovalPoll(bot, prisma, needId, lng).catch((err) =>
-      console.error(
-        `[approval] Scheduled close failed for ${needId}:`,
-        err.message,
-      ),
-    );
-  }, TWENTY_FOUR_HOURS).unref();
+  backgroundJob(bot, undefined, () => closeApprovalPoll(bot, prisma, needId, lng), undefined, TWENTY_FOUR_HOURS);
 
   console.log(`[approval] Scheduled close for ${needId} in 24h`);
 }
@@ -210,14 +204,7 @@ export async function recoverPendingApprovals(
         }
       } else {
         const remaining = TWENTY_FOUR_HOURS - age;
-        setTimeout(() => {
-          closeApprovalPoll(bot, prisma, need.id, "es").catch((err) =>
-            console.error(
-              `[approval] Recovery close failed for ${need.id}:`,
-              err.message,
-            ),
-          );
-        }, remaining).unref();
+        backgroundJob(bot, undefined, () => closeApprovalPoll(bot, prisma, need.id, "es"), undefined, remaining);
         rescheduled++;
       }
     }

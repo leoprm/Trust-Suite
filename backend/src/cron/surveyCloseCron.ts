@@ -217,7 +217,7 @@ export function startSurveyCloseCron(
         }
       })
       .catch((err) => {
-        console.error("[SurveyClose] Error en tick:", err?.message || err);
+        console.error("[SurveyClose] Error en tick:", err?.stack || err?.message || err);
       });
   };
 

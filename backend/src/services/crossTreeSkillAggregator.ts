@@ -41,7 +41,7 @@ export function startCrossTreeSkillCron(prisma: PrismaClient): void {
         );
       })
       .catch((err) => {
-        console.error('[CrossTreeSkill] Error inicial:', err?.message || err);
+        console.error('[CrossTreeSkill] Error inicial:', err?.stack || err?.message || err);
       });
 
     setInterval(() => {
@@ -52,7 +52,7 @@ export function startCrossTreeSkillCron(prisma: PrismaClient): void {
           );
         })
         .catch((err) => {
-          console.error('[CrossTreeSkill] Error diario:', err?.message || err);
+          console.error('[CrossTreeSkill] Error diario:', err?.stack || err?.message || err);
         });
     }, 24 * 60 * 60 * 1000);
   }, msUntilMidnight);
