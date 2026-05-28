@@ -1160,9 +1160,18 @@ export async function routeToHermes(
     if (treeId) {
       try {
         const { prisma: p } = await import("../index");
+        // Resolve DB user UUID from Telegram numeric ID
+        let dbUserId = userId;
+        if (userId && /^\d+$/.test(userId)) {
+          const dbUser = await (p as any).user.findFirst({
+            where: { telegramUserId: BigInt(userId) },
+            select: { id: true },
+          });
+          if (dbUser) dbUserId = dbUser.id;
+        }
         await (p as any).chatMessage.create({
           data: {
-            userId,
+            userId: dbUserId,
             treeId,
             role: "user",
             content: message.trim(),
@@ -1329,9 +1338,18 @@ export async function routeToHermes(
         ]);
         appendToDailyLog(treeId, new Date(), "Ari", accumulatedContent, false, "assistant");
         // Persist assistant response to ChatMessage table
+        // Resolve DB user UUID from Telegram numeric ID (same as user persist)
+        let dbUserId2 = userId;
+        if (userId && /^\d+$/.test(userId)) {
+          const dbUser2 = await (p as any).user.findFirst({
+            where: { telegramUserId: BigInt(userId) },
+            select: { id: true },
+          });
+          if (dbUser2) dbUserId2 = dbUser2.id;
+        }
         await (p as any).chatMessage.create({
           data: {
-            userId,
+            userId: dbUserId2,
             treeId,
             role: "assistant",
             content: accumulatedContent.slice(0, 2000),
