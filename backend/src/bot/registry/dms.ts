@@ -96,13 +96,13 @@ export function register(bot: Bot<BotContext>, prisma: PrismaClient): void {
       (prisma as any).treeMember.updateMany({
         where: { userId: user.id, treeId, status: "ACTIVE" },
         data: { lastDmAt: new Date() },
-      }).catch(() => {}); // fire-and-forget
+      }).catch(e => console.error('[bot:dm] treeMember.updateMany failed:', e.message)); // fire-and-forget
 
       // Keep typing indicator alive during potentially long API call
       const typingInterval = setInterval(() => {
-        ctx.replyWithChatAction("typing").catch(() => {});
+        ctx.replyWithChatAction("typing").catch(e => console.error('[bot:typing] replyWithChatAction failed:', e.message));
       }, 4000);
-      ctx.replyWithChatAction("typing").catch(() => {});
+      ctx.replyWithChatAction("typing").catch(e => console.error('[bot:typing] replyWithChatAction failed:', e.message));
       const chatHistory = ctx.chat?.id
         ? await getChatHistory(ctx.chat.id, treeId, 20)
         : [];

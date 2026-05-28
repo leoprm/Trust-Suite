@@ -914,7 +914,7 @@ export function register(bot: Bot<BotContext>, prisma: PrismaClient): void {
         chatId,
         resolvedTreeId: tree?.id,
         resolvedTreeName: tree?.name,
-      }) + "\n").catch(() => {});
+      }) + "\n").catch(e => console.error('[bot:groups] appendFile failed:', e.message));
       if (!tree) {
         await ctx.reply("⚠️ Este grupo no está vinculado a ningún árbol de Trust Maker.");
         return;
@@ -939,9 +939,9 @@ export function register(bot: Bot<BotContext>, prisma: PrismaClient): void {
       if (interactionMode === "MEDIUM" || isOneOnOne) {
         const userId = ctx.from?.id.toString() || "0";
         const typingInterval = setInterval(() => {
-          ctx.replyWithChatAction("typing").catch(() => {});
+          ctx.replyWithChatAction("typing").catch(e => console.error('[bot:typing] replyWithChatAction failed:', e.message));
         }, 4000);
-        ctx.replyWithChatAction("typing").catch(() => {});
+        ctx.replyWithChatAction("typing").catch(e => console.error('[bot:typing] replyWithChatAction failed:', e.message));
         try {
           const chatHistory = ctx.chat?.id
             ? await getChatHistory(ctx.chat.id, tree.id, 20)
@@ -1010,9 +1010,9 @@ export function register(bot: Bot<BotContext>, prisma: PrismaClient): void {
       // ── Decision gate: should Ari respond? ──────────────────────────
       // Keep typing indicator alive during potentially long API call
       const typingInterval2 = setInterval(() => {
-        ctx.replyWithChatAction("typing").catch(() => {});
+        ctx.replyWithChatAction("typing").catch(e => console.error('[bot:typing] replyWithChatAction failed:', e.message));
       }, 4000);
-      ctx.replyWithChatAction("typing").catch(() => {});
+      ctx.replyWithChatAction("typing").catch(e => console.error('[bot:typing] replyWithChatAction failed:', e.message));
       let decision;
       try {
         decision = await shouldAriRespond(
@@ -1045,9 +1045,9 @@ export function register(bot: Bot<BotContext>, prisma: PrismaClient): void {
       // ── Ari should respond — route to Hermes for actual response ────
       const userId = ctx.from?.id.toString() || "0";
       const typingInterval3 = setInterval(() => {
-        ctx.replyWithChatAction("typing").catch(() => {});
+        ctx.replyWithChatAction("typing").catch(e => console.error('[bot:typing] replyWithChatAction failed:', e.message));
       }, 4000);
-      ctx.replyWithChatAction("typing").catch(() => {});
+      ctx.replyWithChatAction("typing").catch(e => console.error('[bot:typing] replyWithChatAction failed:', e.message));
       try {
         const chatHistory = ctx.chat?.id
           ? await getChatHistory(ctx.chat.id, tree.id, 20)

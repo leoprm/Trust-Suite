@@ -168,7 +168,7 @@ export async function handleNaturalMessage(
 
   // 3.5 Mostrar "typing" persistente (cada 4s)
   const typingInterval = setInterval(() => {
-    ctx.replyWithChatAction("typing").catch(() => {});
+    ctx.replyWithChatAction("typing").catch(e => console.error('[bot:typing] replyWithChatAction failed:', e.message));
   }, 4000);
 
   // 4. Llamar concierge

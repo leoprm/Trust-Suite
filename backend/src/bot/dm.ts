@@ -180,7 +180,7 @@ export async function handleDM(
 
   // Typing indicator
   const typingInterval = setInterval(() => {
-    ctx.replyWithChatAction("typing").catch(() => {});
+    ctx.replyWithChatAction("typing").catch(e => console.error('[bot:typing] replyWithChatAction failed:', e.message));
   }, 4000);
 
   const API_SERVER_KEY = process.env.HERMES_API_SERVER_KEY ?? "";

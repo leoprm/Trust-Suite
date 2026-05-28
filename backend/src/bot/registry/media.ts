@@ -50,7 +50,7 @@ export function register(bot: Bot<BotContext>, prisma: PrismaClient): void {
       if (!filePath) {
         await fsPromises.appendFile("/tmp/tm_media_errors.log",
           JSON.stringify({ts:new Date().toISOString(), err:"no file_path", fileId:fileId?.slice(0,30), treeId:tree.id})+"\n"
-        ).catch(()=>{});
+        ).catch(err => console.error('[bot:media] appendFile failed:', err.message));
         return next();
       }
 
@@ -70,7 +70,7 @@ export function register(bot: Bot<BotContext>, prisma: PrismaClient): void {
           `📎 Recibí tu archivo (${sizeMB} MB) pero supera el límite de 50 MB de Telegram.\n` +
           `*Dividilo* en partes más chicas o *describime* qué contiene.`,
           { parse_mode: "Markdown" }
-        ).catch(()=>{});
+        ).catch(err => console.error('[bot:media] reply failed:', err.message));
         return;
       }
 
@@ -102,7 +102,7 @@ export function register(bot: Bot<BotContext>, prisma: PrismaClient): void {
       const userId = ctx.from?.id.toString() || "0";
       const displayName = ctx.from?.first_name || userId;
 
-      ctx.replyWithChatAction("typing").catch(() => {});
+      ctx.replyWithChatAction("typing").catch(err => console.error('[bot:typing] replyWithChatAction failed:', err.message));
       const chatHistory = ctx.chat?.id
         ? await getChatHistory(ctx.chat.id, tree.id, 20)
         : [];
@@ -112,13 +112,13 @@ export function register(bot: Bot<BotContext>, prisma: PrismaClient): void {
       );
       if (response && !response.saturationMessage && !response.queued) {
         // Send WITHOUT Markdown — media responses may contain paths/characters that break parse_mode
-        await ctx.reply(response.text).catch(() => {});
+        await ctx.reply(response.text).catch(err => console.error('[bot:media] reply failed:', err.message));
       }
     } catch (err: any) {
       await fsPromises.appendFile("/tmp/tm_media_errors.log",
         JSON.stringify({ts:new Date().toISOString(), error:err.message||String(err), stack:err.stack?.slice(0,300), treeId:tree?.id, chatId})+"\n"
-      ).catch(()=>{});
-      await ctx.reply("📎 Recibí tu archivo pero no pude procesarlo. Intentá describirlo con texto.").catch(() => {});
+      ).catch(e => console.error('[bot:media] appendFile failed:', e.message));
+      await ctx.reply("📎 Recibí tu archivo pero no pude procesarlo. Intentá describirlo con texto.").catch(e => console.error('[bot:media] reply failed:', e.message));
     }
   });
 
@@ -191,14 +191,14 @@ export function register(bot: Bot<BotContext>, prisma: PrismaClient): void {
 
           if (!transcribeResp.ok) {
             console.error("[Voice] Transcription endpoint returned:", transcribeResp.status);
-            await bot.api.sendMessage(chatId, "❌ No pude transcribir tu audio. ¿Probamos con texto?").catch(() => {});
+            await bot.api.sendMessage(chatId, "❌ No pude transcribir tu audio. ¿Probamos con texto?").catch(e => console.error('[bot:voice] sendMessage failed:', e.message));
             return;
           }
 
           const data = (await transcribeResp.json()) as any;
           const transcribedText: string = data?.text ?? "";
           if (!transcribedText.trim()) {
-            await bot.api.sendMessage(chatId, "🤔 No entendí el audio. ¿Lo podés repetir o escribir?").catch(() => {});
+            await bot.api.sendMessage(chatId, "🤔 No entendí el audio. ¿Lo podés repetir o escribir?").catch(e => console.error('[bot:voice] sendMessage failed:', e.message));
             return;
           }
 
@@ -248,7 +248,7 @@ export function register(bot: Bot<BotContext>, prisma: PrismaClient): void {
           // 5a. Payment check
           const paymentResult = await checkPaymentAccess(prisma, ctx, chatId, cleanText);
           if (paymentResult.blocked) {
-            await bot.api.sendMessage(chatId, paymentResult.reply, { parse_mode: "Markdown" }).catch(() => {});
+            await bot.api.sendMessage(chatId, paymentResult.reply, { parse_mode: "Markdown" }).catch(e => console.error('[bot:voice] sendMessage failed:', e.message));
             return;
           }
 
@@ -263,14 +263,14 @@ export function register(bot: Bot<BotContext>, prisma: PrismaClient): void {
             if (isCommand || isHelpAlias) {
               const result = await handleMessage(prisma, ctx);
               if (result) {
-                await bot.api.sendMessage(chatId, result.text, { parse_mode: "Markdown" }).catch(() => {});
+                await bot.api.sendMessage(chatId, result.text, { parse_mode: "Markdown" }).catch(e => console.error('[bot:voice] sendMessage failed:', e.message));
                 if (result.react) {
                   try { await ctx.react("❤"); } catch {}
                 }
                 const voiceLang = senderId ? await getUserLanguage(prisma, senderId) : undefined;
                 generateVoice(result.text, voiceLang).then((vb) => {
                   if (vb) {
-                    bot.api.sendVoice(chatId, new InputFile(vb)).catch(() => {});
+                    bot.api.sendVoice(chatId, new InputFile(vb)).catch(e => console.error('[bot:voice] sendVoice failed:', e.message));
                   }
                 });
               }
@@ -278,11 +278,11 @@ export function register(bot: Bot<BotContext>, prisma: PrismaClient): void {
               const naturalResult = await handleNaturalMessage(prisma, ctx);
               if (naturalResult) {
                 // Send text WITHOUT Markdown — LLM responses may contain unescaped chars
-                await bot.api.sendMessage(chatId, naturalResult.text).catch(() => {});
+                await bot.api.sendMessage(chatId, naturalResult.text).catch(e => console.error('[bot:voice] sendMessage failed:', e.message));
                 const voiceNatLang = senderId ? await getUserLanguage(prisma, senderId) : undefined;
                 generateVoice(naturalResult.text, voiceNatLang).then((vb) => {
                   if (vb) {
-                    bot.api.sendVoice(chatId, new InputFile(vb)).catch(() => {});
+                    bot.api.sendVoice(chatId, new InputFile(vb)).catch(e => console.error('[bot:voice] sendVoice failed:', e.message));
                   }
                 });
               }
@@ -296,7 +296,7 @@ export function register(bot: Bot<BotContext>, prisma: PrismaClient): void {
           }
         } catch (err: any) {
           console.error("[Voice] Background error:", err.message || err);
-          bot.api.sendMessage(chatId, "❌ Ocurrió un error procesando tu audio. ¿Probamos con texto?").catch(() => {});
+          bot.api.sendMessage(chatId, "❌ Ocurrió un error procesando tu audio. ¿Probamos con texto?").catch(e => console.error('[bot:voice] sendMessage failed:', e.message));
         }
       })();
     }, 0);
