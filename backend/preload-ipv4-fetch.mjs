@@ -26,8 +26,8 @@ https.Agent.prototype.createConnection = function (options, cb) {
 setGlobalDispatcher(
   new Agent({
     connect: { family: 4 },
-    headersTimeout: 15_000,
-    bodyTimeout: 15_000,
+    headersTimeout: 60_000,
+    bodyTimeout: 900_000,   // 15 min — concierge calls Hermes API, LLM responses are slow
   }),
 );
 
