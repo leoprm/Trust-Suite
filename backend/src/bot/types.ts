@@ -1,4 +1,5 @@
 import { Context, SessionFlavor } from "grammy";
+import type { TreeInfo } from "./treeResolver";
 
 /**
  * Datos de sesión del bot por usuario de Telegram.
@@ -53,7 +54,10 @@ export interface BotSessionData {
  * Contexto extendido con sabor de sesión.
  * Usar este tipo en lugar del Context base de grammy.
  */
-export type BotContext = Context & SessionFlavor<BotSessionData>;
+export type BotContext = Context & SessionFlavor<BotSessionData> & {
+  /** Tree resolved by resolveTree middleware — set on every message with a chat. */
+  tree?: TreeInfo | null;
+};
 
 /**
  * Comando del bot.

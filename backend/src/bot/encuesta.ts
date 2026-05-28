@@ -19,7 +19,6 @@ import * as crypto from "crypto";
 import { Bot, InlineKeyboard } from "grammy";
 import { PrismaClient } from "@prisma/client";
 import type { BotContext } from "./types";
-import { findTreeByChat } from "./treeResolver";
 import { resolveUserLanguage } from "./messages";
 
 // ── Session state for /encuesta wizard ──────────────────────────────────
@@ -79,7 +78,7 @@ export async function handleEncuestaCommand(
     return;
   }
 
-  const tree = await findTreeByChat(prisma, chatId.toString());
+  const tree = ctx.tree!;
   if (!tree) {
     await ctx.reply("⚠️ Este grupo no está vinculado a ningún árbol.");
     return;

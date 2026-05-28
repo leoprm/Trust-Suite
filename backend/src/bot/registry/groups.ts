@@ -2,7 +2,6 @@ import { promises as fsPromises } from "fs";
 import { Bot, InputFile } from "grammy";
 import { PrismaClient } from "@prisma/client";
 import { BotContext } from "../types";
-import { findTreeByChat } from "../treeResolver";
 import { checkMemberLimit, shouldRejectInvite, isTreeBlocked } from "../antiDdos";
 import { syncAllMembers } from "../telegramClient";
 import { resolveUserLanguage, showLanguageSelector } from "../messages";
@@ -342,7 +341,7 @@ export function register(bot: Bot<BotContext>, prisma: PrismaClient): void {
 
     // ── Anti-DDoS: skip blocked trees ────────────────────────────────
     if (chatId) {
-      const ddosTree = await findTreeByChat(prisma, chatId);
+      const ddosTree = ctx.tree!;
       if (ddosTree) {
         if (await isTreeBlocked(prisma, ddosTree.id)) {
           return; // silently drop — tree is blocked for 3 months
@@ -376,7 +375,7 @@ export function register(bot: Bot<BotContext>, prisma: PrismaClient): void {
     const todoMatch = msg.text.match(/\/todo\b\s*(.*)/i);
     if (todoMatch && chatId && chatType !== "private") {
       const todoText = todoMatch[1]?.trim();
-      const tree = await findTreeByChat(prisma, chatId);
+      const tree = ctx.tree!;
       if (tree) {
         if (!todoText) {
           // Show ranked list — urgent unassigned first, then by likes
@@ -444,7 +443,7 @@ export function register(bot: Bot<BotContext>, prisma: PrismaClient): void {
     if (chatId) {
       const addIntent = detectNaturalAddIntent(msg.text);
       if (addIntent) {
-        const tree = await findTreeByChat(prisma, chatId);
+        const tree = ctx.tree!;
         if (tree) {
           // Resolve tree language for i18n
           let lng = "es";
@@ -504,7 +503,7 @@ export function register(bot: Bot<BotContext>, prisma: PrismaClient): void {
     // ── Todo claim/unclaim: detectar frases de asignación/liberación ──
     // Priority: /todo > add NL > claim/unclaim > completar > comando normal
     if (chatId) {
-      const tree = await findTreeByChat(prisma, chatId);
+      const tree = ctx.tree!;
       if (tree) {
         // Resolve tree language for i18n
         let lng = "es";
@@ -717,7 +716,7 @@ export function register(bot: Bot<BotContext>, prisma: PrismaClient): void {
     // ── Todo completion: detectar lenguaje de completitud natural ──
     // Solo si NO contiene /todo (el scanner tiene prioridad)
     if (chatId) {
-      const tree = await findTreeByChat(prisma, chatId);
+      const tree = ctx.tree!;
       if (tree) {
         const pendingTodos = await prisma.todo.findMany({
           where: { treeId: tree.id, status: "PENDING" },
@@ -808,7 +807,7 @@ export function register(bot: Bot<BotContext>, prisma: PrismaClient): void {
     // but conversation window is skipped. MAXIMUM → full behavior.
     let interactionMode = "MAXIMUM";
     if (chatId) {
-      const modeTree = await findTreeByChat(prisma, chatId);
+      const modeTree = ctx.tree!;
       interactionMode = modeTree?.interactionMode || "MAXIMUM";
     }
 
@@ -840,7 +839,7 @@ export function register(bot: Bot<BotContext>, prisma: PrismaClient): void {
           }
         } catch (err: any) {
           // Fallback: if getChatMemberCount fails (e.g. in DMs), check DB
-          const soloTree = await findTreeByChat(prisma, chatId!);
+          const soloTree = ctx.tree!;
           if (soloTree) {
             const dbCount = await prisma.treeMember.count({
               where: { treeId: soloTree.id, status: "ACTIVE" },
@@ -907,7 +906,7 @@ export function register(bot: Bot<BotContext>, prisma: PrismaClient): void {
 
     // ── Hermes Bridge: si está habilitado, enrutar al agente con decisión previa ──
     if (process.env.HERMES_BRIDGE_ENABLED === "true") {
-      const tree = await findTreeByChat(prisma, chatId!);
+      const tree = ctx.tree!;
       // DEBUG: log resolved tree
       await fsPromises.appendFile("/tmp/tm_tree_resolve.log", JSON.stringify({
         ts: new Date().toISOString(),
@@ -1130,7 +1129,7 @@ export function register(bot: Bot<BotContext>, prisma: PrismaClient): void {
     // ── Daily conversation log ───────────────────────────────────────
     if (chatId && chatType !== "private") {
       try {
-        const logTree = await findTreeByChat(prisma, chatId);
+        const logTree = ctx.tree!;
         if (logTree) {
           appendToDailyLog(
             logTree.id,

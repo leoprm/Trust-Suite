@@ -12,7 +12,6 @@
 
 import { PrismaClient } from "@prisma/client";
 import { BotContext } from "./types";
-import { findTreeByChat } from "./treeResolver";
 
 /** Link de pago, configurable vía variable de entorno. */
 const PAYMENT_LINK =
@@ -48,7 +47,7 @@ export async function checkPaymentAccess(
   if (!userId) return { blocked: false }; // sin usuario identificado → permitir
 
   // 3. Buscar árbol asociado al chat
-  const tree = await findTreeByChat(prisma, chatId);
+  const tree = ctx.tree!;
   if (!tree) return { blocked: false }; // sin árbol → permitir
 
   // 4. Buscar membresía del usuario en este árbol

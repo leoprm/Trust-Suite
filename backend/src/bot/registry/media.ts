@@ -4,7 +4,6 @@ import { promises as fsPromises } from "fs";
 import { Bot, InputFile } from "grammy";
 import { PrismaClient } from "@prisma/client";
 import { BotContext } from "../types";
-import { findTreeByChat } from "../treeResolver";
 import { httpsDownload, generateVoice, getUserLanguage, backgroundJob } from "../helpers";
 import { routeToHermes, getChatHistory } from "../hermesBridge";
 import { checkPaymentAccess } from "../payment";
@@ -36,7 +35,7 @@ export function register(bot: Bot<BotContext>, prisma: PrismaClient): void {
     const chatId = msg.chat?.id?.toString();
     if (!chatId) return next();
 
-    const tree = await findTreeByChat(prisma, chatId);
+    const tree = ctx.tree!;
     if (!tree) return next();
 
     const fileId = photo?.[photo.length - 1]?.file_id
@@ -153,7 +152,7 @@ export function register(bot: Bot<BotContext>, prisma: PrismaClient): void {
       // Silent save: guardar la nota de voz en filesystem del árbol
       if (chatType === "group" || chatType === "supergroup") {
         try {
-          const voiceTree = await findTreeByChat(prisma, chatId);
+          const voiceTree = ctx.tree!;
           if (voiceTree) {
             const TREES_BASE = process.env.SANDBOX_BASE_DIR || "/home/leo/trees";
             const rawName = senderFirstName || senderUsername || senderId?.toString() || "unknown";
@@ -202,7 +201,7 @@ export function register(bot: Bot<BotContext>, prisma: PrismaClient): void {
 
       // Daily conversation log
       try {
-        const logVoiceTree = await findTreeByChat(prisma, chatId);
+        const logVoiceTree = ctx.tree!;
         if (logVoiceTree) {
           appendToDailyLog(
             logVoiceTree.id,
@@ -221,7 +220,7 @@ export function register(bot: Bot<BotContext>, prisma: PrismaClient): void {
           const memberCount = await ctx.getChatMemberCount();
           if (memberCount === 2) isOneOnOneVoice = true;
         } catch {
-          const voiceTree = await findTreeByChat(prisma, chatId);
+          const voiceTree = ctx.tree!;
           if (voiceTree) {
             const dbCount = await prisma.treeMember.count({
               where: { treeId: voiceTree.id, status: "ACTIVE" },
@@ -473,7 +472,7 @@ export function register(bot: Bot<BotContext>, prisma: PrismaClient): void {
       const chatId = ctx.chat?.id.toString();
       if (chatId && (ctx.chat?.type === "group" || ctx.chat?.type === "supergroup")) {
         try {
-          const tree2 = await findTreeByChat(prisma, chatId);
+          const tree2 = ctx.tree!;
           if (tree2) {
             const photo = msg.photo[msg.photo.length - 1];
             const fileId = photo.file_id;
@@ -535,7 +534,7 @@ export function register(bot: Bot<BotContext>, prisma: PrismaClient): void {
       const chatId = ctx.chat?.id.toString();
       if (chatId && (ctx.chat?.type === "group" || ctx.chat?.type === "supergroup")) {
         try {
-          const tree2 = await findTreeByChat(prisma, chatId);
+          const tree2 = ctx.tree!;
           if (tree2) {
             const doc = msg.document;
             const fileId = doc.file_id;
@@ -591,7 +590,7 @@ export function register(bot: Bot<BotContext>, prisma: PrismaClient): void {
     if (!chatId || (ctx.chat?.type !== "group" && ctx.chat?.type !== "supergroup")) return;
 
     try {
-      const tree2 = await findTreeByChat(prisma, chatId);
+      const tree2 = ctx.tree!;
       if (tree2) {
         const video = msg.video;
         const fileId = video.file_id;
@@ -612,7 +611,7 @@ export function register(bot: Bot<BotContext>, prisma: PrismaClient): void {
     if (!chatId || (ctx.chat?.type !== "group" && ctx.chat?.type !== "supergroup")) return;
 
     try {
-      const tree2 = await findTreeByChat(prisma, chatId);
+      const tree2 = ctx.tree!;
       if (tree2) {
         const audio = msg.audio;
         const fileId = audio.file_id;

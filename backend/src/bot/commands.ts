@@ -17,9 +17,10 @@
  */
 
 import { Context } from "grammy";
+import type { BotContext } from "./types";
 import { PrismaClient } from "@prisma/client";
 import { exec } from "child_process";
-import { findTreeByChat, TreeInfo } from "./treeResolver";
+import { TreeInfo } from "./treeResolver";
 import { t } from "./i18n";
 import {
   helpMessage,
@@ -855,7 +856,7 @@ async function isDescendantOf(
  */
 export async function handleMessage(
   prisma: PrismaClient,
-  ctx: Context
+  ctx: BotContext
 ): Promise<{ text: string; react?: boolean } | null> {
   const msg = ctx.message;
   if (!msg || !("text" in msg) || !msg.text) return null;
@@ -893,7 +894,7 @@ export async function handleMessage(
   ];
 
   if (needsTree.includes(parsed.type)) {
-    tree = await findTreeByChat(prisma, chatId);
+    tree = ctx.tree ?? null;
   }
 
   switch (parsed.type) {

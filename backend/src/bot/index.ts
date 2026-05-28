@@ -17,6 +17,7 @@ import { register as registerOnboarding } from "./registry/onboarding";
 import { register as registerGroupLifecycle } from "./registry/group-lifecycle";
 
 // ── Remaining middleware / handlers ──
+import { resolveTree } from "./middleware";
 import { checkRateLimit } from "./rateLimiter";
 import { registerReactionHandler, handleNeedPollAnswer } from "./voting";
 import {
@@ -49,6 +50,9 @@ export async function createBot(prisma: PrismaClient): Promise<Bot<BotContext> |
       },
     })
   );
+
+  // ── Tree resolver middleware: injects ctx.tree once per message ─────
+  bot.use(resolveTree(prisma));
 
   // ── Rate limiter middleware ─────────────────────────────────────────────
   bot.on("message:text", async (ctx, next) => {

@@ -9,7 +9,6 @@ import { BotContext } from "./types";
 import { PrismaClient } from "@prisma/client";
 import { t } from "./i18n";
 import { extractCommandText } from "./commands";
-import { findTreeByChat } from "./treeResolver";
 import { showLanguageSelector } from "./messages";
 import {
   handleTrabajar,

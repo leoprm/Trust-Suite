@@ -2,7 +2,6 @@ import { Bot } from "grammy";
 import { PrismaClient } from "@prisma/client";
 import { BotContext } from "../types";
 import { t } from "../i18n";
-import { findTreeByChat } from "../treeResolver";
 import { extractSimpleKeywords, resolveTreeLanguage } from "../helpers";
 import { resolveUserLanguage } from "../messages";
 

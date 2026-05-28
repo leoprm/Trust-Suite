@@ -1,7 +1,6 @@
 import { Bot } from "grammy";
 import { PrismaClient } from "@prisma/client";
 import { BotContext } from "../types";
-import { findTreeByChat } from "../treeResolver";
 import { checkMemberLimit, shouldRejectInvite, isTreeBlocked } from "../antiDdos";
 import { syncAllMembers } from "../telegramClient";
 import { t } from "../i18n";

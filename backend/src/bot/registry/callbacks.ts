@@ -5,7 +5,6 @@ import { handleLanguageCallback, showLanguageSelector, resolveUserLanguage } fro
 import { handleProfileCallback } from "../dm";
 import { handleWorkerCallback } from "../worker";
 import { handleEncuestaCallback, handleVotarCallback } from "../encuesta";
-import { findTreeByChat } from "../treeResolver";
 import { handleNeedPollAnswer } from "../voting";
 import { sendSatisfactionPoll } from "../satisfaction";
 import { getTreeDepth, parentTreeSelectors, resolveTreeLanguage, trackBotMessage } from "../helpers";

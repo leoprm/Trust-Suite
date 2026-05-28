@@ -4,7 +4,6 @@ import { BotContext } from "../types";
 import { handleEncuestaCommand, handleVotarCommand } from "../encuesta";
 import { resolveUserLanguage, showLanguageSelector } from "../messages";
 import { t } from "../i18n";
-import { findTreeByChat } from "../treeResolver";
 import { computePaymentObligations, formatPagarResult } from "../../services/telegramBotService";
 import { getBotNotebookLMBridge } from "../helpers";
 
@@ -209,7 +208,7 @@ export function register(bot: Bot<BotContext>, prisma: PrismaClient): void {
       return;
     }
 
-    const tree = await findTreeByChat(prisma, chatId);
+    const tree = ctx.tree!;
     if (!tree) {
       await ctx.reply("⚠️ Este grupo no está vinculado a ningún árbol.");
       return;
@@ -257,7 +256,7 @@ export function register(bot: Bot<BotContext>, prisma: PrismaClient): void {
     const chatId = ctx.chat?.id.toString();
     if (!chatId) return;
 
-    const tree = await findTreeByChat(prisma, chatId);
+    const tree = ctx.tree!;
     if (!tree) {
       await ctx.reply("⚠️ Este grupo no está vinculado a ningún árbol.");
       return;

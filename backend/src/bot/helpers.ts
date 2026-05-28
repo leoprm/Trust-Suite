@@ -6,7 +6,6 @@ import { PrismaClient } from "@prisma/client";
 import { textToSpeech } from "../services/ttsService";
 import { NotebookLMBridge } from "../services/notebooklmBridge";
 import { BotContext } from "./types";
-import { findTreeByChat } from "./treeResolver";
 
 // ── Background job: fire-and-forget with error propagation ──────────────
 // Replaces setTimeout(() => { (async () => { try {...} catch{...} })(); }, 0)
@@ -202,7 +201,7 @@ export async function requireTreeAdmin(
   if (!chatId) return null;
 
   // 2. Tree lookup
-  const tree = await findTreeByChat(prisma, chatId);
+  const tree = ctx.tree!;
   if (!tree) {
     await ctx.reply("⚠️ Este grupo no está vinculado a ningún árbol.");
     return null;

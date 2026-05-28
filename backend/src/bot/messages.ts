@@ -11,7 +11,7 @@
 import { Context, InputFile } from "grammy";
 import { PrismaClient } from "@prisma/client";
 import { exec } from "child_process";
-import { findTreeByChat } from "./treeResolver";
+import type { BotContext } from "./types";
 import { extractCommandText } from "./commands";
 import isComplexQuery from "./complexityDetector";
 import { createKanbanTask, getTasksForChat } from "./kanbanBridge";
@@ -131,7 +131,7 @@ export async function handleStatusQuery(
  */
 export async function handleNaturalMessage(
   prisma: PrismaClient,
-  ctx: Context
+  ctx: BotContext
 ): Promise<{ text: string } | null> {
   const msg = ctx.message;
   if (!msg || !("text" in msg) || !msg.text) return null;
@@ -152,7 +152,7 @@ export async function handleNaturalMessage(
   }
 
   // 2. Buscar árbol
-  const tree = await findTreeByChat(prisma, chatId);
+  const tree = ctx.tree!;
   if (!tree) {
     return { text: t("errors:no_tree_group", lng) };
   }
