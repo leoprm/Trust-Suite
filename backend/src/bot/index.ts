@@ -1390,6 +1390,9 @@ export async function createBot(prisma: PrismaClient): Promise<Bot<BotContext> |
     const audio = (msg as any).audio;
     if (!photo && !document && !voice && !video && !audio) return next();
 
+    // Voice messages are handled by the dedicated voice handler below (transcription + TTS)
+    if (voice) return next();
+
     if (process.env.HERMES_BRIDGE_ENABLED !== "true") return next();
 
     const chatId = msg.chat?.id?.toString();
