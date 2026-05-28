@@ -2607,7 +2607,8 @@ export async function createBot(prisma: PrismaClient): Promise<Bot<BotContext> |
             } else {
               const naturalResult = await handleNaturalMessage(prisma, ctx);
               if (naturalResult) {
-                await bot.api.sendMessage(chatId, naturalResult.text, { parse_mode: "Markdown" }).catch(() => {});
+                // Send text WITHOUT Markdown — LLM responses may contain unescaped chars
+                await bot.api.sendMessage(chatId, naturalResult.text).catch(() => {});
                 const voiceNatLang = senderId ? await getUserLanguage(prisma, senderId) : undefined;
                 generateVoice(naturalResult.text, voiceNatLang).then((vb) => {
                   if (vb) {

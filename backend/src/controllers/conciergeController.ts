@@ -239,7 +239,7 @@ const ORGANIZE_SYSTEM_PROMPT = [
  * Si el usuario no existe, lo crea automáticamente con role USER.
  * Retorna el usuario (id, username, role) o null si no hay telegramUserId.
  */
-async function resolveOrCreateUser(telegramUserId: string): Promise<{ id: string; username: string; role: string; createdAt: Date } | null> {
+async function resolveOrCreateUser(telegramUserId: string, displayName?: string): Promise<{ id: string; username: string; role: string; createdAt: Date } | null> {
   if (!telegramUserId) return null;
 
   const tgId = BigInt(telegramUserId);
@@ -249,13 +249,25 @@ async function resolveOrCreateUser(telegramUserId: string): Promise<{ id: string
     where: { telegramUserId: tgId },
     select: { id: true, username: true, role: true, createdAt: true },
   });
-  if (existing) return existing;
+  if (existing) {
+    // Update firstName if it's still the default tg_ pattern and we have a real name
+    if (displayName && existing.username.startsWith('tg_')) {
+      await (prisma as any).user.update({
+        where: { id: existing.id },
+        data: { username: displayName, firstName: displayName },
+      }).catch(() => {});
+      return { ...existing, username: displayName };
+    }
+    return existing;
+  }
 
   // 2. Auto-registrar
+  const username = displayName || `tg_${telegramUserId}`;
   try {
     const created = await (prisma as any).user.create({
       data: {
-        username: `tg_${telegramUserId}`,
+        username,
+        firstName: displayName || undefined,
         telegramUserId: tgId,
         role: 'USER',
       },
@@ -654,7 +666,7 @@ async function createTaskFromBot(
 
 export const conciergeHandler = async (req: Request, res: Response) => {
   try {
-    const { message, treeId, needId, agentId } = req.body;
+    const { message, treeId, needId, agentId, displayName } = req.body;
 
     // ── Validation ─────────────────────────────────────────────────────────
     if (!message || typeof message !== 'string' || !message.trim()) {
@@ -721,7 +733,7 @@ export const conciergeHandler = async (req: Request, res: Response) => {
     // ── Fetch user context from DB ─────────────────────────────────────────
     let userContext = '';
     if (telegramUserId) {
-      const user = await resolveOrCreateUser(telegramUserId);
+      const user = await resolveOrCreateUser(telegramUserId, displayName);
       if (user) {
         let isMember = await prisma.treeMember.findUnique({
           where: { userId_treeId: { userId: user.id, treeId } },

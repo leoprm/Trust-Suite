@@ -174,6 +174,7 @@ export async function handleNaturalMessage(
   // 4. Llamar concierge
   const API_SERVER_KEY = process.env.HERMES_API_SERVER_KEY ?? "";
   const userId = ctx.from?.id.toString() ?? "unknown";
+  const displayName = ctx.from?.first_name || ctx.from?.username || userId;
 
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), CONCIERGE_TIMEOUT_MS);
@@ -189,6 +190,7 @@ export async function handleNaturalMessage(
       body: JSON.stringify({
         message: cleanText,
         treeId: tree.id,
+        displayName,
       }),
       signal: controller.signal,
     });
