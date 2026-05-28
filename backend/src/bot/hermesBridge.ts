@@ -19,7 +19,7 @@ import fs from "fs";
 import path from "path";
 import { messageQueue } from "./messageQueue";
 
-const HERMES_API = "http://127.0.0.1:8644/v1/chat/completions";
+const HERMES_API = "http://127.0.0.1:8643/v1/chat/completions";
 const DEEPSEEK_DECISION_API = "https://api.deepseek.com/v1/chat/completions";
 const DEEPSEEK_API_KEY = process.env.DEEPSEEK_API_KEY ?? "";
 const DECISION_MODEL = "deepseek-chat"; // fast + cheap for yes/no decisions

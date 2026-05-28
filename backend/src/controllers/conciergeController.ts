@@ -131,7 +131,7 @@ export const contextHandler = async (req: Request, res: Response) => {
 // Rate-limited at 30 req/min via conciergeLimiter (applied in index.ts).
 // Imports prisma from index.ts (singleton) — same pattern as all other controllers.
 
-const HERMES_API = 'http://127.0.0.1:8644/v1/chat/completions';
+const HERMES_API = 'http://127.0.0.1:8643/v1/chat/completions';
 const API_SERVER_KEY = process.env.HERMES_API_SERVER_KEY ?? '';
 
 // ── Factual question detection ─────────────────────────────────────────────
