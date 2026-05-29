@@ -322,6 +322,7 @@ export async function routeToHermes(
 
     // ── Call Hermes Agent API ─────────────────────────────────────────────
   const maxTokens = complex ? 2048 : 1024;
+  const MAX_RESPONSE_CHARS = maxTokens * 4; // ~4 chars per token — hard cap to prevent OOM
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 900_000); // 15 min — matches Hermes dialog_timeout_s
 
@@ -383,8 +384,9 @@ export async function routeToHermes(
 
     const decoder = new TextDecoder();
     let buffer = "";
+    let shouldStop = false;
 
-    while (true) {
+    while (!shouldStop) {
       const { done, value } = await reader.read();
       if (done) break;
 
@@ -396,6 +398,7 @@ export async function routeToHermes(
         if (!line.startsWith("data:")) continue;
         const payload = line.slice(5).trimStart();
         if (payload === "[DONE]") {
+          shouldStop = true;
           break;
         }
         try {
@@ -405,11 +408,24 @@ export async function routeToHermes(
           const messageContent = parsed?.choices?.[0]?.message?.content;
           if (messageContent) {
             accumulatedContent += messageContent;
+            if (accumulatedContent.length > MAX_RESPONSE_CHARS) {
+              console.warn(`[hermesBridge] Response exceeded ${MAX_RESPONSE_CHARS} chars — truncating`);
+              accumulatedContent = accumulatedContent.slice(0, MAX_RESPONSE_CHARS);
+              shouldStop = true;
+            }
             break;
           }
           // Streaming response: accumulate deltas, continue until [DONE].
           const deltaContent = parsed?.choices?.[0]?.delta?.content;
-          if (deltaContent) accumulatedContent += deltaContent;
+          if (deltaContent) {
+            accumulatedContent += deltaContent;
+            if (accumulatedContent.length > MAX_RESPONSE_CHARS) {
+              console.warn(`[hermesBridge] Response exceeded ${MAX_RESPONSE_CHARS} chars — truncating`);
+              accumulatedContent = accumulatedContent.slice(0, MAX_RESPONSE_CHARS);
+              shouldStop = true;
+              break;
+            }
+          }
         } catch {
           // Skip unparseable SSE payloads
         }
