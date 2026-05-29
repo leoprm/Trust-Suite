@@ -4,7 +4,7 @@
  * Barrel file. Re-exports the public API surface.
  * Phase 1 refactor splits the monolithic hermesBridge.ts into submodules:
  *   types.ts, conversation-window.ts, history.ts, decision-filter.ts,
- *   routeToHermes.ts, sendTelegramMessage.ts
+ *   system-prompt.ts, route.ts
  */
 
 // ── Named exports (re-exported from monolithic file during transition) ─────
@@ -33,6 +33,16 @@ export {
   shouldAriRespondLocal,
   shouldAriRespond,
 } from "./decision-filter";
+
+// ── System prompt builder (extracted submodule) ───────────────────────────
+export {
+  buildSystemPrompt,
+  checkKanbanCompletions,
+  taskCounters,
+} from "./system-prompt";
+
+// ── Route (extracted submodule) ────────────────────────────────────────────
+export { enforcePrefix } from "./route";
 
 // ── Type namespace ─────────────────────────────────────────────────────────
 export * as types from "./types";
