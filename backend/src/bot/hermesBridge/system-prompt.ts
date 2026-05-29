@@ -373,20 +373,7 @@ export async function buildSystemPrompt(
     lines.push(`You are a sub-tree. Ancestors (parent→root): ${ancestorChain.map(a => `${a.icono} ${a.name}`).join(" → ")}`);
     lines.push("Sandbox parent read: POST /api/trees/<id>/sandbox/parent/read (read-only)");
     lines.push("Sandbox ancestors read: POST /api/trees/<id>/sandbox/ancestors/read");
-    lines.push("⚠️ READ-ONLY on ancestors. Use skill_view('trust-maker') for full API docs.");
-    
-    // ── Parent Graphify access (Option C) ────────────────────────────────
-    const parentId = ancestorChain[ancestorChain.length - 1]?.id;
-    if (parentId) {
-      lines.push("");
-      lines.push("═══ PARENT KNOWLEDGE GRAPH (Graphify) ═══");
-      lines.push(`Your parent has a code knowledge graph. To search it:`);
-      lines.push(`1. Read the graph file: POST /api/trees/<yourId>/sandbox/parent/read`);
-      lines.push(`   Body: {"path": "graphify-out/graph.json"}`);
-      lines.push(`2. Query it: graphify query "your question" --graph <saved_path>`);
-      lines.push(`   The parent's graph maps its entire codebase — functions, classes, data flow.`);
-      lines.push(`   Use this to understand the parent's architecture before proposing changes.`);
-    }
+    lines.push("⚠️ READ-ONLY on ancestors. Use skill_view('trust-maker-graphify') for knowledge graph access.");
   }
 
   // ── Root with children: multi-IA coordination ─────────────────────────
