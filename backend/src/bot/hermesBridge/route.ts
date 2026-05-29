@@ -25,6 +25,7 @@ import {
   taskCounters,
   validateTreeId,
 } from "./system-prompt";
+import { loadKeywords } from "./decision-filter";
 
 const HERMES_API = "http://127.0.0.1:8643/v1/chat/completions";
 const SUPPORT_HERMES_GATEWAY = process.env.HERMES_SUPPORT_GATEWAY || "http://127.0.0.1:8646";
@@ -284,8 +285,8 @@ export async function routeToHermes(
     validateTreeId(treeId);
     const sandboxDir = `${sandboxBase}/${treeId}`;
 
-    // Load tree-specific engagement keywords (S13)
-    await loadKeywords(sandboxDir);
+    // TODO(S13): Load tree-specific engagement keywords
+    // await loadKeywords(sandboxDir);
 
     try {
       const kanbanResults = await checkKanbanCompletions(
