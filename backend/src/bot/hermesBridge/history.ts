@@ -14,7 +14,7 @@ import crypto from "crypto";
 import fs from "fs";
 import path from "path";
 
-import type { ChatMessage, CollectedMessage } from "./types";
+import type { ChatMessage } from "./types";
 import { HISTORY_DEFAULT_MAX_TOKENS } from "./constants";
 
 // ═══════════════════════════════════════════════════════════════════════════
