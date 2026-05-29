@@ -141,8 +141,8 @@ const FACTUAL_PATTERNS: Array<{ regex: RegExp; handler: string }> = [
   { regex: /(qué|que|cuáles|cuales|cual|cuál)\s+(árboles|trees|arboles)\s+(hay|existen|tengo|estoy|estás)/i, handler: 'treelist' },
   { regex: /(cuántas|cuantas|cuántos|cuantos)\s+(necesidades|needs|ideas|miembros|members)/i, handler: 'stats' },
   { regex: /(qui[eé]n|quien)\s+(soy|eres)/i, handler: 'whoami' },
-  { regex: /(mis|mis\s+datos|mi\s+perfil|mi\s+cuenta)/i, handler: 'profile' },
-  { regex: /(cu[aá]nto|cuanto|costos|costes|cobro|pago|precio|factura|gasto|financia|transparencia)/i, handler: 'costs' },
+  { regex: /\b(mis\s+datos|mi\s+perfil|mi\s+cuenta)\b/i, handler: 'profile' },
+  { regex: /(cu[aá]nto\s+(cuesta|vale|cobra|sale|debo|pagar|hay\s+que\s+pagar)|cu[aá]nto\s+me\s+(cuestan|cobran|saldr[ií]a)|precio\s+(de|del|por)|costos?\s+(de|del|fijos|mensuales|mensual|total)|factura\b|gasto\s+(de|del|total)|transparencia\s+(de\s+costos|econ[oó]mica))/i, handler: 'costs' },
 ];
 
 function detectFactualQuestion(message: string): string | null {
@@ -682,34 +682,37 @@ export const conciergeHandler = async (req: Request, res: Response) => {
     // ── Extract Telegram user from session header ──────────────────────────
     const telegramUserId = extractTelegramUserId(req);
 
-    // ── Detect factual questions → answer from DB directly ─────────────────
+    // ── Detect factual questions → pre-fetch data for Hermes to use IF relevant ─
     const factualType = detectFactualQuestion(message.trim());
+    let factualContext = '';
+    let factualLabel = '';
+
     if (factualType) {
-      let reply: string;
       const tgId = telegramUserId || '';
 
       switch (factualType) {
         case 'membership':
-          reply = await handleMembershipQuery(treeId, tgId);
+          factualContext = await handleMembershipQuery(treeId, tgId);
+          factualLabel = 'membresía';
           break;
         case 'treelist':
-          reply = await handleTreeListQuery(tgId);
+          factualContext = await handleTreeListQuery(tgId);
+          factualLabel = 'árboles disponibles';
           break;
         case 'stats':
-          reply = await handleStatsQuery(treeId);
+          factualContext = await handleStatsQuery(treeId);
+          factualLabel = 'estadísticas';
           break;
         case 'whoami':
         case 'profile':
-          reply = await handleWhoAmI(tgId);
+          factualContext = await handleWhoAmI(tgId);
+          factualLabel = 'perfil';
           break;
         case 'costs':
-          reply = await handleCostQuery(tgId);
+          factualContext = await handleCostQuery(tgId);
+          factualLabel = 'costos';
           break;
-        default:
-          reply = 'No pude interpretar tu pregunta.';
       }
-
-      return res.json({ reply, agentId: agentId || null, treeId, source: 'db' });
     }
 
     // ── Detect task creation intent ────────────────────────────────────────
@@ -829,6 +832,15 @@ export const conciergeHandler = async (req: Request, res: Response) => {
           `You are the Tree Agent for "${tree.name}" (${tree.icono}) — a Trust Maker community.`,
           'You are the Hermes Agent integrated into Trust Maker, responding in Spanish.',
           '',
+          '## 🔒 SANDBOX — CRITICAL SECURITY',
+          `Your workspace is the sandbox: /home/trustmaker/trees/${treeId}/`,
+          'ALL file access (read, write, search, execute) MUST stay inside this directory.',
+          'You CANNOT access /etc, /home/leo, /root, /var, or any path outside the sandbox.',
+          'Use the sandbox API for file operations: POST /api/trees/${treeId}/sandbox/...',
+          'Load skill_view("trust-maker") for the full API reference.',
+          'The "terminal" tool is FORBIDDEN unless the command only touches sandbox paths.',
+          'Do NOT read /etc/passwd, /home/*, /root, or any system file. This is a HARD rule.',
+          '',
           `Tree metadata (REAL, from DB):`,
           `  Name: ${tree.name}`,
           `  Description: ${tree.description || 'No description set'}`,
@@ -943,6 +955,19 @@ export const conciergeHandler = async (req: Request, res: Response) => {
     contextLines.push('IMPORTANT: You have REAL user and tree data above. Use it. Do NOT invent or hallucinate.');
     contextLines.push('If the user asks about membership, trees, or stats, the data above IS authoritative.');
 
+    // ── Inject pre-fetched factual data (if keyword was detected) ──────────
+    if (factualContext) {
+      contextLines.push('');
+      contextLines.push('⚠️ DETECCIÓN AUTOMÁTICA (posiblemente incorrecta):');
+      contextLines.push(`Se detectó que el usuario PODRÍA estar preguntando sobre: ${factualLabel}`);
+      contextLines.push('');
+      contextLines.push('Datos pre-cargados por si son relevantes:');
+      contextLines.push(factualContext);
+      contextLines.push('');
+      contextLines.push('⚠️ REGLA CRÍTICA: Solo usa estos datos si el usuario REALMENTE está preguntando sobre este tema.');
+      contextLines.push('Si su mensaje es sobre otra cosa, IGNORA completamente estos datos y responde a lo que realmente preguntó.');
+    }
+
     const systemPrompt = contextLines.join('\n');
 
     // ── Build user messages array ──────────────────────────────────────────
@@ -971,6 +996,8 @@ export const conciergeHandler = async (req: Request, res: Response) => {
         body: JSON.stringify({
           messages,
           stream: false,
+          skills: ['trust-maker', 'trustmaker-exec'],
+          profile: 'trustmaker',
         }),
         signal: controller.signal,
       });
