@@ -31,6 +31,12 @@ const SUPPORT_HERMES_GATEWAY = process.env.HERMES_SUPPORT_GATEWAY || "http://127
 const SUPPORT_HERMES_API_URL = process.env.SUPPORT_HERMES_API_URL || `${SUPPORT_HERMES_GATEWAY}/v1/chat/completions`;
 const SUPPORT_HERMES_API_KEY = process.env.HERMES_SUPPORT_API_KEY || process.env.SUPPORT_HERMES_API_KEY || "";
 
+/** Unified Hermes API key resolver. treeId → HERMES_API_SERVER_KEY, no treeId → SUPPORT_HERMES_API_KEY. */
+export function getHermesApiKey(treeId: string | null): string {
+  if (treeId) return process.env.HERMES_API_SERVER_KEY ?? "";
+  return SUPPORT_HERMES_API_KEY;
+}
+
 // ── LLM stream dispatcher ──────────────────────────────────────────────
 // Prevents undici's default 300s bodyTimeout from killing slow LLM streams.
 let LLM_DISPATCHER: any = undefined;
@@ -452,7 +458,7 @@ export async function routeToHermes(
               userId: dbUserId,
               treeId,
               role: "assistant",
-              content: accumulatedContent.slice(0, 2000),
+              content: accumulatedContent.slice(0, ASSISTANT_MESSAGE_MAX_CHARS),
             },
           });
 
@@ -470,8 +476,6 @@ export async function routeToHermes(
         }
       })();
     }
-          })();
-        }
 
     return { text: accumulatedContent };
   } catch (err) {
