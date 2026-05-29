@@ -41,10 +41,8 @@ export function checkApiKey(req: Request, res: Response): boolean {
     ? authHeader.slice(7)
     : authHeader;
   
-  // Accept global master key
-  if (API_SERVER_KEY && token === API_SERVER_KEY) return true;
-  
-  // Accept tree-specific derived key (matches :id in URL)
+  // ONLY accept tree-specific derived key (matches :id in URL)
+  // Global master key is deliberately NOT accepted — prevents cross-tree access
   const treeId = req.params.id as string;
   if (treeId && token === deriveTreeApiKey(treeId)) return true;
   

@@ -654,7 +654,14 @@ async function buildSystemPrompt(
   // ── Sandbox memory (tree-level memory.json) ────────────────────────────
   // ALWAYS show memory instructions so Ari knows how to save, even on first use.
   const memoryPath = path.join(sandboxDir, "memory", "memory.json");
-  const sandboxApiKey = process.env.HERMES_API_SERVER_KEY ?? "";
+
+  // Derive per-tree API key — Ari should NEVER receive the global master key.
+  // This is the same HMAC-SHA256 derivation used by checkApiKey in both
+  // treeSandboxController.ts and sandboxController.ts.
+  const masterKey = process.env.HERMES_API_SERVER_KEY ?? "";
+  const sandboxApiKey = masterKey && treeId
+    ? crypto.createHmac("sha256", masterKey).update(treeId).digest("hex")
+    : "";
 
   let memoryData: Record<string, string> = {};
   if (fs.existsSync(memoryPath)) {
@@ -675,6 +682,12 @@ async function buildSystemPrompt(
   lines.push('  To READ: { "action": "read", "key": "<key>" }');
   lines.push('  To LIST keys: { "action": "list" }');
   lines.push("NEVER use the built-in 'memory' tool — it writes to the wrong location.");
+  lines.push("");
+  lines.push("═══ CREDENTIALS ═══");
+  lines.push(`Your sandbox API key: ${sandboxApiKey}`);
+  lines.push(`This key ONLY works for tree ${treeId}. It will be REJECTED for any other tree.`);
+  lines.push("Use this key for ALL sandbox operations (read, write, exec, search, patch, memory, etc.).");
+  lines.push("Do NOT use HERMES_API_SERVER_KEY — that key no longer works for sandbox endpoints.");
 
   const keys = Object.keys(memoryData);
   if (keys.length > 0) {
