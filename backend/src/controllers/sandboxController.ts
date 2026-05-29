@@ -31,11 +31,13 @@ function checkApiKey(req: Request, res: Response): boolean {
     ? authHeader.slice(7)
     : authHeader;
 
-  // ONLY accept tree-specific derived key (matches :id in URL)
-  // Global master key is deliberately NOT accepted — prevents cross-tree access
+  // Accept global master key (HERMES_API_SERVER_KEY) for unified auth
+  if (token === API_SERVER_KEY) return true;
+  
+  // Also accept tree-specific derived key (matches :id in URL)
   const treeId = req.params.id as string;
   if (treeId && token === deriveTreeApiKey(treeId)) return true;
-
+  
   res.status(403).json({ error: 'Invalid API key' });
   return false;
 }

@@ -338,9 +338,9 @@ export async function buildSystemPrompt(
   lines.push("");
   lines.push("═══ CREDENTIALS ═══");
   lines.push(`Your sandbox API key: ${sandboxApiKey}`);
-  lines.push(`This key ONLY works for tree ${treeId}. It will be REJECTED for any other tree.`);
-  lines.push("Use this key for ALL sandbox operations (read, write, exec, search, patch, memory, etc.).");
-  lines.push("Do NOT use HERMES_API_SERVER_KEY — that key no longer works for sandbox endpoints.");
+  lines.push(`This tree-scoped key works for all sandbox operations (read, write, exec, search, patch, memory, etc.).`);
+  lines.push(`The HERMES_API_SERVER_KEY master key is also accepted for ALL endpoints (sandbox + API).`);
+  lines.push(`Prefer the sandbox key for sandbox ops (better scoping), master key for Needs/Ideas/Global trees/NotebookLM.`);
 
   const keys = Object.keys(memoryData);
   if (keys.length > 0) {
