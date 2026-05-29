@@ -14,6 +14,7 @@ import path from "path";
 import { getAgentsMd } from "./history";
 import { AGENTS_MD_MAX_CHARS } from "./constants";
 import { writeDlqEntry, buildDlqWarning } from "./kanban-dlq";
+import { getHermesApiKey } from "./getHermesApiKey";
 
 // ── UUID validation ───────────────────────────────────────────────────────
 const UUID_RE = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i;
@@ -311,7 +312,7 @@ export async function buildSystemPrompt(
   const memoryPath = path.join(sandboxDir, "memory", "memory.json");
 
   // Derive per-tree API key — Ari should NEVER receive the global master key.
-  const masterKey = process.env.HERMES_API_SERVER_KEY ?? "";
+  const masterKey = getHermesApiKey(treeId);
   const sandboxApiKey = masterKey && treeId
     ? crypto.createHmac("sha256", masterKey).update(treeId).digest("hex")
     : "";

@@ -11,7 +11,10 @@
 export * as constants from "./constants";
 
 // ── Route (including enforcePrefix for multi-tree prefixing) ──────────────
-export { enforcePrefix, routeToHermes, getHermesApiKey } from "./route";
+export { enforcePrefix, routeToHermes } from "./route";
+
+// ── Hermes API key resolver ─────────────────────────────────────────────
+export { getHermesApiKey } from "./getHermesApiKey";
 
 // ── Telegram sender (extracted submodule) ────────────────────────────────
 export {
