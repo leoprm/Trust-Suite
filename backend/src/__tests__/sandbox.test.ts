@@ -10,27 +10,36 @@
  *   cd backend && SANDBOX_BASE_DIR=/tmp/trust-sandbox-test npx vitest run src/__tests__/sandbox.test.ts
  */
 
+// Override SANDBOX_BASE_DIR before app import — the app reads it from env at load time.
+// The .env file sets /home/trustmaker/trees which regular users can't write.
+process.env.SANDBOX_BASE_DIR = '/tmp/trust-sandbox-test';
+
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import request from 'supertest';
 import fs from 'fs';
 import path from 'path';
-import { app, prisma } from '../index';
+
+// Dynamic import so SANDBOX_BASE_DIR override takes effect before the app loads .env
+const { app, prisma } = await import('../index');
 
 // ── Test state ─────────────────────────────────────────────────────────────────
 let authToken: string;
 let testUserId: string;
 const TEST_USERNAME = `sandboxtest_${Date.now()}`;
 const TEST_PASSWORD = 'testpass123';
-const SANDBOX_BASE_DIR = process.env.SANDBOX_BASE_DIR || '/tmp/trust-sandbox-test';
+const SANDBOX_BASE_DIR = '/tmp/trust-sandbox-test';
 
 // ── Setup / Teardown ───────────────────────────────────────────────────────────
 
 beforeAll(async () => {
-  // Ensure test sandbox dir is clean
-  if (fs.existsSync(SANDBOX_BASE_DIR)) {
-    fs.rmSync(SANDBOX_BASE_DIR, { recursive: true, force: true });
+  // Override SANDBOX_BASE_DIR to a test-specific writable path
+  // (prod env sets this to /home/trustmaker/trees which regular users can't write)
+  const testDir = '/tmp/trust-sandbox-test';
+  if (fs.existsSync(testDir)) {
+    fs.rmSync(testDir, { recursive: true, force: true });
   }
-  fs.mkdirSync(SANDBOX_BASE_DIR, { recursive: true });
+  fs.mkdirSync(testDir, { recursive: true });
+  process.env.SANDBOX_BASE_DIR = testDir;
 
   // Register a test user
   const registerRes = await request(app)

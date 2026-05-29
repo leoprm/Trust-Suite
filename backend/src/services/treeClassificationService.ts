@@ -7,7 +7,7 @@
  *   3. Saves to sandbox: <SANDBOX_BASE_DIR>/<treeId>/tree-classification.json
  */
 
-import { routeToHermes } from "../bot/hermesBridge";
+import { routeToHermes } from "../bot/hermesBridge/route";
 import fs from "fs";
 import path from "path";
 

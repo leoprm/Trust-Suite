@@ -65,7 +65,7 @@ export function t(key: string, lng?: string, vars?: Record<string, unknown>): st
  */
 export function getSupportedLanguages(): Array<{ code: string; name: string; flag: string }> {
   return [
-    { code: 'es', name: 'Espanol', flag: '\ud83c\uddf2\ud83c\uddfd' },
+    { code: 'es', name: 'Español', flag: '\ud83c\uddf2\ud83c\uddfd' },
     { code: 'en', name: 'English', flag: '\ud83c\uddfa\ud83c\uddf8' },
   ];
 }

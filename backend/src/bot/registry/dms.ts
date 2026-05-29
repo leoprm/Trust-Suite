@@ -4,7 +4,9 @@ import { BotContext } from "../types";
 import { handleDM, handleProfileCallback } from "../dm";
 import { resolveUserLanguage, showLanguageSelector } from "../messages";
 import { t } from "../i18n";
-import { routeToHermes, sendTelegramMessage, getChatHistory } from "../hermesBridge";
+import { routeToHermes } from "../hermesBridge/route";
+import { sendTelegramMessage } from "../hermesBridge/telegram-sender";
+import { getChatHistory } from "../hermesBridge/history";
 import { handleWorkerTextContinuation } from "../worker";
 import { handleEncuestaCallback } from "../encuesta";
 

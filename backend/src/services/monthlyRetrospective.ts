@@ -17,7 +17,7 @@
 import type { PrismaClient } from "@prisma/client";
 import type { Bot } from "grammy";
 import type { BotContext } from "../bot/types";
-import { routeToHermes } from "../bot/hermesBridge";
+import { routeToHermes } from "../bot/hermesBridge/route";
 import { spawn } from "child_process";
 import fs from "fs";
 import path from "path";

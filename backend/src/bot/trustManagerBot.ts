@@ -2,7 +2,8 @@ import { Bot, InlineKeyboard } from "grammy";
 import { PrismaClient } from "@prisma/client";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { routeToHermes, sendTelegramMessage } from "./hermesBridge";
+import { routeToHermes } from "./hermesBridge/route";
+import { sendTelegramMessage } from "./hermesBridge/telegram-sender";
 import { useTurn } from "../services/supportSessionService";
 
 // ── Onboarding session state ──────────────────────────────────────────────

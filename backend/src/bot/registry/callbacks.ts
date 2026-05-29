@@ -9,7 +9,8 @@ import { handleNeedPollAnswer } from "../voting";
 import { sendSatisfactionPoll } from "../satisfaction";
 import { getTreeDepth, parentTreeSelectors, resolveTreeLanguage, trackBotMessage } from "../helpers";
 import { t } from "../i18n";
-import { routeToHermes, getChatHistory } from "../hermesBridge";
+import { routeToHermes } from "../hermesBridge/route";
+import { getChatHistory } from "../hermesBridge/history";
 
 
 export function register(bot: Bot<BotContext>, prisma: PrismaClient): void {

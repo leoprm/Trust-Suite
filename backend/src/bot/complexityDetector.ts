@@ -43,7 +43,7 @@ export default function isComplexQuery(message: string): boolean {
   if (typeof message !== "string") return false;
 
   if (containsKeyword(message, COMPLEX_KEYWORDS)) return true;
-  if (message.length > 800) return true;
+  if (message.length > 300) return true;
 
   return false;
 }

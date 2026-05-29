@@ -10,7 +10,7 @@
  *
  * Mockea fetch (concierge) y child_process.exec (kanbanBridge).
  */
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach, beforeAll } from 'vitest';
 
 // ── Mock child_process.exec ──
 vi.mock('child_process', () => ({
@@ -21,14 +21,24 @@ vi.mock('child_process', () => ({
 const mockFetch = vi.fn();
 
 const { handleNaturalMessage } = await import('../bot/messages');
+const { initI18n } = await import('../bot/i18n');
 
 // ── Helpers ──────────────────────────────────────────────────────────────
 
-function makeCtx(text: string, chatId = '123456') {
+const MOCK_TREE = {
+  id: 'tree-uuid-test',
+  name: 'Test Tree',
+  telegramChatId: '123456',
+  icono: '🌳',
+  admissionPolicy: 'OPEN',
+};
+
+function makeCtx(text: string, chatId = '123456', tree: any = MOCK_TREE) {
   return {
     message: { text },
     chat: { id: parseInt(chatId), type: 'group' },
     from: { id: 99999 },
+    tree,
     replyWithChatAction: vi.fn().mockResolvedValue(undefined),
   } as any;
 }
@@ -61,16 +71,12 @@ function makePrisma(tree: any | null) {
   } as any;
 }
 
-const MOCK_TREE = {
-  id: 'tree-uuid-test',
-  name: 'Test Tree',
-  telegramChatId: '123456',
-  icono: '🌳',
-  admissionPolicy: 'OPEN',
-};
-
 describe('Messages — Natural Message Routing', () => {
   let prisma: any;
+
+  beforeAll(async () => {
+    await initI18n();
+  });
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -163,7 +169,7 @@ describe('Messages — Natural Message Routing', () => {
   // ── Test 5: Sin árbol → mensaje de error ────────────────────────────
   it('returns error message when no tree is associated with chat', async () => {
     const noTreePrisma = makePrisma(null);
-    const ctx = makeCtx('@TrustMakerBot hola');
+    const ctx = makeCtx('@TrustMakerBot hola', '123456', null);
 
     const result = await handleNaturalMessage(noTreePrisma, ctx);
 
