@@ -9,6 +9,7 @@ datasource db {
 }
 
 enum UserRole {
+  PERSON
   USER
   ADMIN
 }
