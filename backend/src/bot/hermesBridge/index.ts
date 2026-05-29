@@ -8,10 +8,14 @@
  */
 
 // ── Named exports (re-exported from monolithic file during transition) ─────
+export { routeToHermes } from "../hermesBridge";
+
+// ── Telegram sender (extracted submodule) ────────────────────────────────
 export {
-  routeToHermes,
   sendTelegramMessage,
-} from "../hermesBridge";
+  splitAtBoundary,
+  TELEGRAM_MAX_CHARS,
+} from "./telegram-sender";
 
 // ── Conversation window (extracted submodule) ─────────────────────────────
 export { ConversationWindow, conversationWindows } from "./conversation-window";
