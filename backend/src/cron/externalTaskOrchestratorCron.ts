@@ -18,6 +18,7 @@ import type { PrismaClient } from "@prisma/client";
 import type { Bot } from "grammy";
 import type { BotContext } from "../bot/types";
 import { routeToHermes } from "../bot/hermesBridge/route";
+import { DB_STRING_FIELD_MAX_CHARS } from "../bot/hermesBridge/constants";
 import fs from "fs";
 import path from "path";
 
@@ -179,7 +180,7 @@ async function evaluateTask(
   }
 
   if (rejectMatch) {
-    const reason = rejectMatch[1].trim().slice(0, 2000);
+    const reason = rejectMatch[1].trim().slice(0, DB_STRING_FIELD_MAX_CHARS);
     try {
       await prisma.externalTask.update({
         where: { id: task.id },
@@ -245,7 +246,7 @@ async function evaluateTask(
     try {
       await prisma.externalTask.update({
         where: { id: task.id },
-        data: { status: "REJECTED", rejectReason: decision.slice(0, 2000) },
+        data: { status: "REJECTED", rejectReason: decision.slice(0, DB_STRING_FIELD_MAX_CHARS) },
       });
     } catch (dbErr: any) {
       return {

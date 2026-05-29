@@ -16,6 +16,7 @@ import type { BotContext } from "./types";
 import { execFile } from "child_process";
 import { promisify } from "util";
 import { getTasksForChat } from "./kanbanBridge";
+import { writeDlqEntry } from "./hermesBridge/kanban-dlq";
 
 const execFileAsync = promisify(execFile);
 
@@ -108,11 +109,19 @@ export async function checkSingleTask(
     );
     stdout = result.stdout;
   } catch (err: any) {
-    // Process crashed or timed out — skip this cycle
+    // Process crashed or timed out — skip this cycle, write to DLQ
     console.error(
       `[KanbanWatchdog] Hermes exec failed for ${kanbanTaskId}:`,
       err.message,
     );
+    writeDlqEntry({
+      timestamp: new Date().toISOString(),
+      operation: "kanban show",
+      task_id: kanbanTaskId,
+      tree_id: "__watchdog__",
+      chat_id: chatId,
+      error: (err?.stderr || err?.message || String(err)).slice(0, 500),
+    });
     return null;
   }
 
@@ -133,6 +142,14 @@ export async function checkSingleTask(
       `[KanbanWatchdog] Failed to parse JSON for ${kanbanTaskId}:`,
       stdout.substring(0, 120),
     );
+    writeDlqEntry({
+      timestamp: new Date().toISOString(),
+      operation: "kanban show",
+      task_id: kanbanTaskId,
+      tree_id: "__watchdog__",
+      chat_id: chatId,
+      error: `JSON parse failed — stdout: ${stdout.substring(0, 200)}`,
+    });
     return null;
   }
 
@@ -213,10 +230,25 @@ export async function notifyProgress(
       "[KanbanWatchdog] Failed to fetch kanban list for summary:",
       err.message,
     );
+    writeDlqEntry({
+      timestamp: new Date().toISOString(),
+      operation: "kanban list",
+      tree_id: "__watchdog__",
+      chat_id: Array.from(chatIds)[0] || undefined,
+      error: (err?.stderr || err?.message || String(err)).slice(0, 500),
+    });
     return;
   }
 
-  if (!Array.isArray(allTasks)) return;
+  if (!Array.isArray(allTasks)) {
+    writeDlqEntry({
+      timestamp: new Date().toISOString(),
+      operation: "kanban list",
+      tree_id: "__watchdog__",
+      error: "kanban list returned non-array result",
+    });
+    return;
+  }
 
   // 2. Build lookup maps: taskId → status, taskId → title
   const statusMap = new Map<string, string>();

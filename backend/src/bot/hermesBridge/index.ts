@@ -7,6 +7,9 @@
  *   system-prompt.ts, route.ts
  */
 
+// ── Constants ──────────────────────────────────────────────────────────────
+export * as constants from "./constants";
+
 // ── Route (including enforcePrefix for multi-tree prefixing) ──────────────
 export { enforcePrefix, routeToHermes, getHermesApiKey } from "./route";
 
@@ -45,6 +48,15 @@ export {
   taskCounters,
   validateTreeId,
 } from "./system-prompt";
+
+// ── Kanban dead-letter queue ──────────────────────────────────────────────
+export {
+  writeDlqEntry,
+  readDlqEntries,
+  buildDlqWarning,
+  clearDlq,
+} from "./kanban-dlq";
+export type { DlqEntry } from "./kanban-dlq";
 
 // ── Types ─────────────────────────────────────────────────────────────────
 export type { ShouldRespondResult } from "./types";

@@ -5,9 +5,10 @@ import { prisma, telegramBot } from '../index';
 import { notifyMatchingWorkers as notifyWorkers } from '../services/matchingService';
 import { evaluateDifficulty, evaluateQuality } from '../services/difficultyService';
 import { awardXp } from '../services/levelingService';
+import { DB_STRING_FIELD_MAX_CHARS } from '../bot/hermesBridge/constants';
 
 // ── Sandbox base for deliverable storage ──────────────────────────────────────
-import { DB_STRING_FIELD_MAX_CHARS } from '../bot/hermesBridge/constants';
+const SANDBOX_BASE = process.env.SANDBOX_BASE_DIR || '/home/trustmaker/trees';
 
 /** Verify user is member of a tree. Returns 403 JSON if not. */
 async function requireTreeMembership(userId: string, treeId: string, res: Response): Promise<boolean> {
@@ -611,7 +612,7 @@ export const rejectTask = async (req: Request, res: Response) => {
       where: { id: taskId },
       data: {
         status: 'REJECTED',
-        ...(reason && { rejectReason: String(reason).slice(0, 2000) }),
+        ...(reason && { rejectReason: String(reason).slice(0, DB_STRING_FIELD_MAX_CHARS) }),
       },
     });
 

@@ -645,7 +645,7 @@ export const consumeGuestToken = async (req: any, res: Response) => {
     res.json({ message: 'Unido exitosamente', treeId: tokenRecord.arbolId });
   } catch (error) {
     console.error('consumeGuestToken error:', error);
-    res.status(500).json({ error: 'No se pudo procesar tu invitación.' });
+    res.status(500).json({ error: await getErrorMessage(prisma, 'invitation_processing_failed') });
   }
 };
 
