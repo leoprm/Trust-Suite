@@ -96,6 +96,13 @@ enum InteractionMode {
   MINIMUM
 }
 
+enum TreeType {
+  EMPRESA
+  COMUNIDAD
+  FAMILIA
+  PERSONAL
+}
+
 enum AssignmentReason {
   EXPLORATION
   EXPLOITATION
@@ -268,6 +275,8 @@ model Tree {
   monthlyReportsEnabled   Boolean                @default(true)
   voteThreshold           Int                    @default(20)
   interactionMode         InteractionMode        @default(MAXIMUM)
+  treeType                TreeType               @default(PERSONAL)
+  skillBundle             String?
   classification          Json?
   classificationUpdatedAt DateTime?
 }

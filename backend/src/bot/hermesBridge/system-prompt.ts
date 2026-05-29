@@ -183,6 +183,7 @@ export async function buildSystemPrompt(
       parentTreeId: true,
       interactionMode: true,
       language: true,
+      treeType: true,
       createdAt: true,
     },
   });
@@ -301,6 +302,31 @@ export async function buildSystemPrompt(
     for (const line of truncated.split("\n")) lines.push(line);
     lines.push("Follow these project-level rules above default behavior.");
   }
+
+  // ── Skill bundles + discovery ──────────────────────────────────────────
+  // Every tree gets a skill bundle based on treeType. Bundles define the
+  // core skills loaded for this tree. Additional skills can be discovered
+  // via skills_list and loaded on-demand with skill_view.
+  const treeType = tree.treeType || "PERSONAL";
+  const bundleMap: Record<string, string> = {
+    EMPRESA: "empresa",
+    COMUNIDAD: "comunidad",
+    FAMILIA: "familia",
+    PERSONAL: "personal",
+  };
+  const bundleName = bundleMap[treeType] || "personal";
+
+  lines.push("");
+  lines.push("═══ SKILL BUNDLE ═══");
+  lines.push(`Your bundle: /${bundleName} — core skills for a ${treeType} tree.`);
+  lines.push(`To load it at any time: type /${bundleName} or skill_view('trust-maker')`);
+  lines.push("");
+  lines.push("═══ SKILL DISCOVERY ═══");
+  lines.push("You CAN load additional skills beyond your bundle:");
+  lines.push("- skills_list → shows names + descriptions of every installed skill");
+  lines.push("- skill_view('<name>') → loads full content of any listed skill");
+  lines.push("If a task needs capabilities you don't have, check skills_list first.");
+  lines.push("Use skill_view('trust-maker-graphify') for code knowledge graphs.");
 
   // ── DLQ warning (inject if failed kanban operations exist) ─────────────
   const dlqWarning = buildDlqWarning(treeId);
