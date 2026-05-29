@@ -285,8 +285,8 @@ export async function routeToHermes(
     validateTreeId(treeId);
     const sandboxDir = `${sandboxBase}/${treeId}`;
 
-    // TODO(S13): Load tree-specific engagement keywords
-    // await loadKeywords(sandboxDir);
+    // Load tree-specific engagement keywords (S13)
+    await loadKeywords(sandboxDir);
 
     try {
       const kanbanResults = await checkKanbanCompletions(
