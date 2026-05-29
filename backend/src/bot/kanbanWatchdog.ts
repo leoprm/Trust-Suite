@@ -97,6 +97,7 @@ export async function checkSingleTask(
     status: storedStatus,
     lastNotifiedAt,
     createdAt,
+    chatId,
   } = tracked;
 
   // 1. Query Hermes for real status
