@@ -23,6 +23,14 @@ const HERMES_API = "http://127.0.0.1:8643/v1/chat/completions";
 const DEEPSEEK_DECISION_API = "https://api.deepseek.com/v1/chat/completions";
 const DEEPSEEK_API_KEY = process.env.DEEPSEEK_API_KEY ?? "";
 const DECISION_MODEL = "deepseek-chat"; // fast + cheap for yes/no decisions
+
+const UUID_RE = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i;
+
+function validateTreeId(treeId: string): void {
+  if (!UUID_RE.test(treeId)) {
+    throw new Error(`Invalid treeId format: ${treeId}`);
+  }
+}
 const SUPPORT_HERMES_GATEWAY = process.env.HERMES_SUPPORT_GATEWAY || "http://127.0.0.1:8646";
 const SUPPORT_HERMES_API_URL = process.env.SUPPORT_HERMES_API_URL || `${SUPPORT_HERMES_GATEWAY}/v1/chat/completions`;
 const SUPPORT_HERMES_API_KEY = process.env.HERMES_SUPPORT_API_KEY || process.env.SUPPORT_HERMES_API_KEY || "";
@@ -622,6 +630,7 @@ async function buildSystemPrompt(
 
   // ── SYSTEM.md del árbol ───────────────────────────────────────────────
   const sandboxBase = process.env.SANDBOX_BASE_DIR || "/home/trustmaker/trees";
+  validateTreeId(treeId);
   const sandboxDir = path.join(sandboxBase, treeId);
   const systemMdPath = path.join(sandboxDir, "SYSTEM.md");
   if (fs.existsSync(systemMdPath)) {
@@ -1136,6 +1145,7 @@ export async function routeToHermes(
   if (treeId) {
     const sandboxBase =
       process.env.SANDBOX_BASE_DIR || "/home/trustmaker/trees";
+    validateTreeId(treeId);
     const sandboxDir = `${sandboxBase}/${treeId}`;
     try {
       const kanbanResults = await checkKanbanCompletions(
@@ -1285,8 +1295,8 @@ export async function routeToHermes(
       buffer = lines.pop() ?? "";
 
       for (const line of lines) {
-        if (!line.startsWith("data: ")) continue;
-        const payload = line.slice(6);
+        if (!line.startsWith("data:")) continue;
+        const payload = line.slice(5).trimStart();
         if (payload === "[DONE]") {
           streamDone = true;
           break;
