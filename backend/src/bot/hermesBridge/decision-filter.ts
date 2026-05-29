@@ -21,7 +21,10 @@ const DECISION_MODEL = "deepseek-chat"; // fast + cheap for yes/no decisions
 // Detects engagement signals in ambient (non-addressed) group messages.
 // Returns matched keyword string or null if no match.
 
-const ENGAGEMENT_KEYWORDS: RegExp[] = [
+import fs from "fs";
+import path from "path";
+
+const BUILTIN_ENGAGEMENT_KEYWORDS: RegExp[] = [
   // Spanish question starters
   /\b(qué|que|quién|quien|quiénes|quienes|cómo|como|cuándo|cuando|dónde|donde|por qu[ée]|cuál|cual|cuáles|cuales)\b/i,
   // Help / need signals
@@ -44,10 +47,45 @@ const ENGAGEMENT_KEYWORDS: RegExp[] = [
   /\b(ayudar|ay[úu]dame|expl[ií]came|expl[ií]car|alguna\s+idea|ideas?|opini[óo]n|qu[ée]\s+opinan|qu[ée]\s+piensan)\b/i,
 ];
 
+/** Active keyword list — seeded from built-in, can be extended via loadKeywords(). */
+let activeKeywords: RegExp[] = [...BUILTIN_ENGAGEMENT_KEYWORDS];
+
+/**
+ * Load custom engagement keywords from a tree sandbox's keywords.json.
+ * Falls back to built-in ENGAGEMENT_KEYWORDS on any error.
+ *
+ * Expected format: { "keywords": ["pattern1", "pattern2", ...] }
+ * Each pattern string is compiled into a case-insensitive RegExp.
+ * Loaded keywords are appended to the built-in list.
+ */
+export async function loadKeywords(sandboxDir: string): Promise<void> {
+  const filePath = path.join(sandboxDir, "keywords.json");
+  try {
+    if (!fs.existsSync(filePath)) {
+      activeKeywords = [...BUILTIN_ENGAGEMENT_KEYWORDS];
+      return;
+    }
+    const raw = fs.readFileSync(filePath, "utf-8");
+    const parsed = JSON.parse(raw);
+    const patterns: string[] = Array.isArray(parsed?.keywords)
+      ? parsed.keywords.filter((p: unknown): p is string => typeof p === "string")
+      : [];
+    if (patterns.length === 0) {
+      activeKeywords = [...BUILTIN_ENGAGEMENT_KEYWORDS];
+      return;
+    }
+    const customKeywords = patterns.map((p: string) => new RegExp(p, "i"));
+    activeKeywords = [...BUILTIN_ENGAGEMENT_KEYWORDS, ...customKeywords];
+  } catch {
+    // Any parse error / filesystem error → fall back to built-in list
+    activeKeywords = [...BUILTIN_ENGAGEMENT_KEYWORDS];
+  }
+}
+
 /** Legacy boolean scanner — preserved for backward compatibility. */
 export function scanForKeywords(text: string): boolean {
   const lower = text.toLowerCase();
-  for (const re of ENGAGEMENT_KEYWORDS) {
+  for (const re of activeKeywords) {
     if (re.test(lower)) return true;
   }
   return false;
@@ -59,7 +97,7 @@ export function scanForKeywords(text: string): boolean {
  */
 export function scanForKeywordMatch(text: string): string | null {
   if (!text || text.length < 3) return null;
-  for (const re of ENGAGEMENT_KEYWORDS) {
+  for (const re of activeKeywords) {
     const m = text.match(re);
     if (m) return m[0];
   }

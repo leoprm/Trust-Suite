@@ -8,7 +8,7 @@
  */
 
 // ── Route (including enforcePrefix for multi-tree prefixing) ──────────────
-export { enforcePrefix, routeToHermes } from "./route";
+export { enforcePrefix, routeToHermes, getHermesApiKey } from "./route";
 
 // ── Telegram sender (extracted submodule) ────────────────────────────────
 export {
@@ -24,7 +24,6 @@ export { ConversationWindow, conversationWindows } from "./conversation-window";
 export {
   agentsMdCache,
   getAgentsMd,
-  collectRecentMessages,
   getChatHistory,
   summarizeHistory,
   compressHistory,
@@ -36,6 +35,7 @@ export {
   scanForKeywordMatch,
   shouldAriRespondLocal,
   shouldAriRespond,
+  loadKeywords,
 } from "./decision-filter";
 
 // ── System prompt builder (extracted submodule) ───────────────────────────

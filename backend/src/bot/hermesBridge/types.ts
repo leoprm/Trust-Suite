@@ -37,12 +37,6 @@ export interface RecentMessage {
   content: string;
 }
 
-/** Lightweight message returned by collectRecentMessages */
-export interface CollectedMessage {
-  displayName: string;
-  text: string;
-}
-
 export interface ChatMessage {
   role: "system" | "user" | "assistant";
   content: string;

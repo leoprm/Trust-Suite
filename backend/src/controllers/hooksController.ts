@@ -3,6 +3,8 @@ import { execSync } from 'child_process';
 
 const INTERNAL_API_KEY = process.env.INTERNAL_API_KEY || '';
 
+const HERMES_BIN = process.env.HERMES_BIN || "hermes";
+
 // ── Helper: internal HTTP POST to /api/bot/send-message ────────────────────────
 async function notifyTreeChat(treeId: string, text: string): Promise<void> {
   try {
@@ -68,12 +70,12 @@ export const externalTaskCompleted = async (req: Request, res: Response) => {
     // ── Execute Hermes Kanban CLI ───────────────────────────────────────────────
     try {
       if (status === 'APPROVED') {
-        const cmd = `hermes kanban complete ${kanbanTaskId} --summary "Approved via ExternalTask ${externalTaskId}"`;
+        const cmd = `${HERMES_BIN} kanban complete ${kanbanTaskId} --summary "Approved via ExternalTask ${externalTaskId}"`;
         console.log(`[hooks] Executing: ${cmd}`);
         const output = execSync(cmd, { encoding: 'utf-8', timeout: 30_000 });
         console.log(`[hooks] Output: ${output.trim()}`);
       } else {
-        const cmd = `hermes kanban block ${kanbanTaskId} "Rechazado"`;
+        const cmd = `${HERMES_BIN} kanban block ${kanbanTaskId} "Rechazado"`;
         console.log(`[hooks] Executing: ${cmd}`);
         const output = execSync(cmd, { encoding: 'utf-8', timeout: 30_000 });
         console.log(`[hooks] Output: ${output.trim()}`);

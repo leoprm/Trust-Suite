@@ -271,12 +271,16 @@ export async function routeToHermes(
     ].join("\n");
   }
 
-  // ── Check for completed Kanban tasks ─────────────────────────────────
+  // ── Load custom keywords + check Kanban completions ──────────────────
   if (treeId) {
     const sandboxBase =
       process.env.SANDBOX_BASE_DIR || "/home/trustmaker/trees";
     validateTreeId(treeId);
     const sandboxDir = `${sandboxBase}/${treeId}`;
+
+    // Load tree-specific engagement keywords (S13)
+    await loadKeywords(sandboxDir);
+
     try {
       const kanbanResults = await checkKanbanCompletions(
         treeId,

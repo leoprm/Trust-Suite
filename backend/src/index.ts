@@ -4,7 +4,7 @@ dotenv.config();
 import express from 'express';
 import path from 'path';
 import fs from 'fs';
-import { execSync } from 'child_process';
+import { execSync, spawn } from 'child_process';
 import mysql from 'mysql2/promise';
 import { PrismaClient } from '@prisma/client';
 import { authLimiter, globalLimiter, conciergeLimiter } from './config/rateLimiter';
@@ -282,9 +282,42 @@ app.use((err: any, _req: express.Request, res: express.Response, _next: express.
   }
 });
 
+// ── Hermes permission check: verifies hermes kanban show runs without sudo ──
+function checkHermesPermission(): Promise<boolean> {
+  return new Promise((resolve) => {
+    const hermesBin = process.env.HERMES_BIN || "hermes";
+    const child = spawn(hermesBin, ["kanban", "show", "--help"], {
+      stdio: ["ignore", "pipe", "pipe"],
+      timeout: 10_000,
+    });
+    child.on("error", () => resolve(false));
+    child.on("close", (code) => {
+      if (code === 0) {
+        console.log("[Hermes Check] OK — hermes kanban show works without sudo");
+      }
+      resolve(code === 0);
+    });
+  });
+}
+
 // ── Start ─────────────────────────────────────────────────────────────────────
 if (process.env.NODE_ENV !== 'test') {
   bootstrapDatabase().then(() => {
+    // ── Hermes CLI reachability check ──────────────────────────────────────
+    const hermesBin = process.env.HERMES_BIN || "hermes";
+    try {
+      const version = execSync(`${hermesBin} --version`, {
+        encoding: "utf-8",
+        timeout: 10_000,
+      });
+      console.log(`[Hermes CLI] Reachable: ${version.trim()}`);
+    } catch (err: any) {
+      console.warn(
+        `[Hermes CLI] Not reachable (${hermesBin}): ${err.message}. ` +
+        `Set HERMES_BIN env if installed at a non-standard path.`
+      );
+    }
+
     // ── Sandbox isolation: bloquea outbound MySQL para el user trustmaker ──
     try {
       const isolateScript = path.resolve(__dirname, '..', 'scripts', 'isolate-sandbox.sh');
@@ -297,6 +330,13 @@ if (process.env.NODE_ENV !== 'test') {
       const msg = err.stderr || err.stdout || err.message || String(err);
       console.warn('[Sandbox Isolation] Non-blocking warning — iptables rules not applied:', msg.trim());
     }
+
+    // ── Hermes permission check: verify hermes kanban show works without sudo ──
+    checkHermesPermission().then((ok) => {
+      if (!ok) {
+        console.warn('[Hermes Check] WARNING: hermes kanban show is not working. Kanban completions will fail.');
+      }
+    });
 
     app.listen(Number(port), '0.0.0.0', () => {
       console.log(`Server is running on http://0.0.0.0:${port}`);

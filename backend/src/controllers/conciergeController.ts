@@ -1204,48 +1204,50 @@ export const conciergeHandler = async (req: Request, res: Response) => {
       }
     }
 
-    // ── Persist chat messages ─────────────────────────────────────────────
+    // ── Persist chat messages (fire-and-forget) ─────────────────────────
     const userId = req.user?.id;
     if (userId) {
-      try {
-        // Store user message and assistant reply in a single transaction
-        await prisma.$transaction([
-          prisma.chatMessage.create({
-            data: {
-              userId,
-              treeId,
-              agentId: agentId || null,
-              role: 'user',
-              content: message.trim(),
-            },
-          }),
-          prisma.chatMessage.create({
-            data: {
-              userId,
-              treeId,
-              agentId: agentId || null,
-              role: 'assistant',
-              content: reply,
-            },
-          }),
-        ]);
+      void (async () => {
+        try {
+          // Store user message and assistant reply in a single transaction
+          await prisma.$transaction([
+            prisma.chatMessage.create({
+              data: {
+                userId,
+                treeId,
+                agentId: agentId || null,
+                role: 'user',
+                content: message.trim(),
+              },
+            }),
+            prisma.chatMessage.create({
+              data: {
+                userId,
+                treeId,
+                agentId: agentId || null,
+                role: 'assistant',
+                content: reply,
+              },
+            }),
+          ]);
 
-        // Keep only the last 10 messages per user+tree
-        const oldMessages = await prisma.chatMessage.findMany({
-          where: { userId, treeId },
-          orderBy: { createdAt: 'desc' },
-          select: { id: true },
-          skip: 10,
-        });
-        if (oldMessages.length > 0) {
-          await prisma.chatMessage.deleteMany({
-            where: { id: { in: oldMessages.map(m => m.id) } },
+          // Keep only the last 10 messages per user+tree
+          const oldMessages = await prisma.chatMessage.findMany({
+            where: { userId, treeId },
+            orderBy: { createdAt: 'desc' },
+            select: { id: true },
+            skip: 10,
           });
+          if (oldMessages.length > 0) {
+            await prisma.chatMessage.deleteMany({
+              where: { id: { in: oldMessages.map(m => m.id) } },
+            });
+          }
+        } catch (dbErr) {
+          // Non-fatal: don't fail the request if persistence fails
+          console.error('[concierge] Failed to persist chat messages:', dbErr);
         }
-      } catch (dbErr) {
-        // Non-fatal: don't fail the request if persistence fails
-        console.error('[concierge] Failed to persist chat messages:', dbErr);
-      }
+      })();
     }
 
     res.json({ reply, agentId: agentId || null, treeId });

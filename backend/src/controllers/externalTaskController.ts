@@ -7,7 +7,7 @@ import { evaluateDifficulty, evaluateQuality } from '../services/difficultyServi
 import { awardXp } from '../services/levelingService';
 
 // ── Sandbox base for deliverable storage ──────────────────────────────────────
-const SANDBOX_BASE = process.env.SANDBOX_BASE_DIR || '/home/trustmaker/trees';
+import { DB_STRING_FIELD_MAX_CHARS } from '../bot/hermesBridge/constants';
 
 /** Verify user is member of a tree. Returns 403 JSON if not. */
 async function requireTreeMembership(userId: string, treeId: string, res: Response): Promise<boolean> {

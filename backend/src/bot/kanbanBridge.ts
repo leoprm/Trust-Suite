@@ -8,9 +8,11 @@
 
 import { exec } from "child_process";
 import { PrismaClient } from "@prisma/client";
+import { writeDlqEntry } from "./hermesBridge/kanban-dlq";
 
 // ── Constants ─────────────────────────────────────────────────────────────
 
+const HERMES_BIN = process.env.HERMES_BIN || "hermes";
 const EXEC_TIMEOUT_MS = 10_000; // 10 seconds
 const TITLE_MAX_CHARS = 80;
 const KANBAN_TASK_ID_REGEX = /t_[a-f0-9]+/;
@@ -57,7 +59,7 @@ export async function createKanbanTask(
   const safeBody = body.replace(/'/g, "'\\''");
 
   const command =
-    `hermes kanban create '${safeTitle}' ` +
+    `${HERMES_BIN} kanban create '${safeTitle}' ` +
     `--assignee backend-eng ` +
     `--workspace 'dir:/home/leo/Documentos/TrustMaker/backend' ` +
     `--body '${safeBody}'`;
@@ -68,6 +70,13 @@ export async function createKanbanTask(
     stdout = await new Promise<string>((resolve, reject) => {
       exec(command, { timeout: EXEC_TIMEOUT_MS }, (error, stdout, stderr) => {
         if (error) {
+          writeDlqEntry({
+            timestamp: new Date().toISOString(),
+            operation: "kanban create",
+            tree_id: treeId,
+            chat_id: chatId,
+            error: (stderr || error.message).slice(0, 500),
+          });
           resolve(""); // Any failure → null
           return;
         }
@@ -78,11 +87,29 @@ export async function createKanbanTask(
     return null;
   }
 
-  if (!stdout) return null;
+  if (!stdout) {
+    writeDlqEntry({
+      timestamp: new Date().toISOString(),
+      operation: "kanban create",
+      tree_id: treeId,
+      chat_id: chatId,
+      error: "hermes kanban create returned empty stdout",
+    });
+    return null;
+  }
 
   // ── 4. Parse task ID from stdout using regex ─────────────────────────
   const match = stdout.match(KANBAN_TASK_ID_REGEX);
-  if (!match) return null;
+  if (!match) {
+    writeDlqEntry({
+      timestamp: new Date().toISOString(),
+      operation: "kanban create",
+      tree_id: treeId,
+      chat_id: chatId,
+      error: `Could not parse task ID from stdout: ${stdout.slice(0, 200)}`,
+    });
+    return null;
+  }
 
   const kanbanTaskId = match[0];
 
@@ -90,7 +117,7 @@ export async function createKanbanTask(
   try {
     await new Promise<void>((resolve) => {
       exec(
-        `hermes kanban claim ${kanbanTaskId}`,
+        `${HERMES_BIN} kanban claim ${kanbanTaskId}`,
         { timeout: EXEC_TIMEOUT_MS },
         (error) => {
           if (error) {

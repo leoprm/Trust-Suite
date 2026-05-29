@@ -12,6 +12,8 @@ import fs from "fs";
 import path from "path";
 
 import { getAgentsMd } from "./history";
+import { AGENTS_MD_MAX_CHARS } from "./constants";
+import { writeDlqEntry, buildDlqWarning } from "./kanban-dlq";
 
 // ── UUID validation ───────────────────────────────────────────────────────
 const UUID_RE = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i;
@@ -71,7 +73,7 @@ export async function checkKanbanCompletions(
     return null;
   }
 
-  const hermesBin = "/home/trustmaker/.hermes/hermes-agent/venv/bin/hermes";
+  const hermesBin = process.env.HERMES_BIN || "hermes";
   const remaining: typeof entries = [];
   const completed: Array<{
     task_id: string;
@@ -99,7 +101,14 @@ export async function checkKanbanCompletions(
       } else {
         remaining.push(entry);
       }
-    } catch {
+    } catch (err: any) {
+      writeDlqEntry({
+        timestamp: new Date().toISOString(),
+        operation: "kanban show",
+        task_id: entry.task_id,
+        tree_id: treeId,
+        error: (err?.message || String(err)).slice(0, 500),
+      });
       remaining.push(entry);
     }
   }
@@ -124,13 +133,10 @@ export async function checkKanbanCompletions(
   return parts.join("\n");
 }
 
-/** Ejecuta `sudo -u trustmaker hermes kanban show <id> --json` y retorna stdout. */
+/** Ejecuta `hermes kanban show <id> --json` directamente y retorna stdout. */
 function spawnHermesShow(bin: string, taskId: string): Promise<string> {
   return new Promise((resolve, reject) => {
-    const child = spawn("sudo", [
-      "-u",
-      "trustmaker",
-      bin,
+    const child = spawn(bin, [
       "kanban",
       "show",
       taskId,
@@ -164,7 +170,7 @@ export async function buildSystemPrompt(
 ): Promise<string> {
   const lines: string[] = [];
 
-  // ── Tree info ─────────────────────────────────────────────────────────
+  // ── Query 1: Tree info (must run first — early exit if null) ──────────
   const tree = await prisma.tree.findUnique({
     where: { id: treeId },
     select: {
@@ -183,6 +189,54 @@ export async function buildSystemPrompt(
   if (!tree) {
     return "You are Ari, the assistant of Trust Maker. Your name is Ari — never say you are Hermes Agent or any other AI. Respond in the language configured for this tree. Be helpful and community-oriented.";
   }
+
+  // ── Query 2: Batch all remaining reads into one transaction ───────────
+  // Uses recursive CTE for ancestor chain instead of while-loop (N→1 query).
+  const [childTrees, needs, members, todos, tgUser, ancestorRows] =
+    await prisma.$transaction([
+      // Sub-trees
+      prisma.tree.findMany({
+        where: { parentTreeId: treeId },
+        select: { id: true, name: true },
+      }),
+      // Active needs
+      prisma.need.findMany({
+        where: { treeId, status: "OPEN" },
+        select: { title: true, description: true, importance: true },
+        orderBy: { importance: "desc" },
+        take: 10,
+      }),
+      // Members
+      prisma.treeMember.findMany({
+        where: { treeId, status: "ACTIVE" },
+        include: {
+          user: { select: { id: true, username: true, firstName: true } },
+        },
+        take: 20,
+      }),
+      // Community TODOs
+      prisma.todo.findMany({
+        where: { treeId, status: "PENDING" },
+        orderBy: { likeCount: "desc" },
+        take: 10,
+      }),
+      // User context
+      prisma.user.findFirst({
+        where: { telegramUserId: BigInt(userId) },
+        select: { username: true, firstName: true, id: true },
+      }),
+      // Ancestor chain via recursive CTE (replaces while-loop)
+      prisma.$queryRaw<Array<{ id: string; name: string; icono: string }>>`
+        WITH RECURSIVE ancestors AS (
+          SELECT id, name, icono, parentTreeId FROM Tree WHERE id = ${treeId}
+          UNION ALL
+          SELECT t.id, t.name, t.icono, t.parentTreeId
+          FROM Tree t
+          INNER JOIN ancestors a ON t.id = a.parentTreeId
+        )
+        SELECT id, name, icono FROM ancestors WHERE id != ${treeId}
+      `,
+    ]);
 
   // Resolve language from tree config
   const langMap: Record<string, string> = {
@@ -238,8 +292,8 @@ export async function buildSystemPrompt(
   // ── AGENTS.md del árbol (cached) ──────────────────────────────────────
   const agentsMdContent = getAgentsMd(sandboxDir, treeId);
   if (agentsMdContent) {
-    const truncated = agentsMdContent.length > 2000
-      ? agentsMdContent.slice(0, 1997) + "..."
+    const truncated = agentsMdContent.length > AGENTS_MD_MAX_CHARS
+      ? agentsMdContent.slice(0, AGENTS_MD_MAX_CHARS - 3) + "..."
       : agentsMdContent;
     lines.push("");
     lines.push("═══ AGENTS.md (project rules) ═══");
@@ -247,13 +301,16 @@ export async function buildSystemPrompt(
     lines.push("Follow these project-level rules above default behavior.");
   }
 
-  // ── Sandbox memory (tree-level memory.json) ────────────────────────────
-  // ALWAYS show memory instructions so Ari knows how to save, even on first use.
+  // ── DLQ warning (inject if failed kanban operations exist) ─────────────
+  const dlqWarning = buildDlqWarning(treeId);
+  if (dlqWarning) {
+    for (const line of dlqWarning.split("\n")) lines.push(line);
+  }
+
+  // ── Sandbox memory (tree-level memory.json) ───────────────────────────
   const memoryPath = path.join(sandboxDir, "memory", "memory.json");
 
   // Derive per-tree API key — Ari should NEVER receive the global master key.
-  // This is the same HMAC-SHA256 derivation used by checkApiKey in both
-  // treeSandboxController.ts and sandboxController.ts.
   const masterKey = process.env.HERMES_API_SERVER_KEY ?? "";
   const sandboxApiKey = masterKey && treeId
     ? crypto.createHmac("sha256", masterKey).update(treeId).digest("hex")
@@ -298,24 +355,15 @@ export async function buildSystemPrompt(
     lines.push("(memory is empty — use the write action above to save facts)");
   }
 
-  // ── Ancestor chain (sub-trees only) ───────────────────────────────────
-  const ancestorChain: Array<{ id: string; name: string; icono: string }> = [];
-  let cursor: string | null = tree.parentTreeId;
-  while (cursor) {
-    const a = await prisma.tree.findUnique({
-      where: { id: cursor },
-      select: { id: true, name: true, icono: true, parentTreeId: true },
-    });
-    if (!a) break;
-    ancestorChain.push({ id: a.id, name: a.name, icono: a.icono || "🌳" });
-    cursor = a.parentTreeId;
-  }
+  // ── Ancestor chain (from recursive CTE) ───────────────────────────────
+  // Order: parent first → root last (CTE returns root→leaf, so we don't reverse)
+  const ancestorChain = ancestorRows.map((a) => ({
+    id: a.id,
+    name: a.name,
+    icono: a.icono || "🌳",
+  }));
 
-  // ── Sub-trees ─────────────────────────────────────────────────────────
-  const childTrees = await prisma.tree.findMany({
-    where: { parentTreeId: treeId },
-    select: { id: true, name: true },
-  });
+  // ── Root with children: multi-IA coordination ─────────────────────────
   const hasChildren = childTrees.length > 0;
 
   if (ancestorChain.length > 0) {
@@ -339,12 +387,6 @@ export async function buildSystemPrompt(
   }
 
   // ── Active needs ──────────────────────────────────────────────────────
-  const needs = await prisma.need.findMany({
-    where: { treeId, status: "OPEN" },
-    select: { title: true, description: true, importance: true },
-    orderBy: { importance: "desc" },
-    take: 10,
-  });
   lines.push("");
   lines.push(`Open needs (${needs.length}):`);
   if (needs.length === 0) {
@@ -359,11 +401,6 @@ export async function buildSystemPrompt(
   }
 
   // ── Members ───────────────────────────────────────────────────────────
-  const members = await prisma.treeMember.findMany({
-    where: { treeId, status: "ACTIVE" },
-    include: { user: { select: { id: true, username: true, firstName: true } } },
-    take: 20,
-  });
   lines.push("");
   lines.push(`Members (${members.length}):`);
   if (members.length === 0) {
@@ -376,11 +413,6 @@ export async function buildSystemPrompt(
   }
 
   // ── Community TODOs ───────────────────────────────────────────────────
-  const todos = await prisma.todo.findMany({
-    where: { treeId, status: "PENDING" },
-    orderBy: { likeCount: "desc" },
-    take: 10,
-  });
   if (todos.length > 0) {
     lines.push("");
     lines.push("Community TODOs:");
@@ -392,10 +424,6 @@ export async function buildSystemPrompt(
   }
 
   // ── User context ──────────────────────────────────────────────────────
-  const tgUser = await prisma.user.findFirst({
-    where: { telegramUserId: BigInt(userId) },
-    select: { username: true, firstName: true, id: true },
-  });
   if (tgUser || displayName) {
     const name = displayName || tgUser?.firstName || tgUser?.username || userId;
     lines.push("");

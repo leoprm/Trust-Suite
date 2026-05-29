@@ -39,6 +39,9 @@ import {
   formatTodoList,
   summarizeTodo,
 } from "./formatters";
+
+const HERMES_BIN = process.env.HERMES_BIN || "hermes";
+
 import { isComplexNeed, sendApprovalPoll, scheduleApprovalClose } from "./approval";
 import { parseDeadline } from "./deadlineParser";
 
@@ -678,7 +681,7 @@ async function createBranchJobTask(
   const safeBody = body.replace(/'/g, "'\\''");
 
   const command =
-    `hermes kanban create '${safeTitle}' ` +
+    `${HERMES_BIN} kanban create '${safeTitle}' ` +
     `--assignee branch-job ` +
     `--body '${safeBody}'`;
 

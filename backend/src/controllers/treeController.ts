@@ -7,6 +7,7 @@ import { TreeSandbox } from '../services/treeSandbox';
 import { suggestTreeStructure, generateRecommendationForNewTree } from '../services/treeRecommenderService';
 import { createNotebook } from '../services/notebooklmSingleton';
 import { classifyTree } from '../services/treeClassificationService';
+import { getErrorMessage } from '../utils/errorMessages';
 
 // ── Helpers ──────────────────────────────────────────────────────────────
 
@@ -59,7 +60,8 @@ export const createTree = async (req: any, res: Response) => {
         where: { treeId: parentTreeId, userId: creatorId, status: 'ACTIVE' },
       });
       if (!isMember) {
-        return res.status(403).json({ error: 'Debes ser miembro del árbol padre para crear un sub-árbol' });
+        const errMsg = await getErrorMessage(prisma, 'parent_tree_membership_required', parentTreeId);
+        return res.status(403).json({ error: errMsg });
       }
     }
 
@@ -279,7 +281,8 @@ export const updateTree = async (req: any, res: Response) => {
         where: { treeId: parentTreeId, userId: req.user.id, status: 'ACTIVE' },
       });
       if (!isMember) {
-        return res.status(403).json({ error: 'Debes ser miembro del árbol padre para crear un sub-árbol' });
+        const errMsg = await getErrorMessage(prisma, 'parent_tree_membership_required', parentTreeId);
+        return res.status(403).json({ error: errMsg });
       }
     }
 
@@ -601,7 +604,7 @@ export const consumeGuestToken = async (req: any, res: Response) => {
       where: { id: token }
     });
 
-    if (!tokenRecord) return res.status(404).json({ error: 'Enlace inválido o no encontrado' });
+    if (!tokenRecord) return res.status(404).json({ error: await getErrorMessage(prisma, 'invalid_or_expired_link') });
     if (tokenRecord.usado) return res.status(403).json({ error: 'Este enlace ya ha sido utilizado.' });
     if (tokenRecord.expiresAt && new Date() > new Date(tokenRecord.expiresAt)) {
       return res.status(403).json({ error: 'Este enlace ha expirado.' });

@@ -23,6 +23,7 @@ import { textToSpeech } from "../services/ttsService";
 const CONCIERGE_URL = "http://localhost:3100/api/concierge";
 const CONCIERGE_TIMEOUT_MS = 900_000; // 15 minutos
 
+const HERMES_BIN = process.env.HERMES_BIN || "hermes";
 const EXEC_TIMEOUT_MS = 10_000; // 10s for hermes kanban show
 const STATUS_EMOJI: Record<string, string> = {
   done: "✓",
@@ -80,7 +81,7 @@ export async function handleStatusQuery(
         new Promise<{ id: string; status: string; title: string }>(
           (resolve) => {
             exec(
-              `hermes kanban show ${taskId} --json`,
+              `${HERMES_BIN} kanban show ${taskId} --json`,
               { timeout: EXEC_TIMEOUT_MS },
               (error, stdout) => {
                 if (error || !stdout) {
