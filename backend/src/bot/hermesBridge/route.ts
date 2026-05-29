@@ -9,12 +9,15 @@
  *   routeToHermes         → Main API call: system prompt → SSE stream → response
  */
 
+import crypto from "crypto";
 import { messageQueue } from "../messageQueue";
 
 import type {
   HermesBridgeResponse,
   ChatMessage,
 } from "./types";
+
+import { ASSISTANT_MESSAGE_MAX_CHARS } from "./constants";
 
 import {
   buildSystemPrompt,
@@ -56,13 +59,16 @@ async function summarizeHistory(
     .map((m) => `${m.role}: ${m.content.slice(0, 300)}`)
     .join("\n");
 
-  const API_SERVER_KEY = process.env.HERMES_API_SERVER_KEY ?? "";
+  const masterKey = getHermesApiKey(treeId);
+  const derivedKey = masterKey
+    ? crypto.createHmac("sha256", masterKey).update(`summarize:${treeId}`).digest("hex")
+    : "";
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
     "X-Hermes-Session-Key": `tree-agent-summary-${treeId}`,
   };
-  if (API_SERVER_KEY) {
-    headers["Authorization"] = `Bearer ${API_SERVER_KEY}`;
+  if (derivedKey) {
+    headers["Authorization"] = `Bearer ${derivedKey}`;
   }
 
   try {
@@ -250,9 +256,7 @@ export async function routeToHermes(
   }
 
   try {
-  const API_SERVER_KEY = treeId
-    ? (process.env.HERMES_API_SERVER_KEY ?? "")
-    : SUPPORT_HERMES_API_KEY;
+  const API_SERVER_KEY = getHermesApiKey(treeId);
 
   // ── Build system prompt with tree context from DB ─────────────────────
   let systemPrompt: string;
@@ -304,32 +308,6 @@ export async function routeToHermes(
   }
 
   messages.push({ role: "user", content: message.trim() });
-
-    // ── Persist user message to ChatMessage table (for getChatHistory) ─
-    if (treeId) {
-      try {
-        const { prisma: p } = await import("../../index");
-        // Resolve DB user UUID from Telegram numeric ID
-        let dbUserId = userId;
-        if (userId && /^\d+$/.test(userId)) {
-          const dbUser = await (p as any).user.findFirst({
-            where: { telegramUserId: BigInt(userId) },
-            select: { id: true },
-          });
-          if (dbUser) dbUserId = dbUser.id;
-        }
-        await (p as any).chatMessage.create({
-          data: {
-            userId: dbUserId,
-            treeId,
-            role: "user",
-            content: message.trim(),
-          },
-        });
-      } catch (err: any) {
-        console.error(`[hermesBridge] Failed to persist user message: ${err?.message || err}`);
-      }
-    }
 
     // ── Call Hermes Agent API ─────────────────────────────────────────────
   const maxTokens = complex ? 2048 : 1024;
@@ -395,25 +373,8 @@ export async function routeToHermes(
     const decoder = new TextDecoder();
     let buffer = "";
 
-    // Helper: create a promise that rejects when the AbortController fires
-    const abortPromise = new Promise<never>((_, reject) => {
-      if (controller.signal.aborted) {
-        reject(new DOMException("Aborted", "AbortError"));
-        return;
-      }
-      controller.signal.addEventListener(
-        "abort",
-        () => reject(new DOMException("Aborted", "AbortError")),
-        { once: true },
-      );
-    });
-
-    let streamDone = false;
-    while (!streamDone) {
-      const { done, value } = await Promise.race([
-        reader.read(),
-        abortPromise,
-      ]);
+    while (true) {
+      const { done, value } = await reader.read();
       if (done) break;
 
       buffer += decoder.decode(value, { stream: true });
@@ -424,15 +385,20 @@ export async function routeToHermes(
         if (!line.startsWith("data:")) continue;
         const payload = line.slice(5).trimStart();
         if (payload === "[DONE]") {
-          streamDone = true;
           break;
         }
         try {
           const parsed = JSON.parse(payload);
-          // Handle both streaming (delta) and non-streaming (message) formats
-          const delta = parsed?.choices?.[0]?.delta?.content
-            ?? parsed?.choices?.[0]?.message?.content;
-          if (delta) accumulatedContent += delta;
+          // Non-streaming response: full content in one event — break immediately.
+          // No need to wait for [DONE]; the full message is already here.
+          const messageContent = parsed?.choices?.[0]?.message?.content;
+          if (messageContent) {
+            accumulatedContent += messageContent;
+            break;
+          }
+          // Streaming response: accumulate deltas, continue until [DONE].
+          const deltaContent = parsed?.choices?.[0]?.delta?.content;
+          if (deltaContent) accumulatedContent += deltaContent;
         } catch {
           // Skip unparseable SSE payloads
         }
@@ -461,34 +427,47 @@ export async function routeToHermes(
 
     // ── Log Ari's response to daily conversation log ────────────────────
     if (treeId && accumulatedContent) {
-      try {
-        const [{ appendToDailyLog }, { prisma: p }] = await Promise.all([
-          import("../../lib/dailyLog"),
-          import("../../index"),
-        ]);
-        appendToDailyLog(treeId, new Date(), "Ari", accumulatedContent, false, "assistant");
-        // Persist assistant response to ChatMessage table
-        // Resolve DB user UUID from Telegram numeric ID (same as user persist)
-        let dbUserId2 = userId;
-        if (userId && /^\d+$/.test(userId)) {
-          const dbUser2 = await (p as any).user.findFirst({
-            where: { telegramUserId: BigInt(userId) },
-            select: { id: true },
+      void (async () => {
+        try {
+          const { appendToDailyLog } = await import("../../lib/dailyLog");
+          appendToDailyLog(treeId, new Date(), "Ari", accumulatedContent, false, "assistant");
+
+          // Resolve DB user UUID from Telegram numeric ID
+          let dbUserId = userId;
+          if (userId && /^\d+$/.test(userId)) {
+            const dbUser = await (prisma as any).user.findFirst({
+              where: { telegramUserId: BigInt(userId) },
+              select: { id: true },
+            });
+            if (dbUser) dbUserId = dbUser.id;
+          }
+
+          // Persist assistant response FIRST
+          await (prisma as any).chatMessage.create({
+            data: {
+              userId: dbUserId,
+              treeId,
+              role: "assistant",
+              content: accumulatedContent.slice(0, 2000),
+            },
           });
-          if (dbUser2) dbUserId2 = dbUser2.id;
+
+          // Persist user message AFTER assistant — eliminates orphaned user messages
+          await (prisma as any).chatMessage.create({
+            data: {
+              userId: dbUserId,
+              treeId,
+              role: "user",
+              content: message.trim(),
+            },
+          });
+        } catch (err: any) {
+          console.error(`[hermesBridge] Failed to persist messages: ${err?.message || err}`);
         }
-        await (p as any).chatMessage.create({
-          data: {
-            userId: dbUserId2,
-            treeId,
-            role: "assistant",
-            content: accumulatedContent.slice(0, 2000),
-          },
-        });
-      } catch (err: any) {
-        console.error(`[hermesBridge] Failed to persist assistant response: ${err?.message || err}`);
-      }
+      })();
     }
+          })();
+        }
 
     return { text: accumulatedContent };
   } catch (err) {
