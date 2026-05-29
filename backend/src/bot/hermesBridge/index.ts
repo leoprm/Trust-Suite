@@ -7,8 +7,8 @@
  *   system-prompt.ts, route.ts
  */
 
-// ── Named exports (re-exported from monolithic file during transition) ─────
-export { routeToHermes } from "../hermesBridge";
+// ── Route (including enforcePrefix for multi-tree prefixing) ──────────────
+export { enforcePrefix, routeToHermes } from "./route";
 
 // ── Telegram sender (extracted submodule) ────────────────────────────────
 export {
@@ -43,7 +43,9 @@ export {
   buildSystemPrompt,
   checkKanbanCompletions,
   taskCounters,
+  validateTreeId,
 } from "./system-prompt";
 
-// ── Type namespace ─────────────────────────────────────────────────────────
+// ── Types ─────────────────────────────────────────────────────────────────
+export type { ShouldRespondResult } from "./types";
 export * as types from "./types";

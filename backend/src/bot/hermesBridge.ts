@@ -13,44 +13,4 @@
  * This file is now a pure barrel re-export.
  */
 
-// ── Route (extracted to hermesBridge/route.ts) ──────────────────────────
-export { enforcePrefix, routeToHermes } from "./hermesBridge/route";
-
-// ── ConversationWindow (extracted to hermesBridge/conversation-window.ts) ─
-export { ConversationWindow, conversationWindows } from "./hermesBridge/conversation-window";
-
-// ── History (extracted to hermesBridge/history.ts) ──────────────────────
-export {
-  agentsMdCache,
-  getAgentsMd,
-  collectRecentMessages,
-  getChatHistory,
-  summarizeHistory,
-  compressHistory,
-} from "./hermesBridge/history";
-
-// ── Keyword scanning / decision filter (extracted to hermesBridge/decision-filter.ts) ──────
-export {
-  scanForKeywords,
-  scanForKeywordMatch,
-  shouldAriRespondLocal,
-  shouldAriRespond,
-} from "./hermesBridge/decision-filter";
-
-// ── System prompt builder (extracted to hermesBridge/system-prompt.ts) ──
-export {
-  buildSystemPrompt,
-  checkKanbanCompletions,
-  taskCounters,
-  validateTreeId,
-} from "./hermesBridge/system-prompt";
-
-// ── Types ────────────────────────────────────────────────────────────────
-export type { ShouldRespondResult } from "./hermesBridge/types";
-
-// ── Telegram sender (extracted to hermesBridge/telegram-sender.ts) ─────
-export {
-  sendTelegramMessage,
-  splitAtBoundary,
-  TELEGRAM_MAX_CHARS,
-} from "./hermesBridge/telegram-sender";
+export * from "./hermesBridge/index";
