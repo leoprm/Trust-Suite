@@ -19,6 +19,15 @@ import fs from "fs";
 import path from "path";
 import { messageQueue } from "./messageQueue";
 
+import type {
+  WindowState,
+  HermesBridgeResponse,
+  ShouldRespondResult,
+  RecentMessage,
+  CollectedMessage,
+  ChatMessage,
+} from "./hermesBridge/types";
+
 const HERMES_API = "http://127.0.0.1:8643/v1/chat/completions";
 const DEEPSEEK_DECISION_API = "https://api.deepseek.com/v1/chat/completions";
 const DEEPSEEK_API_KEY = process.env.DEEPSEEK_API_KEY ?? "";
@@ -52,75 +61,8 @@ async function getLLMDispatcher() {
   return LLM_DISPATCHER;
 }
 
-// ── ConversationWindow ───────────────────────────────────────────────────
-// In-memory per-tree window for proactive engagement. Each openWindow starts
-// a countdown of 20 interactions. tickWindow decrements; when it hits 0 the
-// window auto-closes. resetWindow extends it back to 20.
-
-export interface WindowState {
-  treeId: string;
-  keyword: string | null;
-  remaining: number;
-  openedAt: Date;
-}
-
-export class ConversationWindow {
-  private windows: Map<string, WindowState> = new Map();
-
-  /** Open a conversation window on a tree. Default 20-message lifespan. */
-  openWindow(treeId: string, keyword?: string): WindowState {
-    const state: WindowState = {
-      treeId,
-      keyword: keyword ?? null,
-      remaining: 20,
-      openedAt: new Date(),
-    };
-    this.windows.set(treeId, state);
-    return state;
-  }
-
-  /** Decrement remaining count. Returns the new state, or null when expired. */
-  tickWindow(treeId: string): WindowState | null {
-    const state = this.windows.get(treeId);
-    if (!state) return null;
-    state.remaining--;
-    if (state.remaining <= 0) {
-      this.windows.delete(treeId);
-      return null;
-    }
-    return state;
-  }
-
-  /** Extend window lifespan back to 20 messages. Returns state or null. */
-  resetWindow(treeId: string): WindowState | null {
-    const state = this.windows.get(treeId);
-    if (!state) return null;
-    state.remaining = 20;
-    return state;
-  }
-
-  /** Force-close a window. */
-  closeWindow(treeId: string): void {
-    this.windows.delete(treeId);
-  }
-
-  /** Check if a tree has an active conversation window. */
-  hasActiveWindow(treeId: string): boolean {
-    return this.windows.has(treeId);
-  }
-
-  /** Get current window state (null if none). */
-  getWindow(treeId: string): WindowState | null {
-    return this.windows.get(treeId) ?? null;
-  }
-
-  /** Legacy alias for hasActiveWindow. */
-  isWindowActive(treeId: string): boolean {
-    return this.hasActiveWindow(treeId);
-  }
-}
-
-export const conversationWindows = new ConversationWindow();
+// ── ConversationWindow (extracted to hermesBridge/conversation-window.ts) ─
+export { ConversationWindow, conversationWindows } from "./hermesBridge/conversation-window";
 
 // ── Task counter for skill auto-evaluation (every 20 tasks) ─────────────
 const taskCounters = new Map<string, number>();
@@ -149,33 +91,8 @@ function getAgentsMd(sandboxDir: string, treeId: string): string | null {
   }
 }
 
-export interface HermesBridgeResponse {
-  text: string | null;
-  /** When true, the message is queued (Ari is busy). Caller should tell user their position. */
-  queued?: boolean;
-  /** Position in queue (1-based) when queued is true. */
-  queuePosition?: number;
-  /** Saturation message when the queue is full. Caller must reply with this. */
-  saturationMessage?: string;
-}
-
-export interface ShouldRespondResult {
-  shouldRespond: boolean;
-}
-
-interface RecentMessage {
-  senderName: string;
-  content: string;
-}
-
-/** Lightweight message returned by collectRecentMessages */
-interface CollectedMessage {
-  displayName: string;
-  text: string;
-}
-
+// ── Fetch recent messages ─────────────────────────────────────────────────
 /**
- * Fetch the last `count` text messages from a Telegram group.
  *
  * Spawns `lib/tg_messages.py` which uses Telethon (MTProto) — the Bot API
  * has no endpoint for historical message retrieval.
@@ -239,11 +156,6 @@ export async function collectRecentMessages(
     child.stdin.write(input);
     child.stdin.end();
   });
-}
-
-export interface ChatMessage {
-  role: "system" | "user" | "assistant";
-  content: string;
 }
 
 /**
