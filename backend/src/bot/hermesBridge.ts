@@ -28,6 +28,8 @@ import type {
   ChatMessage,
 } from "./hermesBridge/types";
 
+import { getAgentsMd } from "./hermesBridge/history";
+
 const HERMES_API = "http://127.0.0.1:8643/v1/chat/completions";
 const DEEPSEEK_DECISION_API = "https://api.deepseek.com/v1/chat/completions";
 const DEEPSEEK_API_KEY = process.env.DEEPSEEK_API_KEY ?? "";
@@ -64,146 +66,18 @@ async function getLLMDispatcher() {
 // ── ConversationWindow (extracted to hermesBridge/conversation-window.ts) ─
 export { ConversationWindow, conversationWindows } from "./hermesBridge/conversation-window";
 
+// ── History (extracted to hermesBridge/history.ts) ──────────────────────
+export {
+  agentsMdCache,
+  getAgentsMd,
+  collectRecentMessages,
+  getChatHistory,
+  summarizeHistory,
+  compressHistory,
+} from "./hermesBridge/history";
+
 // ── Task counter for skill auto-evaluation (every 20 tasks) ─────────────
 const taskCounters = new Map<string, number>();
-
-// ── AGENTS.md cache ──────────────────────────────────────────────────────
-// AGENTS.md from the sandbox doesn't change between calls for the same tree.
-// Cache by treeId with content hash to avoid redundant reads.
-const agentsMdCache = new Map<string, { hash: string; content: string }>();
-
-function getAgentsMd(sandboxDir: string, treeId: string): string | null {
-  const agentsPath = path.join(sandboxDir, "AGENTS.md");
-  if (!fs.existsSync(agentsPath)) return null;
-
-  try {
-    const content = fs.readFileSync(agentsPath, "utf-8").trim();
-    if (!content) return null;
-
-    const hash = crypto.createHash("sha256").update(content).digest("hex");
-    const cached = agentsMdCache.get(treeId);
-    if (cached && cached.hash === hash) return cached.content;
-
-    agentsMdCache.set(treeId, { hash, content });
-    return content;
-  } catch {
-    return null;
-  }
-}
-
-// ── Fetch recent messages ─────────────────────────────────────────────────
-/**
- *
- * Spawns `lib/tg_messages.py` which uses Telethon (MTProto) — the Bot API
- * has no endpoint for historical message retrieval.
- *
- * @returns Array of {displayName, text}, chronological order (oldest first).
- */
-export async function collectRecentMessages(
-  chatId: number,
-  count: number,
-): Promise<CollectedMessage[]> {
-  const apiId = process.env.TELEGRAM_API_ID;
-  const apiHash = process.env.TELEGRAM_API_HASH;
-  const botToken = process.env.TELEGRAM_BOT_TOKEN;
-
-  if (!apiId || !apiHash) {
-    throw new Error("TELEGRAM_API_ID / TELEGRAM_API_HASH not set");
-  }
-  if (!botToken) {
-    throw new Error("TELEGRAM_BOT_TOKEN not set");
-  }
-
-  const script = path.resolve(__dirname, "../../lib/tg_messages.py");
-  const input = JSON.stringify({
-    api_id: Number(apiId),
-    api_hash: apiHash,
-    chat_id: chatId,
-    bot_token: botToken,
-    count,
-  });
-
-  return new Promise<CollectedMessage[]>((resolve, reject) => {
-    const child = spawn("python3", [script], {
-      stdio: ["pipe", "pipe", "pipe"],
-      timeout: 60_000,
-    });
-
-    let stdout = "";
-    let stderr = "";
-
-    child.stdout.on("data", (chunk: Buffer) => {
-      stdout += chunk.toString("utf-8");
-    });
-    child.stderr.on("data", (chunk: Buffer) => {
-      stderr += chunk.toString("utf-8");
-    });
-    child.on("error", (err) => {
-      reject(new Error(`tg_messages.py spawn failed: ${err.message}`));
-    });
-    child.on("close", (code) => {
-      if (code !== 0) {
-        reject(new Error(`tg_messages.py exited ${code}: ${stderr.slice(0, 500)}`));
-        return;
-      }
-      try {
-        resolve(JSON.parse(stdout) as CollectedMessage[]);
-      } catch {
-        reject(new Error(`tg_messages.py invalid JSON: ${stdout.slice(0, 300)}`));
-      }
-    });
-
-    child.stdin.write(input);
-    child.stdin.end();
-  });
-}
-
-/**
- * Recolecta los últimos `count` mensajes del chat y los convierte a ChatMessage[].
- * Usa la DB (ChatMessage table) como fuente primaria — rápido y confiable.
- * Telethon queda como fallback si la DB no tiene datos.
- */
-export async function getChatHistory(
-  chatId: number,
-  treeId: string,
-  count: number = 20,
-): Promise<ChatMessage[]> {
-  // ── Primary: read from DB ───────────────────────────────────────────
-  try {
-    const { prisma } = await import("../index");
-    const rows = await prisma.chatMessage.findMany({
-      where: { treeId },
-      orderBy: { createdAt: "desc" },
-      take: count,
-      select: { role: true, content: true },
-    });
-    if (rows.length > 0) {
-      console.log(`[getChatHistory] DB returned ${rows.length} messages for treeId=${treeId}`);
-      return rows.reverse().map((r: any) => ({
-        role: r.role as "user" | "assistant",
-        content: r.content,
-      }));
-    }
-    console.warn(`[getChatHistory] DB empty for treeId=${treeId}, falling back to Telethon`);
-  } catch (err: any) {
-    console.warn(`[getChatHistory] DB query failed: ${err?.message || err}`);
-  }
-
-  // ── Fallback: Telethon (MTProto) ───────────────────────────────────
-  try {
-    const recent = await collectRecentMessages(chatId, count);
-    if (recent.length > 0) {
-      return recent.map((m) => ({
-        role: "user" as const,
-        content: `[${m.displayName}]: ${m.text}`,
-      }));
-    }
-  } catch (err: any) {
-    console.error(`[getChatHistory] Telethon fallback failed for chatId=${chatId}: ${err?.message || err}`);
-  }
-
-  return [];
-}
 
 // ── Keyword scanning ────────────────────────────────────────────────────
 // Detects engagement signals in ambient (non-addressed) group messages.
