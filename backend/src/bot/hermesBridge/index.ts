@@ -41,8 +41,5 @@ export {
   taskCounters,
 } from "./system-prompt";
 
-// ── Route (extracted submodule) ────────────────────────────────────────────
-export { enforcePrefix } from "./route";
-
 // ── Type namespace ─────────────────────────────────────────────────────────
 export * as types from "./types";
