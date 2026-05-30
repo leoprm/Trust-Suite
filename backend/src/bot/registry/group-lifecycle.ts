@@ -168,12 +168,16 @@ export function register(bot: Bot<BotContext>, prisma: PrismaClient): void {
             "",
             `I help organize tasks, vote on needs, and keep projects moving. You can ask me things like "Ari add buy charcoal" or use /todo to manage the shared task list.`,
             "",
+            `📩 To participate in voting, send me "hello" via DM: https://t.me/TrustMakerBot`,
+            "",
             `Welcome to the tree! 🌳`,
           ].join("\n")
         : [
             `¡Hola ${mention}! 👋 Soy Ari, la asistente multi-agente del grupo.`,
             "",
             `Ayudo a organizar tareas, votar necesidades y mantener los proyectos en marcha. Podés pedirme cosas como \"Ari anota comprar carbón\" o usar /todo para gestionar la lista de tareas compartida.`,
+            "",
+            `📩 Para participar en votaciones, envíame "hola" por DM: https://t.me/TrustMakerBot`,
             "",
             `¡Bienvenido al árbol! 🌳`,
           ].join("\n");

@@ -54,7 +54,7 @@
   "todo_completed": "✅ ¡{{name}} completó *{{summary}}*!",
   "todo_remaining": "📋 Quedan {{count}} pendiente{{plural}}",
   "todo_ambiguity": "🤔 ¿Te refieres a...\n\n{{options}}\n\n_Responde con el número._",
-  "welcome_new_member": "👋 Hola! {{name}} soy Ari, la asistente multi agente del grupo 👋",
+  "welcome_new_member": "👋 ¡Hola {{name}}! Soy Ari, la asistente multi-agente del grupo 👋\n\n📩 Para participar en votaciones, envíame \"hola\" por DM: https://t.me/TrustMakerBot\n\n_Si no me escribes por DM, no recibirás las encuestas de votación._",
   "todo_claimed": "👍 {{name}} se apuntó a '*{{summary}}*'",
   "todo_already_claimed": "👀 Esa tarea ya la tiene asignada {{name}}",
   "informe_no_admin": "⚠️ Solo el admin del árbol puede usar /informe.",
@@ -75,5 +75,9 @@
   "todo_added_nl": "Agregado a la lista: {{summary}}",
   "todo_duplicate": "📋 Esa tarea ya está en la lista",
   "informe_activado": "✅ Informes mensuales activados. Los miembros recibirán un reporte el primer lunes de cada mes.",
-  "informe_desactivado": "❌ Informes mensuales desactivados. Puedes reactivarlos con /informe activar."
+  "informe_desactivado": "❌ Informes mensuales desactivados. Puedes reactivarlos con /informe activar.",
+  "dm_enabled": "✅ ¡Listo! Ahora podrás votar en las necesidades del árbol. Cuando haya una votación activa, te llegará una encuesta por aquí.",
+  "dm_already_enabled": "✅ Ya estás habilitado para votar. Recibirás las encuestas cuando haya votaciones activas.",
+  "dm_welcome_instruction": "📩 Para votar en las necesidades del grupo, envíame \"hola\" por DM: https://t.me/TrustMakerBot",
+  "dm_voting_disclaimer": "Solo los miembros que me hayan escrito por DM podrán participar en las votaciones."
 }

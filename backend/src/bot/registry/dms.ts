@@ -2,6 +2,7 @@ import { Bot, InputFile } from "grammy";
 import { PrismaClient } from "@prisma/client";
 import { BotContext } from "../types";
 import { handleDM, handleProfileCallback } from "../dm";
+import { handleDmGreeting } from "../dmHandler";
 import { resolveUserLanguage, showLanguageSelector } from "../messages";
 import { t } from "../i18n";
 import { routeToHermes } from "../hermesBridge/route";
@@ -23,6 +24,9 @@ export function register(bot: Bot<BotContext>, prisma: PrismaClient): void {
       // Worker text continuation (only if already in a worker flow)
       if (await handleWorkerTextContinuation(prisma, bctx)) return;
     }
+
+    // ── DM Greeting handler: "hola" → dmEnabled=true (before expensive routing) ──
+    if (await handleDmGreeting(prisma, ctx as BotContext)) return;
 
     if (process.env.HERMES_BRIDGE_ENABLED === "true") {
       // ── Hermes Bridge: enrutar DM al agente ───────────────────────────

@@ -339,6 +339,7 @@ model TreeMember {
   ledgerEntries TransactionLedger[]
   joinedAt      DateTime            @default(now())
   lastDmAt      DateTime?
+  dmEnabled     Boolean             @default(false)
   user          User                @relation(fields: [userId], references: [id], onDelete: Cascade)
   tree          Tree                @relation(fields: [treeId], references: [id], onDelete: Cascade)
   invitedBy     User?               @relation("Inviter", fields: [invitedById], references: [id], onDelete: SetNull)

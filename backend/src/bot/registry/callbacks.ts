@@ -217,6 +217,13 @@ export function register(bot: Bot<BotContext>, prisma: PrismaClient): void {
           });
           trackBotMessage(prisma, treeId, welcomeMsg.message_id);
 
+          // Send DM voting notice
+          await new Promise(r => setTimeout(r, 1200));
+          const dmNotice = lang === "en"
+            ? "📩 *Voting setup*: Members need to send me \"hello\" via DM (https://t.me/TrustMakerBot) to receive voting polls. Only DM-enabled members can vote."
+            : "📩 *Configuración de votación*: Los miembros deben enviarme \"hola\" por DM (https://t.me/TrustMakerBot) para recibir las encuestas. Solo los miembros habilitados por DM podrán votar.";
+          await ctx.reply(dmNotice, { parse_mode: "Markdown" });
+
           // Send monthly reports question
           await new Promise(r => setTimeout(r, 1200));
           await ctx.reply(

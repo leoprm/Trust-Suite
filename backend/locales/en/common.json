@@ -54,7 +54,7 @@
   "todo_completed": "✅ {{name}} completed *{{summary}}*!",
   "todo_remaining": "📋 {{count}} remaining",
   "todo_ambiguity": "🤔 Do you mean...\n\n{{options}}\n\n_Reply with the number._",
-  "welcome_new_member": "👋 Hi! {{name}} I am Ari, the multi-agent assistant for this group 👋",
+  "welcome_new_member": "👋 Hi {{name}}! I'm Ari, the multi-agent assistant for this group 👋\n\n📩 To participate in voting, send me \"hello\" via DM: https://t.me/TrustMakerBot\n\n_If you don't DM me, you won't receive voting polls._",
   "todo_claimed": "👍 {{name}} volunteered for '*{{summary}}*'",
   "todo_already_claimed": "👀 That task is already assigned to {{name}}",
   "informe_no_admin": "⚠️ Only the tree admin can use /informe.",
@@ -75,5 +75,9 @@
   "todo_added_nl": "Added to list: {{summary}}",
   "todo_duplicate": "📋 That task is already on the list",
   "informe_activado": "✅ Monthly reports enabled. Members will receive a report on the first Monday of each month.",
-  "informe_desactivado": "❌ Monthly reports disabled. You can re-enable them with /informe activar."
+  "informe_desactivado": "❌ Monthly reports disabled. You can re-enable them with /informe activar.",
+  "dm_enabled": "✅ You're all set! You can now vote on the tree's needs. When there's an active vote, you'll receive a poll here.",
+  "dm_already_enabled": "✅ You're already enabled for voting. You'll receive polls when there are active votes.",
+  "dm_welcome_instruction": "📩 To vote on the group's needs, send me \"hello\" via DM: https://t.me/TrustMakerBot",
+  "dm_voting_disclaimer": "Only members who have messaged me via DM can participate in voting."
 }
