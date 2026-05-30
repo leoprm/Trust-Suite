@@ -5,7 +5,7 @@
  *   1. Por cada árbol con grupo de Telegram:
  *      a. La necesidad OPEN con más dailyVotes → IN_PROGRESS
  *      b. Todas las necesidades → dailyVotes = 0
- *   2. Todos los miembros → dailyPoints = 100
+ *   2. Todos los miembros → cyclePoints = 25
  *   3. Enviar resumen al grupo de Telegram
  *
  * Cada día 1 del mes a las 00:00:
@@ -57,7 +57,7 @@ async function closeTree(
     // Sin necesidades → solo regenerar puntos
     const resetCount = await prisma.treeMember.updateMany({
       where: { treeId: tree.id, status: "ACTIVE" },
-      data: { dailyPoints: 100 },
+      data: { cyclePoints: 25 },
     });
 
     return { treeName: tree.name, chatId, winner: null, totalNeeds: 0 };
@@ -79,10 +79,10 @@ async function closeTree(
     data: { dailyVotes: 0 },
   });
 
-  // ── Regenerar dailyPoints = 100 para todos los miembros ──
+  // ── Regenerar cyclePoints = 25 para todos los miembros ──
   const resetCount = await prisma.treeMember.updateMany({
     where: { treeId: tree.id, status: "ACTIVE" },
-    data: { dailyPoints: 100 },
+    data: { cyclePoints: 25 },
   });
 
   // ── Enviar resumen al grupo: DESHABILITADO por solicitud del admin ──

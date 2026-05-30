@@ -328,7 +328,8 @@ model TreeMember {
   aiStatus      AIMemberStatus      @default(IDLE)
   level         Int                 @default(1)
   xp            Float               @default(0)
-  dailyPoints   Int                 @default(100)
+  cyclePoints   Int                 @default(25)
+  cyclePointsRefillAt DateTime?
   monthlyFee    Int?
   paymentStatus PaymentStatus       @default(GRACE)
   graceUntil    DateTime?
@@ -503,6 +504,13 @@ model Need {
   approvalPollId    String?
   approvalMessageId Int?
   telegramMessageId Int?
+  cyclePhase        String?           // "collect" | "vote"
+  votingEndsAt      DateTime?
+  roundNumber       Int               @default(1)
+  previousRoundId   String?
+  difficultyAvg     Float?
+  pointsAllocation  Json?
+  totalPoints       Int               @default(0)
   createdAt         DateTime          @default(now())
   creator           User              @relation("NeedCreator", fields: [creatorId], references: [id])
   tree              Tree?             @relation("TreeNeeds", fields: [treeId], references: [id])
@@ -512,6 +520,19 @@ model Need {
   tasks             Task[]
   paymentSplits     PaymentSplit[]
   solutions         SolutionCatalog[]
+  votes             NeedVote[]
+}
+
+model NeedVote {
+  id        String   @id @default(uuid())
+  needId    String
+  userId    String
+  points    Int
+  createdAt DateTime @default(now())
+
+  need Need @relation(fields: [needId], references: [id], onDelete: Cascade)
+
+  @@unique([needId, userId])
 }
 
 model Idea {
