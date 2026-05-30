@@ -45,6 +45,7 @@ enum NeedStatus {
   OPEN
   PENDING_APPROVAL
   REJECTED
+  APPROVED
   IN_PROGRESS
   SATISFIED
   CLOSED
@@ -510,6 +511,7 @@ model Need {
   roundNumber       Int               @default(1)
   previousRoundId   String?
   difficultyAvg     Float?
+  difficultyVotes   Int               @default(0)
   pointsAllocation  Json?
   totalPoints       Int               @default(0)
   createdAt         DateTime          @default(now())

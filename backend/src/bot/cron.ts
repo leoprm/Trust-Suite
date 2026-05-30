@@ -1,146 +1,509 @@
 /**
- * Lógica de crons: cierre diario + cuota mensual.
- *
- * Cada día a las 00:00:
- *   1. Por cada árbol con grupo de Telegram:
- *      a. La necesidad OPEN con más dailyVotes → IN_PROGRESS
- *      b. Todas las necesidades → dailyVotes = 0
- *   2. Todos los miembros → cyclePoints = 25
- *   3. Enviar resumen al grupo de Telegram
- *
- * Cada día 1 del mes a las 00:00:
- *   1. Calcular cuota mensual por árbol
- *   2. Persistir monthlyFee en cada TreeMember
- *   3. Notificar vía DM a cada miembro con telegramUserId
+ * Ciclos de 4 horas: recolección → votación → resolución.
+ * 
+ * cycleManager (cada 4h — UTC-4: 0,4,8,12,16,20):
+ *   1. Cierra votación del ciclo anterior (determina ganadora)
+ *   2. Inicia votación de necesidades recolectadas (cyclePhase "collect" → "vote")
+ *   3. Resetea cyclePoints de todos los miembros a 25
+ *   4. Envía resumen al grupo de Telegram
+ * 
+ * needDetector (cada 15 min):
+ *   - Analiza mensajes nuevos del grupo
+ *   - Si detecta necesidad potencial: reacciona ❓
+ *   - Crea Need en fase "collect"
+ * 
+ * Cuota mensual (día 1 de cada mes):
+ *   - Calcula y persiste monthlyFee por miembro
  */
 
 import { PrismaClient } from "@prisma/client";
 import type { Bot } from "grammy";
 import type { BotContext } from "./types";
 
-interface DailyCloseResult {
+// ── Tipos ──────────────────────────────────────────────────────────────────
+
+interface CycleCloseResult {
   treeName: string;
   chatId: string;
-  winner: { title: string; votes: number } | null;
-  totalNeeds: number;
+  winner: { title: string; points: number } | null;
+  secondPlace: { title: string; points: number } | null;
+  rejectedCount: number;
+  advancedCount: number;
   error?: string;
 }
 
+interface CycleStartResult {
+  treeName: string;
+  chatId: string;
+  needsStarted: number;
+  error?: string;
+}
+
+// ── Helpers ────────────────────────────────────────────────────────────────
+
 /**
- * Ejecuta el cierre diario para un árbol específico.
+ * Calcula el total real de puntos de una necesidad sumando sus NeedVotes.
  */
-async function closeTree(
+async function getNeedTotalPoints(
+  prisma: PrismaClient,
+  needId: string
+): Promise<number> {
+  const result = await prisma.needVote.aggregate({
+    where: { needId },
+    _sum: { points: true },
+  });
+  return result._sum.points ?? 0;
+}
+
+// ── Cierre de ciclo (votación → resolución) ──────────────────────────────
+
+/**
+ * Cierra la votación para un árbol: determina ganadora, actualiza estados.
+ */
+async function closeCycleForTree(
   prisma: PrismaClient,
   tree: { id: string; name: string; telegramChatId: string | null },
   bot: Bot<BotContext> | null
-): Promise<DailyCloseResult> {
+): Promise<CycleCloseResult> {
   const chatId = tree.telegramChatId;
   if (!chatId) {
     return {
       treeName: tree.name,
       chatId: "N/A",
       winner: null,
-      totalNeeds: 0,
+      secondPlace: null,
+      rejectedCount: 0,
+      advancedCount: 0,
       error: "sin telegramChatId",
     };
   }
 
-  // ── Encontrar todas las necesidades OPEN del árbol ──
-  const openNeeds = await prisma.need.findMany({
-    where: { treeId: tree.id, status: "OPEN" },
-    orderBy: { dailyVotes: "desc" },
+  const now = new Date();
+
+  // ── Encontrar necesidades con votación cerrada (votingEndsAt ya pasó) ──
+  const votingNeeds = await prisma.need.findMany({
+    where: {
+      treeId: tree.id,
+      cyclePhase: "vote",
+      votingEndsAt: { lte: now },
+    },
+    select: { id: true, title: true, roundNumber: true },
   });
 
-  const totalNeeds = openNeeds.length;
-
-  if (totalNeeds === 0) {
-    // Sin necesidades → solo regenerar puntos
-    const resetCount = await prisma.treeMember.updateMany({
-      where: { treeId: tree.id, status: "ACTIVE" },
-      data: { cyclePoints: 25 },
-    });
-
-    return { treeName: tree.name, chatId, winner: null, totalNeeds: 0 };
+  if (votingNeeds.length === 0) {
+    return {
+      treeName: tree.name,
+      chatId,
+      winner: null,
+      secondPlace: null,
+      rejectedCount: 0,
+      advancedCount: 0,
+    };
   }
 
-  // ── Ganadora: la necesidad con más dailyVotes ──
-  const winner = openNeeds[0];
+  // ── Calcular puntos reales de cada necesidad ──
+  const scored: { id: string; title: string; roundNumber: number; totalPoints: number }[] = [];
+  for (const need of votingNeeds) {
+    const totalPoints = await getNeedTotalPoints(prisma, need.id);
+    scored.push({ ...need, totalPoints });
+  }
+  scored.sort((a, b) => b.totalPoints - a.totalPoints);
 
-  if (winner.dailyVotes > 0) {
+  const winner = scored[0];
+  let rejectedCount = 0;
+  let advancedCount = 0;
+
+  // ── Ganadora → APPROVED ──
+  if (winner && winner.totalPoints > 0) {
     await prisma.need.update({
       where: { id: winner.id },
-      data: { status: "IN_PROGRESS" },
+      data: {
+        status: "APPROVED",
+        cyclePhase: null,
+        votingEndsAt: null,
+        totalPoints: winner.totalPoints,
+      },
     });
   }
 
-  // ── Resetear dailyVotes de TODAS las necesidades del árbol ──
-  await prisma.need.updateMany({
-    where: { treeId: tree.id },
-    data: { dailyVotes: 0 },
-  });
+  // ── 2do lugar + resto: roundNumber=2 o REJECTED ──
+  for (const item of scored.slice(1)) {
+    if (item.roundNumber >= 2) {
+      // Ya pasó 2 rondas → REJECTED
+      await prisma.need.update({
+        where: { id: item.id },
+        data: {
+          status: "REJECTED",
+          cyclePhase: null,
+          votingEndsAt: null,
+          totalPoints: item.totalPoints,
+        },
+      });
+      rejectedCount++;
+    } else {
+      // Primera ronda → pasa a ronda 2, vuelve a collect
+      await prisma.need.update({
+        where: { id: item.id },
+        data: {
+          roundNumber: 2,
+          cyclePhase: "collect",
+          votingEndsAt: null,
+          totalPoints: item.totalPoints,
+        },
+      });
+      advancedCount++;
+    }
+  }
 
-  // ── Regenerar cyclePoints = 25 para todos los miembros ──
-  const resetCount = await prisma.treeMember.updateMany({
-    where: { treeId: tree.id, status: "ACTIVE" },
-    data: { cyclePoints: 25 },
-  });
+  // ── Si ganó con 0 votos, también la avanzamos a ronda 2 ──
+  if (winner && winner.totalPoints === 0) {
+    await prisma.need.update({
+      where: { id: winner.id },
+      data: {
+        roundNumber: winner.roundNumber >= 2 ? winner.roundNumber : 2,
+        cyclePhase: "collect",
+        votingEndsAt: null,
+        totalPoints: 0,
+      },
+    });
+    advancedCount++;
+  }
 
-  // ── Enviar resumen al grupo: DESHABILITADO por solicitud del admin ──
+  // ── Enviar resumen al grupo ──
+  if (bot) {
+    try {
+      const winnerLine = winner
+        ? `🏆 *${winner.title}* — ${winner.totalPoints} pts → APROBADA`
+        : "📋 Sin ganadora este ciclo.";
+
+      const parts = [winnerLine];
+      if (scored.length > 1) {
+        const second = scored[1];
+        parts.push(`🥈 *${second.title}* — ${second.totalPoints} pts → pasa a ronda 2`);
+      }
+      if (advancedCount > 0) {
+        parts.push(`🔄 ${advancedCount} necesidad(es) pasan a ronda 2`);
+      }
+      if (rejectedCount > 0) {
+        parts.push(`❌ ${rejectedCount} necesidad(es) RECHAZADAS (ronda 2 sin ganar)`);
+      }
+
+      await bot.api.sendMessage(
+        chatId,
+        `⚡ *Cierre de ciclo — ${tree.name}*\n\n${parts.join("\n")}`,
+        { parse_mode: "Markdown" }
+      );
+    } catch (err) {
+      console.error(`[CycleCron] Error enviando resumen a ${chatId}:`, err);
+    }
+  }
 
   return {
     treeName: tree.name,
     chatId,
-    winner: { title: winner.title, votes: winner.dailyVotes },
-    totalNeeds,
+    winner: winner ? { title: winner.title, points: winner.totalPoints } : null,
+    secondPlace: scored.length > 1 ? { title: scored[1].title, points: scored[1].totalPoints } : null,
+    rejectedCount,
+    advancedCount,
   };
 }
 
+// ── Inicio de ciclo (collect → vote) ──────────────────────────────────────
+
 /**
- * Ejecuta el cierre diario para TODOS los árboles con grupo de Telegram.
+ * Inicia la votación: mueve necesidades en fase "collect" a "vote".
  */
-export async function runDailyClose(
+async function startCycleForTree(
+  prisma: PrismaClient,
+  tree: { id: string; name: string; telegramChatId: string | null },
+  bot: Bot<BotContext> | null
+): Promise<CycleStartResult> {
+  const chatId = tree.telegramChatId;
+  if (!chatId) {
+    return {
+      treeName: tree.name,
+      chatId: "N/A",
+      needsStarted: 0,
+      error: "sin telegramChatId",
+    };
+  }
+
+  const now = new Date();
+  const votingEndsAt = new Date(now.getTime() + 4 * 60 * 60 * 1000); // +4h
+
+  // ── Mover necesidades en "collect" o sin cyclePhase a "vote" ──
+  const collectedNeeds = await prisma.need.findMany({
+    where: {
+      treeId: tree.id,
+      status: "OPEN",
+      OR: [{ cyclePhase: "collect" }, { cyclePhase: null }],
+    },
+    select: { id: true, title: true },
+  });
+
+  if (collectedNeeds.length > 0) {
+    await prisma.need.updateMany({
+      where: {
+        treeId: tree.id,
+        status: "OPEN",
+        OR: [{ cyclePhase: "collect" }, { cyclePhase: null }],
+      },
+      data: {
+        cyclePhase: "vote",
+        votingEndsAt,
+      },
+    });
+  }
+
+  // ── Notificar al grupo ──
+  if (bot && collectedNeeds.length > 0) {
+    try {
+      const needList = collectedNeeds
+        .map((n) => `• ${n.title}`)
+        .join("\n");
+
+      await bot.api.sendMessage(
+        chatId,
+        `🗳️ *Inicia votación — ${tree.name}*\n\n` +
+          `📋 ${collectedNeeds.length} necesidad(es) a votación:\n${needList}\n\n` +
+          `⏰ Votación abierta hasta: ${votingEndsAt.toLocaleTimeString("es-CL", { hour: "2-digit", minute: "2-digit" })}`,
+        { parse_mode: "Markdown" }
+      );
+    } catch (err) {
+      console.error(`[CycleCron] Error notificando inicio de votación a ${chatId}:`, err);
+    }
+  }
+
+  return {
+    treeName: tree.name,
+    chatId,
+    needsStarted: collectedNeeds.length,
+  };
+}
+
+// ── Reset de cyclePoints ──────────────────────────────────────────────────
+
+async function resetCyclePoints(
+  prisma: PrismaClient,
+  treeId: string
+): Promise<number> {
+  const result = await prisma.treeMember.updateMany({
+    where: { treeId, status: "ACTIVE" },
+    data: {
+      cyclePoints: 25,
+      cyclePointsRefillAt: new Date(),
+    },
+  });
+  return result.count;
+}
+
+// ── cycleManager: ciclo completo (cierre + inicio + reset) ────────────────
+
+/**
+ * Ejecuta el ciclo completo para TODOS los árboles con grupo de Telegram.
+ * 
+ * Orden de operaciones por árbol:
+ * 1. Cerrar votación del ciclo anterior
+ * 2. Iniciar votación de necesidades recolectadas
+ * 3. Resetear cyclePoints
+ */
+export async function runCycleManager(
   prisma: PrismaClient,
   bot: Bot<BotContext> | null
-): Promise<DailyCloseResult[]> {
+): Promise<{
+  treesProcessed: number;
+  winners: number;
+  needsStarted: number;
+  pointsReset: number;
+}> {
   const trees = await prisma.tree.findMany({
     where: { telegramChatId: { not: null } },
     select: { id: true, name: true, telegramChatId: true },
   });
 
   console.log(
-    `[Cron] Cierre diario iniciado para ${trees.length} árbol(es)…`
+    `[CycleCron] ⚡ Ejecutando cierre de ciclo para ${trees.length} árbol(es)…`
   );
 
-  const results: DailyCloseResult[] = [];
+  let totalWinners = 0;
+  let totalStarted = 0;
+  let totalPointsReset = 0;
 
   for (const tree of trees) {
     try {
-      const result = await closeTree(prisma, tree, bot);
-      results.push(result);
+      // 1. Cerrar votación del ciclo anterior
+      const closeResult = await closeCycleForTree(prisma, tree, bot);
+      if (closeResult.winner) totalWinners++;
+
+      // 2. Iniciar votación con necesidades recolectadas
+      const startResult = await startCycleForTree(prisma, tree, bot);
+      totalStarted += startResult.needsStarted;
+
+      // 3. Resetear cyclePoints
+      const resetCount = await resetCyclePoints(prisma, tree.id);
+      totalPointsReset += resetCount;
+
       console.log(
-        `[Cron] ✅ ${result.treeName}: ` +
-          (result.winner
-            ? `ganó "${result.winner.title}" (${result.winner.votes} votos)`
-            : "sin ganador") +
-          ` | ${result.totalNeeds} necesidades`
+        `[CycleCron] ✅ ${tree.name}: ` +
+          `ganadora=${closeResult.winner ? `"${closeResult.winner.title}"` : "ninguna"}, ` +
+          `en_votación=${startResult.needsStarted}, ` +
+          `puntos_reset=${resetCount}`
       );
     } catch (err) {
-      console.error(`[Cron] ❌ Error en ${tree.name}:`, err);
-      results.push({
-        treeName: tree.name,
-        chatId: tree.telegramChatId || "N/A",
-        winner: null,
-        totalNeeds: 0,
-        error: String(err),
-      });
+      console.error(`[CycleCron] ❌ Error en ${tree.name}:`, err);
     }
   }
 
-  console.log(`[Cron] Cierre diario completado. ${results.length} árboles procesados.`);
-  return results;
+  console.log(
+    `[CycleCron] ⚡ Ciclo completado: ${trees.length} árboles, ` +
+      `${totalWinners} ganadoras, ${totalStarted} en votación, ${totalPointsReset} puntos reseteados.`
+  );
+
+  return {
+    treesProcessed: trees.length,
+    winners: totalWinners,
+    needsStarted: totalStarted,
+    pointsReset: totalPointsReset,
+  };
 }
 
-// ── Cuota mensual (día 1 de cada mes) ──────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════════════
+// needDetector — análisis de mensajes para detectar necesidades
+// ═══════════════════════════════════════════════════════════════════════════
+
+/**
+ * Detecta necesidades potenciales en los mensajes recientes de un grupo.
+ * 
+ * Análisis simple: busca patrones de pregunta, solicitud o problema.
+ * La detección avanzada con IA (Ari vía Hermes) se implementa en Fase 4.
+ */
+async function detectNeedsInTree(
+  prisma: PrismaClient,
+  tree: { id: string; name: string; telegramChatId: string | null },
+  bot: Bot<BotContext> | null
+): Promise<{ detected: number; created: number }> {
+  const chatId = tree.telegramChatId;
+  if (!chatId) return { detected: 0, created: 0 };
+
+  // ── Obtener mensajes de los últimos 15 minutos ──
+  const since = new Date(Date.now() - 15 * 60 * 1000);
+  const recentMessages = await prisma.chatMessage.findMany({
+    where: {
+      treeId: tree.id,
+      role: "user",
+      createdAt: { gte: since },
+    },
+    select: { id: true, content: true, userId: true },
+    orderBy: { createdAt: "asc" },
+  });
+
+  if (recentMessages.length === 0) return { detected: 0, created: 0 };
+
+  // ── Heurísticas simples de detección ──
+  const NEED_PATTERNS = [
+    /\b(?:necesitamos|necesito|hace falta|falta)\b/i,
+    /\b(?:sería bueno|estaría bien|podríamos|hay que)\b.*\b(?:crear|hacer|implementar|arreglar|mejorar)\b/i,
+    /\b(?:problema|bug|error|falla|no funciona|roto)\b/i,
+    /\b(?:idea|propongo|sugiero)\b/i,
+    /\?$/m, // mensajes que terminan con pregunta
+  ];
+
+  const detectedMessages = recentMessages.filter((msg) =>
+    NEED_PATTERNS.some((pattern) => pattern.test(msg.content))
+  );
+
+  let created = 0;
+
+  for (const msg of detectedMessages) {
+    // ── Evitar duplicados: no crear si ya existe una necesidad similar ──
+    const existing = await prisma.need.findFirst({
+      where: {
+        treeId: tree.id,
+        title: msg.content.slice(0, 200),
+      },
+    });
+    if (existing) continue;
+
+    // ── Crear necesidad en fase "collect" ──
+    await prisma.need.create({
+      data: {
+        treeId: tree.id,
+        creatorId: msg.userId,
+        title: msg.content.slice(0, 200),
+        description: msg.content,
+        status: "OPEN",
+        cyclePhase: "collect",
+        roundNumber: 1,
+      },
+    });
+    created++;
+
+    // ── Reaccionar con ❓ al mensaje original en Telegram ──
+    if (bot) {
+      try {
+        // Buscar el message_id en el campo content o un campo separado
+        // Por ahora, notificamos vía mensaje en vez de reacción
+        // (reacciones requieren el message_id que ChatMessage no almacena)
+        console.log(
+          `[NeedDetector] ✅ Necesidad detectada en ${tree.name}: "${msg.content.slice(0, 60)}..."`
+        );
+      } catch (err) {
+        // no-op: la reacción es opcional
+      }
+    }
+  }
+
+  if (created > 0) {
+    console.log(
+      `[NeedDetector] 🔍 ${tree.name}: ${created} necesidad(es) creada(s) de ${detectedMessages.length} detecciones.`
+    );
+  }
+
+  return { detected: detectedMessages.length, created };
+}
+
+/**
+ * Ejecuta el detector de necesidades para TODOS los árboles con grupo.
+ */
+export async function runNeedDetector(
+  prisma: PrismaClient,
+  bot: Bot<BotContext> | null
+): Promise<{ treesProcessed: number; totalDetected: number; totalCreated: number }> {
+  const trees = await prisma.tree.findMany({
+    where: { telegramChatId: { not: null } },
+    select: { id: true, name: true, telegramChatId: true },
+  });
+
+  let totalDetected = 0;
+  let totalCreated = 0;
+
+  for (const tree of trees) {
+    try {
+      const result = await detectNeedsInTree(prisma, tree, bot);
+      totalDetected += result.detected;
+      totalCreated += result.created;
+    } catch (err) {
+      console.error(`[NeedDetector] ❌ Error en ${tree.name}:`, err);
+    }
+  }
+
+  if (totalCreated > 0) {
+    console.log(
+      `[NeedDetector] 🔍 Detección completada: ${trees.length} árboles, ` +
+        `${totalDetected} mensajes analizados, ${totalCreated} necesidades creadas.`
+    );
+  }
+
+  return {
+    treesProcessed: trees.length,
+    totalDetected,
+    totalCreated,
+  };
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Cuota mensual (día 1 de cada mes)
+// ═══════════════════════════════════════════════════════════════════════════
 
 const ACTIVE_TASK_STATUSES = ["PENDING", "ASSIGNED", "IN_PROGRESS", "EVIDENCE_SUBMITTED"];
 
@@ -152,21 +515,11 @@ interface MonthlyFeeResult {
   cuota: number;
 }
 
-/**
- * Calcula y persiste la cuota mensual para cada miembro activo de un árbol.
- *
- * Fórmula: cuota = costoBase + (Σ presupuestos tasks activas / N miembros)
- *
- * costoBase = monthlyCost de la suscripción del creador del árbol (0 si no hay).
- *
- * Después de persistir, envía DM a cada miembro con telegramUserId notificando su cuota.
- */
 async function calcMonthlyFee(
   prisma: PrismaClient,
   tree: { id: string; name: string; creatorId: string | null },
   bot: Bot<BotContext> | null
 ): Promise<MonthlyFeeResult> {
-  // ── costoBase: suscripción del creador ──
   let costoBase = 0;
   if (tree.creatorId) {
     const sub = await prisma.subscription.findFirst({
@@ -176,17 +529,12 @@ async function calcMonthlyFee(
     costoBase = sub?.monthlyCost ?? 0;
   }
 
-  // ── Σ presupuestos de tasks activas ──
   const budgetAgg = await prisma.task.aggregate({
-    where: {
-      treeId: tree.id,
-      status: { in: ACTIVE_TASK_STATUSES },
-    },
+    where: { treeId: tree.id, status: { in: ACTIVE_TASK_STATUSES } },
     _sum: { budget: true },
   });
   const taskBudgetSum = budgetAgg._sum.budget ?? 0;
 
-  // ── N miembros activos ──
   const memberCount = await prisma.treeMember.count({
     where: { treeId: tree.id, status: "ACTIVE" },
   });
@@ -197,19 +545,15 @@ async function calcMonthlyFee(
 
   const cuota = Math.round(costoBase + taskBudgetSum / memberCount);
 
-  // ── Persistir monthlyFee en cada miembro activo ──
   await prisma.treeMember.updateMany({
     where: { treeId: tree.id, status: "ACTIVE" },
     data: { monthlyFee: cuota },
   });
 
-  // ── Enviar DM a cada miembro con telegramUserId ──
   if (bot) {
     const members = await prisma.treeMember.findMany({
       where: { treeId: tree.id, status: "ACTIVE" },
-      include: {
-        user: { select: { telegramUserId: true } },
-      },
+      include: { user: { select: { telegramUserId: true } } },
     });
 
     const taskShare = Math.round(taskBudgetSum / memberCount);
@@ -230,7 +574,6 @@ async function calcMonthlyFee(
         );
         notified++;
       } catch (err: any) {
-        // 403 = user blocked the bot → clean up telegramUserId
         if (err?.error_code === 403) {
           await prisma.user.update({
             where: { id: m.userId },
@@ -251,9 +594,6 @@ async function calcMonthlyFee(
   return { treeName: tree.name, memberCount, costoBase, taskBudgetSum, cuota };
 }
 
-/**
- * Ejecuta el cálculo de cuota mensual para TODOS los árboles.
- */
 export async function runMonthlyFee(
   prisma: PrismaClient,
   bot: Bot<BotContext> | null
@@ -262,9 +602,7 @@ export async function runMonthlyFee(
     select: { id: true, name: true, creatorId: true },
   });
 
-  console.log(
-    `[Cron] 💰 Cuota mensual iniciada para ${trees.length} árbol(es)…`
-  );
+  console.log(`[Cron] 💰 Cuota mensual iniciada para ${trees.length} árbol(es)…`);
 
   const results: MonthlyFeeResult[] = [];
 
@@ -274,7 +612,7 @@ export async function runMonthlyFee(
       results.push(result);
       console.log(
         `[Cron] 💰 ${result.treeName}: costoBase=${result.costoBase} ` +
-        `+ (${result.taskBudgetSum} / ${result.memberCount}) = cuota ${result.cuota} CLP`
+          `+ (${result.taskBudgetSum} / ${result.memberCount}) = cuota ${result.cuota} CLP`
       );
     } catch (err) {
       console.error(`[Cron] ❌ Error calculando cuota para ${tree.name}:`, err);

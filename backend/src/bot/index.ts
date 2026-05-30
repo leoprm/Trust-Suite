@@ -25,6 +25,7 @@ import {
   handleSatisfactionCommentReply,
 } from "./satisfaction";
 import { handleEncuestaText } from "./encuesta";
+import { handleCycleVotePollAnswer } from "./pollHandler";
 import { initI18n } from "./i18n";
 import { initPaymentService } from "../services/telegramBotService";
 import { checkTodoReminders } from "./todoReminders";
@@ -92,8 +93,16 @@ export async function createBot(prisma: PrismaClient): Promise<Bot<BotContext> |
   // ── Reaction handler (votos con reacciones) ─────────────────────────────
   registerReactionHandler(bot);
 
-  // ── Unified poll_answer handler (T8: need voting, T10: satisfaction) ────
+  // ── Unified poll_answer handler (T8: need voting, T10: satisfaction, F7: cycle voting) ────
   bot.on("poll_answer", async (ctx) => {
+    // F7: Cycle voting (NeedVote via native DM polls 1-10)
+    try {
+      const handled = await handleCycleVotePollAnswer(prisma, ctx as BotContext);
+      if (handled) return;
+    } catch (err: any) {
+      console.error("[pollHandler] poll_answer handler error:", err.message);
+    }
+    // T8: Need → Idea voting (group polls)
     try {
       await handleNeedPollAnswer(prisma, ctx as BotContext);
     } catch (err: any) {

@@ -1444,3 +1444,107 @@ export const getCrossTreeSkills = async (req: Request, res: Response) => {
     });
   }
 };
+
+
+
+// ─── POST /api/trees/:treeId/needs/:needId/vote ────────────────────────
+export const voteNeed = async (req: any, res: Response) => {
+  try {
+    const { treeId, needId } = req.params;
+    const { points } = req.body;
+    const userId = req.user?.id;
+
+    if (!userId) {
+      return res.status(401).json({ error: 'Authentication required' });
+    }
+
+    if (typeof points !== 'number' || points <= 0 || !Number.isInteger(points)) {
+      return res.status(400).json({ error: 'points must be a positive integer' });
+    }
+
+    // Validate the need exists and belongs to the tree
+    const need = await prisma.need.findUnique({ where: { id: needId } });
+    if (!need || need.treeId !== treeId) {
+      return res.status(404).json({ error: 'Need not found' });
+    }
+
+    // Validate the need is in voting phase
+    if (need.cyclePhase !== 'vote') {
+      return res.status(400).json({ error: 'Voting is not open for this need' });
+    }
+
+    // Validate the user is a member of this tree
+    const member = await prisma.treeMember.findUnique({
+      where: { userId_treeId: { userId, treeId } },
+    });
+    if (!member) {
+      return res.status(400).json({ error: 'You are not a member of this tree' });
+    }
+
+    // Validate the user has enough cyclePoints
+    if (member.cyclePoints < points) {
+      return res.status(400).json({
+        error: `Insufficient points. You have ${member.cyclePoints} available but tried to vote ${points}`,
+      });
+    }
+
+    // Check for existing vote (unique constraint on needId + userId)
+    const existingVote = await prisma.needVote.findUnique({
+      where: { needId_userId: { needId, userId } },
+    });
+    if (existingVote) {
+      return res.status(400).json({
+        error: `You already voted ${existingVote.points} points on this need`,
+      });
+    }
+
+    // Atomically create vote and deduct points
+    const [vote, updatedMember] = await prisma.$transaction([
+      prisma.needVote.create({
+        data: { needId, userId, points },
+      }),
+      prisma.treeMember.update({
+        where: { id: member.id },
+        data: { cyclePoints: { decrement: points } },
+      }),
+    ]);
+
+    return res.status(200).json({ remainingPoints: updatedMember.cyclePoints });
+  } catch (error: any) {
+    console.error('[voteNeed] error:', error?.message || error);
+    // Prisma unique constraint violation (P2002) -> race-condition duplicate
+    if (error?.code === 'P2002') {
+      return res.status(400).json({ error: 'You already voted on this need' });
+    }
+    res.status(500).json({ error: 'Failed to register vote' });
+  }
+};
+
+// ── GET /:id/needs/voting ─────────────────────────────────────────────────
+export const getVotingNeeds = async (req: any, res: Response) => {
+  try {
+    const treeId = req.params.id || req.params.treeId;
+    if (!treeId) return res.status(400).json({ error: 'treeId required' });
+
+    const needs = await prisma.need.findMany({
+      where: { treeId, cyclePhase: 'vote' },
+      orderBy: { votingEndsAt: 'asc' },
+    });
+
+    // Get user's cyclePoints if authenticated
+    const userId = req.user?.id;
+    let cyclePoints: number | null = null;
+    if (userId) {
+      const member = await prisma.treeMember.findUnique({
+        where: { userId_treeId: { userId, treeId } },
+        select: { cyclePoints: true },
+      });
+      cyclePoints = member?.cyclePoints ?? null;
+    }
+
+    res.json({ needs, cyclePoints });
+  } catch (error: any) {
+    console.error('[getVotingNeeds] error:', error?.message || error);
+    res.status(500).json({ error: 'Failed to get voting needs' });
+  }
+};

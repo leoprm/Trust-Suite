@@ -12,7 +12,7 @@ import type { ScheduledTask } from "node-cron";
 import { PrismaClient } from "@prisma/client";
 import type { Bot } from "grammy";
 import type { BotContext } from "./types";
-import { runDailyClose, runMonthlyFee } from "./cron";
+import { runCycleManager, runNeedDetector, runMonthlyFee } from "./cron";
 import { runMonthlyRetrospective } from "../services/monthlyRetrospective";
 import { runDisputeResolution } from "./disputeResolutionCron";
 import { startKanbanWatchdog, stopKanbanWatchdog } from "./kanbanWatchdog";
@@ -108,7 +108,8 @@ function isLastDayOfMonth(): boolean {
   return tomorrow.getDate() === 1;
 }
 
-let midnightTask: ScheduledTask | null = null;
+let cycleManagerTask: ScheduledTask | null = null;
+let needDetectorTask: ScheduledTask | null = null;
 let decayTask: ScheduledTask | null = null;
 let rotationTask: ScheduledTask | null = null;
 let autoScaleTask: ScheduledTask | null = null;
@@ -138,16 +139,26 @@ export function startScheduler(
   // ── Detener schedulers previos si existen ──
   stopScheduler();
 
-  // ── Cron: 0 0 * * * (medianoche) ──
-  midnightTask = cron.schedule("0 0 * * *", async () => {
-    console.log("[Scheduler] ⏰ Medianoche — ejecutando cierre diario…");
+  // ── Cron: 0 */4 * * * (cada 4 horas) — Cierre e inicio de ciclo ──
+  cycleManagerTask = cron.schedule("0 */4 * * *", async () => {
+    console.log("[Scheduler] ⚡ Ejecutando cierre/inicio de ciclo…");
     try {
-      await runDailyClose(prismaClient, bot);
+      await runCycleManager(prismaClient, bot);
     } catch (err) {
-      console.error("[Scheduler] Error fatal en cierre diario:", err);
+      console.error("[Scheduler] Error fatal en ciclo:", err);
     }
   });
-  console.log("[Scheduler] ⏰ Cierre diario programado a las 00:00 (hora local)");
+  console.log("[Scheduler] ⚡ Ciclo programado cada 4 horas (0,4,8,12,16,20)");
+
+  // ── Cron: */15 * * * * (cada 15 min) — Detector de necesidades ──
+  needDetectorTask = cron.schedule("*/15 * * * *", async () => {
+    try {
+      await runNeedDetector(prismaClient, bot);
+    } catch (err) {
+      console.error("[Scheduler] Error en needDetector:", err);
+    }
+  });
+  console.log("[Scheduler] 🔍 NeedDetector programado cada 15 minutos");
 
   // ── Cron: 0 3 * * * (XP decay diario para workers) ──
   decayTask = cron.schedule("0 3 * * *", async () => {
@@ -367,20 +378,20 @@ export function startScheduler(
   // ── Dev mode hint ──
   if (process.env.NODE_ENV !== "production") {
     console.log(
-      "[Scheduler] 🧪 Entorno dev — usa triggerDailyClose() para simular el cierre.",
+      "[Scheduler] 🧪 Entorno dev — usa triggerCycleClose() para simular el cierre de ciclo.",
     );
   }
 }
 
 /**
- * Dispara el cierre diario manualmente (para testing / desarrollo).
+ * Dispara el cierre de ciclo manualmente (para testing / desarrollo).
  */
-export async function triggerDailyClose(
+export async function triggerCycleClose(
   prismaClient: PrismaClient,
   bot: Bot<BotContext> | null
 ) {
-  console.log("[Scheduler] 🔧 Cierre diario manual disparado…");
-  return runDailyClose(prismaClient, bot);
+  console.log("[Scheduler] 🔧 Cierre de ciclo manual disparado…");
+  return runCycleManager(prismaClient, bot);
 }
 
 /**
@@ -388,7 +399,7 @@ export async function triggerDailyClose(
  */
 export function stopScheduler(): void {
   let stopped = false;
-  for (const task of [midnightTask, decayTask, rotationTask, autoScaleTask, monthlyFeeTask, disputeResolutionTask, skillPricingTask, talentMigrationTask, healthCheckTask, proposalResolverTask, cleanupConversationsTask, monthlyRetroTask, skillEvolutionTask, externalTaskOrchestratorTask, candidateAnnouncementTask, nightlyResearchTask, surveyReminderTask]) {
+  for (const task of [cycleManagerTask, needDetectorTask, decayTask, rotationTask, autoScaleTask, monthlyFeeTask, disputeResolutionTask, skillPricingTask, talentMigrationTask, healthCheckTask, proposalResolverTask, cleanupConversationsTask, monthlyRetroTask, skillEvolutionTask, externalTaskOrchestratorTask, candidateAnnouncementTask, nightlyResearchTask, surveyReminderTask]) {
     if (task) {
       task.stop();
       stopped = true;
@@ -396,7 +407,8 @@ export function stopScheduler(): void {
   }
   stopKanbanWatchdog(kanbanWatchdogInterval);
   stopHiringBridge();
-  midnightTask = null;
+  cycleManagerTask = null;
+  needDetectorTask = null;
   decayTask = null;
   rotationTask = null;
   autoScaleTask = null;
