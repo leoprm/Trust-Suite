@@ -45,6 +45,7 @@ import kanbanRoutes from './routes/kanban';
 import candidatesRoutes from './routes/candidatesRoutes';
 import cancelledPlansRoutes from './routes/cancelledPlansRoutes';
 import hiringRoutes from './routes/hiringRoutes';
+import cycleRoutes from './routes/cycleRoutes';
 // Note: roleRoutes is registered inline below to avoid circular dependency with eventLogService
 import { createBot, startBotPolling } from './bot/index';
 import { initTrustManagerBot } from './bot/trustManagerBot';
@@ -229,6 +230,7 @@ app.use(globalLimiter);
 app.use('/api/auth', authRoutes);
 app.use('/api/trees', sandboxRoutes); // sandbox sub-routes: GET/DELETE /:id/sandbox (BEFORE treeRoutes to avoid JWT)
 app.use('/api/trees', vaultRoutes); // vault sub-routes: POST /:id/vault/report
+app.use('/api/trees', cycleRoutes); // cycle voting: :treeId/needs/.../vote, cycle/status
 app.use('/api/trees', treeRoutes);
 app.use('/api/needs', needRoutes);
 app.use('/api/ideas', ideaRoutes);
