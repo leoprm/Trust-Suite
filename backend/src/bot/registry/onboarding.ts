@@ -117,18 +117,24 @@ export function register(bot: Bot<BotContext>, prisma: PrismaClient): void {
         } catch { /* not implemented yet */ }
       }
 
-      // Paso 2 → payment mode (T7: subtree question movida al early pick)
-      session.onboardingStep = 3;
-      await new Promise(r => setTimeout(r, 1000));
-      await ctx.reply(step1Msg + t('onboarding.payment_mode_question', lang), {
-        parse_mode: 'Markdown',
-        reply_markup: {
-          inline_keyboard: [[
-            { text: t('onboarding.payment_mode_centralized', lang), callback_data: 'onboarding:payment_centralized' },
-            { text: t('onboarding.payment_mode_individual', lang), callback_data: 'onboarding:payment_individual' },
-          ]],
-        },
-      });
+      // Send confirmation, then ask for tree type
+      await ctx.reply(step1Msg, { parse_mode: 'Markdown' });
+
+      // Paso 2 → tree type (inline buttons: gremio/academia/empresa)
+      session.onboardingStep = 2;
+      await new Promise(r => setTimeout(r, 800));
+      await ctx.reply(
+        t('onboarding.tree_type_question', lang), {
+          parse_mode: 'Markdown',
+          reply_markup: {
+            inline_keyboard: [
+              [{ text: t('onboarding.tree_type_gremio', lang), callback_data: 'onboarding:tree_type_gremio' }],
+              [{ text: t('onboarding.tree_type_academia', lang), callback_data: 'onboarding:tree_type_academia' }],
+              [{ text: t('onboarding.tree_type_empresa', lang), callback_data: 'onboarding:tree_type_empresa' }],
+            ],
+          },
+        }
+      );
       return;
     }
 

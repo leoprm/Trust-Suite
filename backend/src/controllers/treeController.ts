@@ -186,7 +186,7 @@ export const createTree = async (req: any, res: Response) => {
 
     // C1: Ari tree classification — non-blocking, fire-and-forget
     try {
-      classifyTree(tree.id, tree.name, tree.description || '').catch(err => {
+      classifyTree(tree.id, tree.name, tree.description || '', prisma).catch(err => {
         console.error('[classifyTree] classification failed:', err?.message || err);
       });
     } catch {

@@ -589,6 +589,96 @@ export function register(bot: Bot<BotContext>, prisma: PrismaClient): void {
       return;
     }
 
+    // Onboarding multi-step: Paso 2 → tree type (gremio/academia/empresa)
+    if (data.startsWith("onboarding:tree_type_")) {
+      const session = (ctx as BotContext).session;
+      if (!session.onboardingTreeId || session.onboardingStep !== 2) {
+        await ctx.answerCallbackQuery();
+        return;
+      }
+
+      const treeType = data.slice("onboarding:tree_type_".length); // "gremio" | "academia" | "empresa"
+      if (!["gremio", "academia", "empresa"].includes(treeType)) {
+        await ctx.answerCallbackQuery({ text: "⚠️ Tipo inválido" });
+        return;
+      }
+
+      // Resolve language
+      let lang: string | null = null;
+      const chatType = ctx.chat?.type;
+      if ((chatType === "group" || chatType === "supergroup") && session.onboardingTreeId) {
+        lang = await resolveTreeLanguage(prisma, session.onboardingTreeId);
+      }
+      if (!lang) {
+        lang = await resolveUserLanguage(prisma, ctx);
+      }
+      if (!lang) lang = "es";
+
+      // Remove inline keyboard from the question message
+      try { await ctx.editMessageReplyMarkup({ reply_markup: undefined }); } catch { /* ok */ }
+
+      // Save classification to tree DB field
+      const classificationData = {
+        type: treeType,
+        skills: [] as string[],
+        source: "onboarding",
+        classifiedAt: new Date().toISOString(),
+      };
+
+      try {
+        await prisma.tree.update({
+          where: { id: session.onboardingTreeId },
+          data: {
+            classification: classificationData,
+            classificationUpdatedAt: new Date(),
+          },
+        });
+      } catch (err: any) {
+        console.error("[onboarding:tree_type] Failed to save classification:", err.message);
+      }
+
+      // Save to sandbox tree-classification.json (non-blocking)
+      try {
+        const SANDBOX_BASE = process.env.SANDBOX_BASE_DIR || "/home/trustmaker/trees";
+        const sandboxDir = require("path").join(SANDBOX_BASE, session.onboardingTreeId);
+        require("fs").mkdirSync(sandboxDir, { recursive: true });
+        const filePath = require("path").join(sandboxDir, "tree-classification.json");
+        require("fs").writeFileSync(filePath, JSON.stringify(classificationData, null, 2), "utf-8");
+      } catch { /* non-blocking: sandbox may not exist yet */ }
+
+      // Confirm and advance to payment mode (step 3)
+      const typeLabels: Record<string, string> = {
+        gremio: t("onboarding.tree_type_gremio", lang),
+        academia: t("onboarding.tree_type_academia", lang),
+        empresa: t("onboarding.tree_type_empresa", lang),
+      };
+      const typeLabel = typeLabels[treeType] || treeType;
+
+      await ctx.reply(
+        t("onboarding.tree_type_saved", lang, { type: typeLabel }), {
+          parse_mode: "Markdown",
+        }
+      );
+
+      // Paso 3 → payment mode
+      session.onboardingStep = 3;
+      await new Promise(r => setTimeout(r, 600));
+      await ctx.reply(
+        t("onboarding.payment_mode_question", lang), {
+          parse_mode: "Markdown",
+          reply_markup: {
+            inline_keyboard: [[
+              { text: t("onboarding.payment_mode_centralized", lang), callback_data: "onboarding:payment_centralized" },
+              { text: t("onboarding.payment_mode_individual", lang), callback_data: "onboarding:payment_individual" },
+            ]],
+          },
+        }
+      );
+
+      await ctx.answerCallbackQuery();
+      return;
+    }
+
     // Onboarding multi-step callbacks (Paso 3: payment mode)
     if (data === "onboarding:payment_centralized" || data === "onboarding:payment_individual") {
       const session = (ctx as BotContext).session;
