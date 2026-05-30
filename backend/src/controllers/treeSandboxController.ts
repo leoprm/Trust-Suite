@@ -98,7 +98,33 @@ export const uploadTreeSandbox = async (req: Request, res: Response) => {
     const id = req.params.id as string;
     const sb = await TreeSandbox.get(id);
     if (!sb) {
-      return res.status(404).json({ error: 'Sandbox not found for this tree' });
+      try {
+        const created = await TreeSandbox.create(id);
+        console.log(`[uploadTreeSandbox] Lazy-init sandbox for tree ${id.slice(0, 8)}…`);
+        const fileName = req.file.originalname || `file_${Date.now()}`;
+        const safePath = resolveSafePath(created.workspacePath, fileName);
+        if (!safePath) {
+          return res.status(403).json({ error: 'Path escapes sandbox' });
+        }
+        const dir = path.dirname(safePath);
+        fs.mkdirSync(dir, { recursive: true });
+        fs.writeFileSync(safePath, req.file.buffer);
+        checkQuotaAfterOp(created.workspacePath, id).catch(err =>
+          console.error('[uploadTreeSandbox] Quota check error:', err.message),
+        );
+        void logEvent({
+          ...getRequestContext(req),
+          treeId: id,
+          action: 'SANDBOX_UPLOAD',
+          entityType: 'TreeSandbox',
+          entityId: id,
+          source: 'SYSTEM',
+          metadataJson: { fileName, size: req.file.size },
+        });
+        return res.status(201).json({ path: fileName, size: req.file.size });
+      } catch (createErr: any) {
+        return res.status(500).json({ error: 'Failed to create sandbox', detail: createErr?.message });
+      }
     }
 
     const fileName = req.file.originalname || `file_${Date.now()}`;
@@ -197,9 +223,14 @@ export const execTreeSandbox = async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'command is required (string)' });
     }
 
-    const sb = await TreeSandbox.get(id);
+    let sb = await TreeSandbox.get(id);
     if (!sb) {
-      return res.status(404).json({ error: 'Sandbox not found for this tree' });
+      try {
+        sb = await TreeSandbox.create(id);
+        console.log(`[execTreeSandbox] Lazy-init sandbox for tree ${id.slice(0, 8)}…`);
+      } catch (createErr: any) {
+        return res.status(500).json({ error: 'Failed to create sandbox', detail: createErr?.message });
+      }
     }
 
     // bwrap handles isolation — pass workspacePath from DB as single source of truth
@@ -251,9 +282,14 @@ export const readTreeSandbox = async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'path is required (string)' });
     }
 
-    const sb = await TreeSandbox.get(id);
+    let sb = await TreeSandbox.get(id);
     if (!sb) {
-      return res.status(404).json({ error: 'Sandbox not found for this tree' });
+      try {
+        sb = await TreeSandbox.create(id);
+        console.log(`[readTreeSandbox] Lazy-init sandbox for tree ${id.slice(0, 8)}…`);
+      } catch (createErr: any) {
+        return res.status(500).json({ error: 'Failed to create sandbox', detail: createErr?.message });
+      }
     }
 
     // ── Detect directory mode ──
@@ -421,9 +457,14 @@ export const writeTreeSandbox = async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'content is required (string)' });
     }
 
-    const sb = await TreeSandbox.get(id);
+    let sb = await TreeSandbox.get(id);
     if (!sb) {
-      return res.status(404).json({ error: 'Sandbox not found for this tree' });
+      try {
+        sb = await TreeSandbox.create(id);
+        console.log(`[writeTreeSandbox] Lazy-init sandbox for tree ${id.slice(0, 8)}…`);
+      } catch (createErr: any) {
+        return res.status(500).json({ error: 'Failed to create sandbox', detail: createErr?.message });
+      }
     }
 
     const safePath = resolveSafePath(sb.workspacePath, requestedPath);
@@ -505,9 +546,14 @@ export const convertTreeSandbox = async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'format must be "pdf" or "html"' });
     }
 
-    const sb = await TreeSandbox.get(id);
+    let sb = await TreeSandbox.get(id);
     if (!sb) {
-      return res.status(404).json({ error: "Sandbox not found for this tree" });
+      try {
+        sb = await TreeSandbox.create(id);
+        console.log(`[convertTreeSandbox] Lazy-init sandbox for tree ${id.slice(0, 8)}…`);
+      } catch (createErr: any) {
+        return res.status(500).json({ error: 'Failed to create sandbox', detail: createErr?.message });
+      }
     }
 
     const cwd = sb.workspacePath;
@@ -741,9 +787,14 @@ export const searchTreeSandbox = async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'pattern is required (non-empty regex string)' });
     }
 
-    const sb = await TreeSandbox.get(id);
+    let sb = await TreeSandbox.get(id);
     if (!sb) {
-      return res.status(404).json({ error: 'Sandbox not found for this tree' });
+      try {
+        sb = await TreeSandbox.create(id);
+        console.log(`[searchTreeSandbox] Lazy-init sandbox for tree ${id.slice(0, 8)}…`);
+      } catch (createErr: any) {
+        return res.status(500).json({ error: 'Failed to create sandbox', detail: createErr?.message });
+      }
     }
 
     // Validate subPath if provided
@@ -840,9 +891,14 @@ export const patchTreeSandbox = async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'new_string is required (string)' });
     }
 
-    const sb = await TreeSandbox.get(id);
+    let sb = await TreeSandbox.get(id);
     if (!sb) {
-      return res.status(404).json({ error: 'Sandbox not found for this tree' });
+      try {
+        sb = await TreeSandbox.create(id);
+        console.log(`[patchTreeSandbox] Lazy-init sandbox for tree ${id.slice(0, 8)}…`);
+      } catch (createErr: any) {
+        return res.status(500).json({ error: 'Failed to create sandbox', detail: createErr?.message });
+      }
     }
 
     const safePath = resolveSafePath(sb.workspacePath, requestedPath);
@@ -1590,9 +1646,14 @@ export const quotaTreeSandbox = async (req: Request, res: Response) => {
   try {
     const id = req.params.id as string;
 
-    const sb = await TreeSandbox.get(id);
+    let sb = await TreeSandbox.get(id);
     if (!sb) {
-      return res.status(404).json({ error: 'Sandbox not found for this tree' });
+      try {
+        sb = await TreeSandbox.create(id);
+        console.log(`[quotaTreeSandbox] Lazy-init sandbox for tree ${id.slice(0, 8)}…`);
+      } catch (createErr: any) {
+        return res.status(500).json({ error: 'Failed to create sandbox', detail: createErr?.message });
+      }
     }
 
     const info = await getQuotaInfo(sb.workspacePath);

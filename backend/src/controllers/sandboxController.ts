@@ -178,10 +178,15 @@ export const searchMediaInSandbox = async (req: Request, res: Response) => {
       ? Math.floor(limit)
       : 5;
 
-    // Validate tree + sandbox exist
-    const sb = await TreeSandbox.get(id);
+    // Validate tree + sandbox exist — auto-create if missing
+    let sb = await TreeSandbox.get(id);
     if (!sb) {
-      return res.status(404).json({ error: 'Sandbox not found for this tree' });
+      try {
+        sb = await TreeSandbox.create(id);
+        console.log(`[searchMediaInSandbox] Lazy-init sandbox for tree ${id.slice(0, 8)}…`);
+      } catch (createErr: any) {
+        return res.status(500).json({ error: 'Failed to create sandbox', detail: createErr?.message });
+      }
     }
 
     const fs = await import('fs');
@@ -864,10 +869,15 @@ export const webSearchInSandbox = async (req: Request, res: Response) => {
         ? Math.floor(limit)
         : 5;
 
-    // Verify tree + sandbox exist
-    const sb = await TreeSandbox.get(id);
+    // Verify tree + sandbox exist — auto-create if missing
+    let sb = await TreeSandbox.get(id);
     if (!sb) {
-      return res.status(404).json({ error: 'Sandbox not found for this tree' });
+      try {
+        sb = await TreeSandbox.create(id);
+        console.log(`[webSearchInSandbox] Lazy-init sandbox for tree ${id.slice(0, 8)}…`);
+      } catch (createErr: any) {
+        return res.status(500).json({ error: 'Failed to create sandbox', detail: createErr?.message });
+      }
     }
 
     // Rate limit: 5 calls/minute per tree

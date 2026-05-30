@@ -127,20 +127,26 @@ export class TreeSandbox {
     fs.mkdirSync(path.join(workspacePath, 'logs'), { recursive: true });
     fs.mkdirSync(path.join(workspacePath, 'context'), { recursive: true });
 
-    // 2a. Copy tree template (scripts, tools, preconfigured files)
+    // 2a. Copy tree template (scripts, tools, preconfigured files) — best-effort
     const templateDir = path.resolve(TREES_BASE, '..', 'tree-template');
     if (fs.existsSync(templateDir)) {
-      fs.cpSync(templateDir, workspacePath, { recursive: true });
-      console.log(`[TreeSandbox] Template copied from tree-template to ${treeId.slice(0, 8)}…`);
+      try {
+        fs.cpSync(templateDir, workspacePath, { recursive: true });
+        console.log(`[TreeSandbox] Template copied from tree-template to ${treeId.slice(0, 8)}…`);
+      } catch (cpErr: any) {
+        console.warn(`[TreeSandbox] Template copy failed (non-blocking): ${cpErr?.message}`);
+      }
     }
 
     // 2b. Scaffold obsidian vault
     scaffoldObsidianVault(workspacePath);
 
-    // 2b2. Scaffold skills directory with change-interaction-mode skill
+    // 2b2. Scaffold skills directory with change-interaction-mode skill (skip if exists)
     const skillsDir = path.join(workspacePath, "skills");
     fs.mkdirSync(skillsDir, { recursive: true });
-    const skillContent = [
+    const changeInteractionPath = path.join(skillsDir, "change-interaction-mode.md");
+    if (!fs.existsSync(changeInteractionPath)) {
+      const skillContent = [
       "---",
       "name: Change Interaction Mode",
       "description: Instrucciones para que Ari ajuste su nivel de interacción según actividad del grupo",
@@ -196,30 +202,39 @@ export class TreeSandbox {
       "- Si no estás segura, mantén el modo actual.",
     ].join("\n");
     fs.writeFileSync(
-      path.join(skillsDir, "change-interaction-mode.md"),
+      changeInteractionPath,
       skillContent,
       "utf-8",
     );
     console.log("[TreeSandbox] change-interaction-mode skill deployed");
+    } // end if change-interaction-mode.md doesn't exist
 
-    // 2c. Deploy keyword extractor into sandbox apps/
+    // 2c. Deploy keyword extractor into sandbox apps/ (skip if already exists)
     const extractorSrc = path.resolve(__dirname, '../../lib/keyword_extractor.py');
-    if (fs.existsSync(extractorSrc)) {
-      fs.copyFileSync(extractorSrc, path.join(workspacePath, 'apps', 'keyword_extractor.py'));
-      console.log('[TreeSandbox] keyword_extractor.py deployed');
+    const extractorDst = path.join(workspacePath, 'apps', 'keyword_extractor.py');
+    if (fs.existsSync(extractorSrc) && !fs.existsSync(extractorDst)) {
+      try {
+        fs.copyFileSync(extractorSrc, extractorDst);
+        console.log('[TreeSandbox] keyword_extractor.py deployed');
+      } catch (copyErr: any) {
+        console.warn(`[TreeSandbox] keyword_extractor.py deploy failed (non-blocking): ${copyErr?.message}`);
+      }
     }
 
-    // 2d. Write tree metadata for sandbox tools (keyword extractor, etc.)
-    const treeMeta = {
-      description: tree.description || '',
-      objectives: tree.objectives || '',
-      telegramChatId: tree.telegramChatId || null,
-    };
-    fs.writeFileSync(
-      path.join(workspacePath, 'context', 'tree_meta.json'),
-      JSON.stringify(treeMeta, null, 2),
-      'utf-8',
-    );
+    // 2d. Write tree metadata for sandbox tools (skip if exists)
+    const treeMetaPath = path.join(workspacePath, 'context', 'tree_meta.json');
+    if (!fs.existsSync(treeMetaPath)) {
+      const treeMeta = {
+        description: tree.description || '',
+        objectives: tree.objectives || '',
+        telegramChatId: tree.telegramChatId || null,
+      };
+      try {
+        fs.writeFileSync(treeMetaPath, JSON.stringify(treeMeta, null, 2), 'utf-8');
+      } catch (metaErr: any) {
+        console.warn(`[TreeSandbox] tree_meta.json write failed (non-blocking): ${metaErr?.message}`);
+      }
+    }
 
     // 3. Assign a free port
     const port = await findFreePort();

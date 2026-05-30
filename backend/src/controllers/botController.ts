@@ -57,10 +57,15 @@ export const sendDocument = async (req: Request, res: Response) => {
       return res.status(400).json({ error: "Tree has no linked Telegram chat" });
     }
 
-    // Resolve file path in sandbox
-    const sb = await TreeSandbox.get(treeId);
+    // Resolve file path in sandbox — auto-create if missing
+    let sb = await TreeSandbox.get(treeId);
     if (!sb) {
-      return res.status(404).json({ error: "Sandbox not found for this tree" });
+      try {
+        sb = await TreeSandbox.create(treeId);
+        console.log(`[sendDocument] Lazy-init sandbox for tree ${treeId.slice(0, 8)}…`);
+      } catch (createErr: any) {
+        return res.status(500).json({ error: 'Failed to create sandbox', detail: createErr?.message });
+      }
     }
 
     // Prevent path traversal
