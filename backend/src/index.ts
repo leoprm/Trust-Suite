@@ -1,6 +1,59 @@
 import dotenv from 'dotenv';
 dotenv.config();
 
+// Force IPv4 for all outbound connections (fixes IPv6 hang to api.telegram.org)
+// Layer 1: dns resolution order
+import dns from 'dns';
+dns.setDefaultResultOrder('ipv4first');
+
+// Layer 2: Monkey-patch https.request/get for Grammy/node-fetch v2
+import https from 'https';
+const origRequest = https.request;
+
+function urlToOpts(u: string | URL): Record<string, any> {
+  const url = typeof u === 'string' ? new URL(u) : u;
+  return {
+    protocol: url.protocol,
+    hostname: url.hostname,
+    port: url.port || (url.protocol === 'https:' ? 443 : 80),
+    path: url.pathname + url.search,
+  };
+}
+
+(https as any).request = function(opts: any, ...args: any[]) {
+  if (typeof opts === 'string' || opts instanceof URL) {
+    opts = urlToOpts(opts);
+  }
+  opts = { ...opts, family: 4 };
+  return origRequest.call(this, opts, ...args);
+};
+
+(https as any).get = function(opts: any, ...args: any[]) {
+  let options: any = {};
+  let callback: any;
+  if (args.length === 2) {
+    options = args[0] || {};
+    callback = args[1];
+  } else if (args.length === 1) {
+    if (typeof args[0] === 'function') {
+      callback = args[0];
+    } else {
+      options = args[0] || {};
+    }
+  }
+  if (typeof opts === 'string' || opts instanceof URL) {
+    opts = urlToOpts(opts);
+  }
+  opts = { ...opts, ...options, family: 4 };
+  const req = origRequest.call(this, opts, callback as any);
+  req.end();
+  return req;
+};
+
+// Layer 3: undici global dispatcher (for native fetch calls)
+import { setGlobalDispatcher, Agent } from 'undici';
+setGlobalDispatcher(new Agent({ connect: { family: 4 } }));
+
 import express from 'express';
 import path from 'path';
 import fs from 'fs';

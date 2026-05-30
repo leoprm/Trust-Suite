@@ -233,7 +233,6 @@ export async function createBot(prisma: PrismaClient): Promise<Bot<BotContext> |
   });
 
   // ── Inicializar i18n ────────────────────────────────────────────────────
-  console.log("[DEBUG] initI18n type:", typeof initI18n);
   await initI18n();
 
   // Initialize payment service
