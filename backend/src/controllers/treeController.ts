@@ -455,11 +455,16 @@ export const inviteMember = async (req: any, res: Response) => {
     const { id } = req.params;
     const { userId } = req.body;
 
-    const requester = await prisma.treeMember.findUnique({
-      where: { userId_treeId: { userId: req.user.id, treeId: id } }
-    });
-    if (!requester) return res.status(403).json({ error: 'Not a member of this tree' });
-    if (requester.status !== 'ACTIVE') return res.status(403).json({ error: 'Must be an active member to invite' });
+    // SYSTEM role (API key auth via HERMES_API_SERVER_KEY) bypasses membership check
+    const isSystem = req.user?.role === 'SYSTEM';
+
+    if (!isSystem) {
+      const requester = await prisma.treeMember.findUnique({
+        where: { userId_treeId: { userId: req.user.id, treeId: id } }
+      });
+      if (!requester) return res.status(403).json({ error: 'Not a member of this tree' });
+      if (requester.status !== 'ACTIVE') return res.status(403).json({ error: 'Must be an active member to invite' });
+    }
 
     const existing = await prisma.treeMember.findUnique({
       where: { userId_treeId: { userId, treeId: id } }

@@ -973,6 +973,7 @@ const VALID_ACTIONS = new Set([
   "propose_idea", "vote_on_idea", "register_result", "create_need",
   "get_ideas_by_creator", "search_ideas", "get_task_assignments",
   "get_user_stats", "get_global_stats", "get_vote_results", "get_tree_members",
+  "add_member", "sync_members",
 ]);
 
 const ACTION_TO_FUNCTION: Record<string, string> = {
@@ -1020,6 +1021,59 @@ export const tmCall = async (req: Request, res: Response) => {
       });
     }
     bucket.count++;
+
+    // ── Inline handlers (no Python round-trip) ────────────────────────────
+    if (action === "add_member") {
+      const { userId } = args;
+      if (!userId || typeof userId !== "string") {
+        return res.status(400).json({ error: "userId is required (string)" });
+      }
+      // Verify tree exists
+      const tree = await prisma.tree.findUnique({ where: { id: treeId } });
+      if (!tree) return res.status(404).json({ error: "Tree not found" });
+      // Verify user exists
+      const user = await prisma.user.findUnique({ where: { id: userId } });
+      if (!user) return res.status(404).json({ error: "User not found" });
+      // Check if already a member
+      const existing = await prisma.treeMember.findUnique({
+        where: { userId_treeId: { userId, treeId } },
+      });
+      if (existing) {
+        // Reactivate if inactive
+        if (existing.status !== "ACTIVE") {
+          await prisma.treeMember.update({
+            where: { id: existing.id },
+            data: { status: "ACTIVE" },
+          });
+          return res.json({ status: "reactivated", member: existing });
+        }
+        return res.status(400).json({ error: "User is already a member" });
+      }
+      const member = await prisma.treeMember.create({
+        data: { userId, treeId, status: "ACTIVE", role: "MEMBER" },
+      });
+      return res.json({ status: "added", member });
+    }
+
+    if (action === "sync_members") {
+      // Trigger Telethon member sync via tg_members.py
+      const tree = await prisma.tree.findUnique({
+        where: { id: treeId },
+        select: { telegramChatId: true },
+      });
+      if (!tree?.telegramChatId) {
+        return res.status(400).json({ error: "Tree has no linked Telegram group" });
+      }
+      try {
+        const { syncAllMembers } = await import("../bot/telegramClient");
+        const chatId = Number(tree.telegramChatId);
+        const adderId = Number(args.adderId || 0);
+        const synced = await syncAllMembers(chatId, treeId, adderId);
+        return res.json({ status: "synced", count: synced });
+      } catch (syncErr: any) {
+        return res.status(500).json({ error: "Sync failed", detail: syncErr?.message });
+      }
+    }
 
     // ── Resolve Python + tools.py path ────────────────────────────────────
     const pythonBin = process.env.HERMES_PYTHON_BIN || "/home/leo/.hermes/hermes-agent/venv/bin/python3";
