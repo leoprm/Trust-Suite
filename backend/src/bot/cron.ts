@@ -299,13 +299,13 @@ async function resetCyclePoints(
 
 // ── cycleManager: ciclo completo (cierre + inicio + reset) ────────────────
 
-/**
+/** 
  * Ejecuta el ciclo completo para TODOS los árboles con grupo de Telegram.
- * 
- * Orden de operaciones por árbol:
- * 1. Cerrar votación del ciclo anterior
- * 2. Iniciar votación de necesidades recolectadas
- * 3. Resetear cyclePoints
+ *  
+ * Orden de operaciones por árbol: 
+ * 1. Iniciar votación de necesidades recolectadas (del ciclo anterior) 
+ * 2. Cerrar votación del ciclo que termina (ganadora → APPROVED, 2do lugar → collect para próximo ciclo) 
+ * 3. Resetear cyclePoints 
  */
 export async function runCycleManager(
   prisma: PrismaClient,
@@ -330,17 +330,17 @@ export async function runCycleManager(
   let totalPointsReset = 0;
 
   for (const tree of trees) {
-    try {
-      // 1. Cerrar votación del ciclo anterior
-      const closeResult = await closeCycleForTree(prisma, tree, bot);
-      if (closeResult.winner) totalWinners++;
-
-      // 2. Iniciar votación con necesidades recolectadas
-      const startResult = await startCycleForTree(prisma, tree, bot);
-      totalStarted += startResult.needsStarted;
-
-      // 3. Resetear cyclePoints
-      const resetCount = await resetCyclePoints(prisma, tree.id);
+    try { 
+      // 1. Iniciar votación con necesidades recolectadas (del ciclo anterior) 
+      const startResult = await startCycleForTree(prisma, tree, bot); 
+      totalStarted += startResult.needsStarted; 
+ 
+      // 2. Cerrar votación del ciclo que termina 
+      const closeResult = await closeCycleForTree(prisma, tree, bot); 
+      if (closeResult.winner) totalWinners++; 
+ 
+      // 3. Resetear cyclePoints 
+      const resetCount = await resetCyclePoints(prisma, tree.id); 
       totalPointsReset += resetCount;
 
       console.log(
@@ -400,12 +400,13 @@ async function detectNeedsInTree(
   if (recentMessages.length === 0) return { detected: 0, created: 0 };
 
   // ── Heurísticas simples de detección ──
+  // NOTA: detección básica basada en patrones. La detección avanzada con IA 
+  // (Ari vía Hermes) se implementa en Fase 4.
   const NEED_PATTERNS = [
-    /\b(?:necesitamos|necesito|hace falta|falta)\b/i,
-    /\b(?:sería bueno|estaría bien|podríamos|hay que)\b.*\b(?:crear|hacer|implementar|arreglar|mejorar)\b/i,
-    /\b(?:problema|bug|error|falla|no funciona|roto)\b/i,
-    /\b(?:idea|propongo|sugiero)\b/i,
-    /\?$/m, // mensajes que terminan con pregunta
+    /\b(?:necesitamos|necesito|hace falta|falta|urge)\b/i,
+    /\b(?:sería bueno|estaría bien|podríamos|hay que)\b.*\b(?:crear|hacer|implementar|arreglar|mejorar|resolver)\b/i,
+    /\b(?:problema|bug|error|falla|no funciona|roto|se cayó)\b/i,
+    /\b(?:idea|propongo|sugiero|propuesta)\b/i,
   ];
 
   const detectedMessages = recentMessages.filter((msg) =>
