@@ -153,21 +153,21 @@ export const rateDifficulty = async (req: any, res: Response) => {
       return res.status(400).json({ error: 'Need no está en fase de votación' });
     }
 
-    // Atomic update: recalculate running average
-    const currentCount = need.difficultyVotes;
-    const currentAvg = need.difficultyAvg ?? 0;
-    const newCount = currentCount + 1;
-    const newAvg = (currentAvg * currentCount + rating) / newCount;
-
-    await prisma.need.update({
-      where: { id: needId },
-      data: {
-        difficultyAvg: Math.round(newAvg * 100) / 100,
-        difficultyVotes: newCount,
-      },
+    // Atomic update: recalculate running average inside a transaction
+    // to prevent read-modify-write race condition under concurrent load
+    const [updated] = await prisma.$transaction(async (tx) => {
+      await tx.$executeRaw`
+        UPDATE Need
+        SET difficultyAvg = ROUND((COALESCE(difficultyAvg, 0) * difficultyVotes + ${rating}) / (difficultyVotes + 1), 2),
+            difficultyVotes = difficultyVotes + 1
+        WHERE id = ${needId}
+      `;
+      return tx.$queryRaw<Array<{ difficultyAvg: number; difficultyVotes: number }>>`
+        SELECT difficultyAvg, difficultyVotes FROM Need WHERE id = ${needId}
+      `;
     });
 
-    res.json({ difficultyAvg: Math.round(newAvg * 100) / 100, difficultyVotes: newCount });
+    res.json({ difficultyAvg: updated.difficultyAvg, difficultyVotes: updated.difficultyVotes });
   } catch (error) {
     console.error('[rateDifficulty] error:', error);
     res.status(500).json({ error: 'Failed to rate difficulty' });
