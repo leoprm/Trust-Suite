@@ -1,5 +1,6 @@
 import { Bot } from "grammy";
 import { PrismaClient } from "@prisma/client";
+import { exec } from "child_process";
 import type { BotContext } from "./types";
 
 const prisma = new PrismaClient();
@@ -169,6 +170,60 @@ export function registerReactionHandler(bot: Bot<BotContext>): void {
             console.log(
               `[NeedVoting] Need ${need.id} APPROVED — ${updatedNeed.dailyVotes} votes > 50% of ${memberCount} members`,
             );
+
+            // ── Notify group about approval ──────────────────────────
+            const tree = await prisma.tree.findUnique({
+              where: { id: need.tree.id },
+              select: { telegramChatId: true, name: true },
+            });
+            if (tree?.telegramChatId) {
+              const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || "";
+              const escHtml = (s: string) =>
+                s
+                  .replace(/&/g, "&amp;")
+                  .replace(/</g, "&lt;")
+                  .replace(/>/g, "&gt;");
+              const text =
+                `<b>✅ Necesidad aprobada en ${escHtml(tree.name)}</b>\n\n` +
+                `<b>${escHtml(need.title)}</b>\n` +
+                `${escHtml(need.description || "")}\n\n` +
+                `Votos: ${updatedNeed.dailyVotes} 👍\n\n` +
+                `<b>¡Propongan soluciones!</b> Respondan a este mensaje con sus ideas.`;
+
+              const payload = JSON.stringify({
+                chat_id: tree.telegramChatId,
+                text,
+                parse_mode: "HTML",
+                reply_to_message_id: need.telegramMessageId,
+              });
+
+              exec(
+                `curl -s --max-time 10 -X POST https://api.telegram.org/bot${BOT_TOKEN}/sendMessage ` +
+                  `-H 'Content-Type: application/json' -d '${payload.replace(/'/g, "'\\''")}'`,
+                { timeout: 12000 },
+                (err, stdout) => {
+                  if (err) {
+                    console.error("[NeedVoting] curl error:", err.message);
+                    return;
+                  }
+                  try {
+                    const data = JSON.parse(stdout);
+                    if (data.ok) {
+                      console.log(
+                        `[NeedVoting] Approval notification sent for need ${need.id}`,
+                      );
+                    } else {
+                      console.error(
+                        "[NeedVoting] Telegram API error:",
+                        stdout.slice(0, 200),
+                      );
+                    }
+                  } catch {
+                    /* ignore parse errors */
+                  }
+                },
+              );
+            }
           }
         }
         return;

@@ -240,6 +240,19 @@ export async function buildSystemPrompt(
       `,
     ]);
 
+  // ── Approved needs (ready for solutions) ────────────────────────────
+  const approvedNeeds = await prisma.need.findMany({
+    where: { treeId, status: "APPROVED" },
+    select: {
+      title: true,
+      description: true,
+      dailyVotes: true,
+      telegramMessageId: true,
+    },
+    orderBy: { dailyVotes: "desc" },
+    take: 5,
+  });
+
   // Resolve language from tree config
   const langMap: Record<string, string> = {
     es: "Spanish", en: "English", pt: "Portuguese", fr: "French",
@@ -425,6 +438,29 @@ export async function buildSystemPrompt(
         : (n.description || "");
       lines.push(`  - [${n.importance}] ${n.title}${desc ? ": " + desc : ""}`);
     }
+  }
+
+  // ── Approved needs (ready for solutions) ────────────────────────────
+  if (approvedNeeds.length > 0) {
+    lines.push("");
+    lines.push("═════ APPROVED NEEDS (ready for solutions) ═════");
+    lines.push(
+      "These needs have been validated by the community (>50% votes).",
+    );
+    lines.push(
+      "Your job: help generate solutions. Suggest ideas, facilitate discussion,",
+    );
+    lines.push(
+      "and when solutions emerge, create Idea records via the API.",
+    );
+    lines.push("");
+    for (const n of approvedNeeds) {
+      lines.push(`  - [${n.dailyVotes} votes] ${n.title}`);
+    }
+    lines.push("");
+    lines.push(
+      "To propose a solution: POST /api/ideas with { content, needId, treeId }",
+    );
   }
 
   // ── Members ───────────────────────────────────────────────────────────
