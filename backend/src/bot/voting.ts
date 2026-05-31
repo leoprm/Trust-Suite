@@ -137,15 +137,40 @@ export function registerReactionHandler(bot: Bot<BotContext>): void {
 
       // DisputeMessage model removed — dispute voting disabled
 
-      // ── Try matching message to a Need (future: Need voting) ──────
+      // ── Try matching message to a Need ──────────────────────────
       const need = await prisma.need.findFirst({
         where: { telegramMessageId: messageId },
+        include: { tree: { select: { id: true } } },
       });
 
-      if (need) {
-        // Need voting via reactions is not yet implemented.
-        // Future: could use IdeaVote with a synthetic need-scoped vote,
-        // or create a dedicated NeedVote model.
+      if (need && need.tree) {
+        // Count thumbs-up reactions only
+        const thumbsUpCount = (update.new_reaction || [])
+          .filter((r: any) => r?.type === "emoji" && r?.emoji === "👍").length;
+        const oldThumbsUp = (update.old_reaction || [])
+          .filter((r: any) => r?.type === "emoji" && r?.emoji === "👍").length;
+        const delta = thumbsUpCount - oldThumbsUp;
+
+        if (delta !== 0) {
+          const updatedNeed = await prisma.need.update({
+            where: { id: need.id },
+            data: { dailyVotes: { increment: delta } },
+          });
+
+          const memberCount = await prisma.treeMember.count({
+            where: { treeId: need.tree.id, status: "ACTIVE" },
+          });
+
+          if (memberCount > 0 && updatedNeed.dailyVotes > memberCount * 0.5) {
+            await prisma.need.update({
+              where: { id: need.id },
+              data: { status: "APPROVED" },
+            });
+            console.log(
+              `[NeedVoting] Need ${need.id} APPROVED — ${updatedNeed.dailyVotes} votes > 50% of ${memberCount} members`,
+            );
+          }
+        }
         return;
       }
     } catch (err) {

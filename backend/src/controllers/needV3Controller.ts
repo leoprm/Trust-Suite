@@ -87,6 +87,35 @@ export const createNeed = async (req: any, res: Response) => {
     }
 
     res.status(201).json(need);
+
+    // ─── Send Telegram voting message (async, non-blocking) ──────
+    if (req.user?.id === 'telegram-bot' || req.user?.role === 'SYSTEM') {
+      const { telegramBot } = await import('../index');
+      if (telegramBot) {
+        try {
+          const tree = await prisma.tree.findUnique({
+            where: { id: treeId },
+            select: { telegramChatId: true, name: true },
+          });
+          if (tree?.telegramChatId) {
+            const chatId = parseInt(tree.telegramChatId, 10);
+            if (!isNaN(chatId)) {
+              const sent = await telegramBot.api.sendMessage(
+                chatId,
+                `📋 *Nueva necesidad en ${tree.name}*\n\n*${title}*\n${description || ''}\n\nImportancia: ${'⭐'.repeat(assignedImportance)} (${assignedImportance}/10)\n\n👍 si crees que es una necesidad valida dale un like a este mensaje`,
+                { parse_mode: 'Markdown' },
+              );
+              await prisma.need.update({
+                where: { id: need.id },
+                data: { telegramMessageId: sent.message_id },
+              });
+            }
+          }
+        } catch (sendErr) {
+          console.error('[createNeed] Failed to send Telegram message:', sendErr);
+        }
+      }
+    }
   } catch (error) {
     console.error('[createNeed] error:', error);
     res.status(500).json({ error: 'Failed to create Need' });
