@@ -1,8 +1,9 @@
 /**
  * MessageQueue — semáforo de typing + cola FIFO para hermesBridge.
  *
- * Garantiza que solo un mensaje se envíe a Ari a la vez.
- * Los mensajes adicionales se encolan (max 5).
+ * Garantiza que solo un mensaje se envíe a Ari POR ÁRBOL a la vez.
+ * Mensajes de diferentes árboles pueden procesarse en paralelo.
+ * Mensajes adicionales del mismo árbol se encolan (max 5).
  * Cuando la cola está llena, se rechaza con mensaje de saturación.
  */
 
@@ -40,7 +41,7 @@ export class MessageQueue {
     if (this.queue.length >= this.maxSize) {
       return {
         accepted: false,
-        message: "🔄 Ari está saturada, intenta en unos minutos.",
+        message: "🔄 Ari está saturada en este árbol, intenta en unos minutos.",
       };
     }
     this.queue.push(msg);
@@ -88,5 +89,23 @@ export class MessageQueue {
   }
 }
 
-/** Singleton — una sola cola para todas las llamadas a Ari. */
-export const messageQueue = new MessageQueue();
+/**
+ * Per-tree message queues — una cola por árbol para permitir
+ * procesamiento paralelo entre diferentes árboles.
+ * Messages dentro del mismo árbol se serializan.
+ */
+class TreeMessageQueueManager {
+  private queues = new Map<string, MessageQueue>();
+
+  getQueue(treeId: string | null): MessageQueue {
+    const key = treeId || "__notree__";
+    let q = this.queues.get(key);
+    if (!q) {
+      q = new MessageQueue();
+      this.queues.set(key, q);
+    }
+    return q;
+  }
+}
+
+export const treeMessageQueues = new TreeMessageQueueManager();

@@ -10,7 +10,7 @@
  */
 
 import crypto from "crypto";
-import { messageQueue } from "../messageQueue";
+import { treeMessageQueues } from "../messageQueue";
 
 import type {
   HermesBridgeResponse,
@@ -237,7 +237,7 @@ export async function routeToHermes(
       // role stays undefined if lookup fails — non-admin treatment
     }
 
-    const queued = messageQueue.enqueue({
+    const queued = treeMessageQueues.getQueue(treeId).enqueue({
       chatId,
       text: message,
       userId: numericUserId,
@@ -509,7 +509,7 @@ export async function routeToHermes(
   }
   } finally {
     if (didEnqueue) {
-      messageQueue.dequeue();
+      treeMessageQueues.getQueue(treeId).dequeue();
     }
   }
 }
