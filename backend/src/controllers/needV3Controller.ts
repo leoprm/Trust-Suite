@@ -98,18 +98,31 @@ export const createNeed = async (req: any, res: Response) => {
             select: { telegramChatId: true, name: true },
           });
           if (tree?.telegramChatId) {
-            const chatId = parseInt(tree.telegramChatId, 10);
-            if (!isNaN(chatId)) {
-              const sent = await telegramBot.api.sendMessage(
-                chatId,
-                `📋 *Nueva necesidad en ${tree.name}*\n\n*${title}*\n${description || ''}\n\nImportancia: ${'⭐'.repeat(assignedImportance)} (${assignedImportance}/10)\n\n👍 si crees que es una necesidad valida dale un like a este mensaje`,
-                { parse_mode: 'Markdown' },
-              );
-              await prisma.need.update({
-                where: { id: need.id },
-                data: { telegramMessageId: sent.message_id },
-              });
-            }
+            const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || '';
+            const escHtml = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+            const text = `<b>📋 Nueva necesidad en ${escHtml(tree.name)}</b>\n\n<b>${escHtml(title)}</b>\n${escHtml(description || '')}\n\nImportancia: ${'⭐'.repeat(assignedImportance)} (${assignedImportance}/10)\n\n👍 si crees que es una necesidad válida dale un like a este mensaje`;
+            const { exec } = require('child_process');
+            const payload = JSON.stringify({ chat_id: tree.telegramChatId, text, parse_mode: 'HTML' });
+            exec(
+              `curl -s --max-time 10 -X POST https://api.telegram.org/bot${BOT_TOKEN}/sendMessage -H 'Content-Type: application/json' -d '${payload.replace(/'/g, "'\\''")}'`,
+              { timeout: 12000 },
+              async (err: any, stdout: string) => {
+                if (err) { console.error('[createNeed] curl error:', err.message); return; }
+                try {
+                  const data = JSON.parse(stdout);
+                  if (data.ok && data.result?.message_id) {
+                    await prisma.need.update({
+                      where: { id: need.id },
+                      data: { telegramMessageId: data.result.message_id },
+                    });
+                  } else {
+                    console.error('[createNeed] Telegram API error:', stdout.slice(0, 200));
+                  }
+                } catch (parseErr) {
+                  console.error('[createNeed] JSON parse error:', stdout.slice(0, 200));
+                }
+              }
+            );
           }
         } catch (sendErr) {
           console.error('[createNeed] Failed to send Telegram message:', sendErr);
