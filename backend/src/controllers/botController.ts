@@ -6,6 +6,7 @@ import path from "path";
 import fs from "fs";
 
 const API_SERVER_KEY = process.env.HERMES_API_SERVER_KEY ?? "";
+const INTERNAL_API_KEY = process.env.INTERNAL_API_KEY ?? "";
 
 // ── Auth helper ─────────────────────────────────────────────────────────────
 
@@ -200,6 +201,80 @@ export const sendMessage = async (req: Request, res: Response) => {
     });
   } catch (error: any) {
     console.error("[sendMessage] ERROR:", error?.message || error);
+    res.status(500).json({ error: "Failed to send message", detail: error?.message });
+  }
+};
+
+// ── POST /api/bot/send-to-tree ─────────────────────────────────────────────
+// Body: { treeId: string, text: string, parseMode?: "Markdown" | "HTML" }
+// Sends a text message to the tree's Telegram chat.
+// Used by Ari to send individual messages to a tree.
+// Auth: x-api-key header must match INTERNAL_API_KEY env var.
+export const sendToTree = async (req: Request, res: Response) => {
+  try {
+    const apiKey = req.headers["x-api-key"];
+    if (!INTERNAL_API_KEY || apiKey !== INTERNAL_API_KEY) {
+      return res.status(401).json({ error: "Unauthorized: invalid API key" });
+    }
+
+    const { treeId, text, parseMode } = req.body;
+
+    if (!treeId || typeof treeId !== "string") {
+      return res.status(400).json({ error: "treeId is required (string)" });
+    }
+    if (!text || typeof text !== "string") {
+      return res.status(400).json({ error: "text is required (string)" });
+    }
+    if (parseMode && !["Markdown", "HTML"].includes(parseMode)) {
+      return res.status(400).json({ error: "parseMode must be 'Markdown' or 'HTML'" });
+    }
+
+    // Resolve telegramChatId from tree
+    const { prisma } = await import("../index");
+    const tree = await prisma.tree.findUnique({
+      where: { id: treeId },
+      select: { telegramChatId: true, name: true },
+    });
+
+    if (!tree) {
+      return res.status(404).json({ error: "Tree not found" });
+    }
+    if (!tree.telegramChatId) {
+      return res.status(400).json({ error: "Tree has no linked Telegram chat" });
+    }
+
+    // Get bot instance
+    const { telegramBot } = await import("../index");
+    if (!telegramBot) {
+      return res.status(503).json({ error: "Telegram bot not available" });
+    }
+
+    const chatId = tree.telegramChatId;
+
+    const sent = await telegramBot.api.sendMessage(chatId, text, {
+      parse_mode: parseMode || undefined,
+    });
+
+    void logEvent({
+      ...getRequestContext(req),
+      treeId,
+      action: "BOT_SEND_TO_TREE",
+      entityType: "Tree",
+      entityId: treeId,
+      source: "ARI",
+      metadataJson: {
+        chatId,
+        messageId: sent.message_id,
+        parseMode: parseMode || null,
+      },
+    });
+
+    res.json({
+      ok: true,
+      messageId: sent.message_id,
+    });
+  } catch (error: any) {
+    console.error("[sendToTree] ERROR:", error?.message || error);
     res.status(500).json({ error: "Failed to send message", detail: error?.message });
   }
 };

@@ -51,6 +51,130 @@ async function resolveOrCreateUser(tgId: string): Promise<any | null> {
   }
 }
 
+// ── Solution generator (Hermes Agent) ────────────────────────────────────
+
+async function generateSolutionsForNeed(
+  needId: string,
+  treeId: string,
+  treeName: string,
+  needTitle: string,
+  needDescription: string,
+  telegramChatId: string,
+  replyToMessageId: number | null,
+): Promise<void> {
+  const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || "";
+  const HERMES_KEY = process.env.HERMES_API_SERVER_KEY || "";
+
+  if (!HERMES_KEY) {
+    console.error("[generateSolutions] Missing HERMES_API_SERVER_KEY");
+    return;
+  }
+
+  const escapeShell = (s: string) => s.replace(/'/g, "'\\''");
+  const escHtml = (s: string) =>
+    s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+
+  // 1. Build prompt for Hermes Agent
+  const prompt =
+    `Eres Ari, asistente de Trust Maker. Genera exactamente 3 ideas de solucion ` +
+    `para esta necesidad del arbol "${treeName}":\n\n` +
+    `Necesidad: ${needTitle}\n` +
+    `Descripcion: ${needDescription}\n\n` +
+    `Responde UNICAMENTE con las 3 ideas, una por linea, sin numeros ni bullets. ` +
+    `Formato:\nIdea 1 texto aqui\nIdea 2 texto aqui\nIdea 3 texto aqui`;
+
+  const hermesBody = JSON.stringify({
+    messages: [{ role: "user", content: prompt }],
+    stream: false,
+    tool_choice: "none",
+  });
+
+  // 2. Call Hermes Agent API
+  exec(
+    `curl -s --max-time 60 -X POST http://127.0.0.1:8644/v1/chat/completions ` +
+      `-H 'Content-Type: application/json' ` +
+      `-H 'Authorization: Bearer ${escapeShell(HERMES_KEY)}' ` +
+      `-H 'X-Hermes-Session-Key: tree-agent-${escapeShell(treeId)}' ` +
+      `-d '${escapeShell(hermesBody)}'`,
+    { timeout: 65000 },
+    async (err, stdout) => {
+      if (err) {
+        console.error("[generateSolutions] Hermes call failed:", err.message);
+        return;
+      }
+      try {
+        const resp = JSON.parse(stdout);
+        const content: string = resp?.choices?.[0]?.message?.content || "";
+        const ideas = content
+          .split("\n")
+          .map((l: string) => l.trim())
+          .filter((l: string) => l.length > 10)
+          .map((l: string) => l.slice(0, 300))
+          .slice(0, 5);
+
+        console.log(
+          `[generateSolutions] Got ${ideas.length} ideas from Hermes for need ${needId}`,
+        );
+
+        for (const ideaText of ideas) {
+          // 3. Send each idea as a separate Telegram message
+          const payload = JSON.stringify({
+            chat_id: telegramChatId,
+            text:
+              `<b>💡 Idea de solución</b>\n\n${escHtml(ideaText)}\n\n` +
+              `👍 ❤️ ⭐ Vota por esta solución`,
+            parse_mode: "HTML",
+            reply_to_message_id: replyToMessageId,
+          });
+
+          exec(
+            `curl -s --max-time 10 -X POST ` +
+              `https://api.telegram.org/bot${BOT_TOKEN}/sendMessage ` +
+              `-H 'Content-Type: application/json' ` +
+              `-d '${escapeShell(payload)}'`,
+            { timeout: 12000 },
+            async (err2, stdout2) => {
+              if (err2) {
+                console.error(
+                  "[generateSolutions] Telegram send failed:",
+                  err2.message,
+                );
+                return;
+              }
+              try {
+                const tgResp = JSON.parse(stdout2);
+                if (tgResp.ok && tgResp.result?.message_id) {
+                  // 4. Create Idea record in DB
+                  await prisma.idea.create({
+                    data: {
+                      content: ideaText,
+                      creatorId: "telegram-bot",
+                      needId,
+                      telegramMessageId: tgResp.result.message_id,
+                    },
+                  });
+                  console.log(
+                    `[generateSolutions] Idea created (msg_id=${tgResp.result.message_id}) for need ${needId}`,
+                  );
+                } else {
+                  console.error(
+                    "[generateSolutions] Telegram API error:",
+                    stdout2.slice(0, 200),
+                  );
+                }
+              } catch {
+                /* ignore parse errors */
+              }
+            },
+          );
+        }
+      } catch {
+        console.error("[generateSolutions] Failed to parse Hermes response");
+      }
+    },
+  );
+}
+
 // ── Reaction handler ─────────────────────────────────────────────────────
 
 export function registerReactionHandler(bot: Bot<BotContext>): void {
@@ -145,6 +269,14 @@ export function registerReactionHandler(bot: Bot<BotContext>): void {
       });
 
       if (need && need.tree) {
+        // Fetch full need data for title/description
+        const fullNeed = await prisma.need.findUnique({
+          where: { id: need.id },
+          select: { id: true, title: true, description: true, dailyVotes: true, telegramMessageId: true },
+        });
+        if (!fullNeed) return;
+        const needTitle = fullNeed.title;
+        const needDesc = fullNeed.description || '';
         // Count thumbs-up reactions only
         const thumbsUpCount = (update.new_reaction || [])
           .filter((r: any) => r?.type === "emoji" && r?.emoji === "👍").length;
@@ -165,7 +297,7 @@ export function registerReactionHandler(bot: Bot<BotContext>): void {
           if (memberCount > 0 && updatedNeed.dailyVotes > memberCount * 0.5) {
             await prisma.need.update({
               where: { id: need.id },
-              data: { status: "APPROVED" },
+              data: { status: "APPROVED" as any },
             });
             console.log(
               `[NeedVoting] Need ${need.id} APPROVED — ${updatedNeed.dailyVotes} votes > 50% of ${memberCount} members`,
@@ -185,8 +317,8 @@ export function registerReactionHandler(bot: Bot<BotContext>): void {
                   .replace(/>/g, "&gt;");
               const text =
                 `<b>✅ Necesidad aprobada en ${escHtml(tree.name)}</b>\n\n` +
-                `<b>${escHtml(need.title)}</b>\n` +
-                `${escHtml(need.description || "")}\n\n` +
+                `<b>${escHtml(needTitle)}</b>\n` +
+                `${escHtml(needDesc)}\n\n` +
                 `Votos: ${updatedNeed.dailyVotes} 👍\n\n` +
                 `<b>¡Propongan soluciones!</b> Respondan a este mensaje con sus ideas.`;
 
@@ -222,6 +354,17 @@ export function registerReactionHandler(bot: Bot<BotContext>): void {
                     /* ignore parse errors */
                   }
                 },
+              );
+
+              // ── Generate solution ideas via Ari ─────────────────────
+              generateSolutionsForNeed(
+                need.id,
+                need.tree.id,
+                tree.name,
+                needTitle,
+                needDesc,
+                tree.telegramChatId,
+                need.telegramMessageId,
               );
             }
           }

@@ -234,7 +234,7 @@ export const updateImportance = async (req: any, res: Response) => {
 
 // ─── PATCH /api/needs/:id/status ────────────────────────────
 const validTransitions: Record<string, string[]> = {
-  OPEN: ['SATISFIED'],
+  OPEN: ['APPROVED', 'SATISFIED'],
   SATISFIED: ['CLOSED'],
 };
 
@@ -243,7 +243,7 @@ export const updateStatus = async (req: any, res: Response) => {
     const { id } = req.params;
     const { status } = req.body;
 
-    const allowed = ['OPEN', 'SATISFIED', 'CLOSED'];
+    const allowed = ['OPEN', 'APPROVED', 'SATISFIED', 'CLOSED'];
     if (!allowed.includes(status)) {
       return res.status(400).json({ error: `status inválido. Permitidos: ${allowed.join(', ')}` });
     }
@@ -263,6 +263,30 @@ export const updateStatus = async (req: any, res: Response) => {
       where: { id },
       data: { status: status as any },
     });
+
+    // ── Fire-and-forget hook: notify when need is APPROVED ────────
+    if (status === 'APPROVED') {
+      const port = process.env.PORT || 3100;
+      const internalApiKey = process.env.INTERNAL_API_KEY || '';
+      const hookUrl = `http://127.0.0.1:${port}/api/hooks/need-approved`;
+      fetch(hookUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-key': internalApiKey,
+        },
+        body: JSON.stringify({
+          needId: id,
+          treeId: need.treeId,
+          title: need.title,
+          description: need.description,
+        }),
+      }).then(() => {
+        console.log(`[updateStatus] Hook need-approved OK: needId=${id}`);
+      }).catch((err: any) => {
+        console.error(`[updateStatus] Hook need-approved failed for need ${id}:`, err.message || err);
+      });
+    }
 
     // Mark ideas as global when need is sealed (SATISFIED or CLOSED)
     if (status === 'SATISFIED' || status === 'CLOSED') {

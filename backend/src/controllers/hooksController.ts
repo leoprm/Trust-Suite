@@ -100,6 +100,39 @@ export const externalTaskCompleted = async (req: Request, res: Response) => {
 };
 
 /**
+ * POST /api/hooks/need-approved
+ *
+ * Called internally when a Need status transitions to APPROVED.
+ * Body: { needId, treeId, title, description }
+ * Auth: x-api-key header must match INTERNAL_API_KEY env var.
+ */
+export const needApproved = async (req: Request, res: Response) => {
+  try {
+    // ── Auth ──────────────────────────────────────────────────────────────────
+    const apiKey = req.headers['x-api-key'];
+    if (!INTERNAL_API_KEY || apiKey !== INTERNAL_API_KEY) {
+      return res.status(401).json({ error: 'Unauthorized: invalid API key' });
+    }
+
+    // ── Parse body ────────────────────────────────────────────────────────────
+    const { needId, treeId, title, description } = req.body;
+
+    if (!needId || !treeId) {
+      return res.status(400).json({ error: 'needId and treeId are required' });
+    }
+
+    console.log(`[hooks] Need APPROVED: needId=${needId} treeId=${treeId} title="${title}"`);
+
+    // TODO: integrate with Ari notification (e.g., POST to bot, Telegram message, etc.)
+
+    return res.json({ ok: true, message: `Need ${needId} APPROVED hook received` });
+  } catch (err: any) {
+    console.error('[hooks] needApproved error:', err);
+    return res.status(500).json({ error: 'Internal server error', details: err.message });
+  }
+};
+
+/**
  * POST /api/hooks/kanban-task-completed
  *
  * Called by Hermes Kanban dispatcher webhook when a Kanban task reaches
