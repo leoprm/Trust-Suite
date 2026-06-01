@@ -91,7 +91,7 @@ export async function generateSolutionsForNeed(
 
   // 2. Call Hermes Agent API
   exec(
-    `curl -s --max-time 60 -X POST http://127.0.0.1:8644/v1/chat/completions ` +
+    `curl -s --max-time 60 -X POST http://127.0.0.1:8642/v1/chat/completions ` +
       `-H 'Content-Type: application/json' ` +
       `-H 'Authorization: Bearer ${escapeShell(HERMES_KEY)}' ` +
       `-H 'X-Hermes-Session-Key: tree-agent-${escapeShell(treeId)}' ` +

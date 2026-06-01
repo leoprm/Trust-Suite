@@ -215,25 +215,44 @@ async function closeCycleForTree(
     }
   }
 
-  // ── Si ganó con 0 votos, también la avanzamos a ronda 2 ──
+  // ── Si ganó con 0 votos: rechazar si ya pasó 2 rondas, si no avanzar ──
   if (winner && winner.totalPoints === 0) {
-    await prisma.need.update({
-      where: { id: winner.id },
-      data: {
-        roundNumber: winner.roundNumber >= 2 ? winner.roundNumber : 2,
-        cyclePhase: "collect",
-        votingEndsAt: null,
-        totalPoints: 0,
-      },
-    });
-    advancedCount++;
+    if (winner.roundNumber >= 2) {
+      // Ya pasó 2 rondas sin recibir votos → RECHAZADA definitivamente
+      await prisma.need.update({
+        where: { id: winner.id },
+        data: {
+          status: "REJECTED",
+          cyclePhase: null,
+          votingEndsAt: null,
+          totalPoints: 0,
+        },
+      });
+      rejectedCount++;
+    } else {
+      // Primera ronda → avanza a ronda 2, vuelve a collect
+      await prisma.need.update({
+        where: { id: winner.id },
+        data: {
+          roundNumber: 2,
+          cyclePhase: "collect",
+          votingEndsAt: null,
+          totalPoints: 0,
+        },
+      });
+      advancedCount++;
+    }
   }
 
   // ── Enviar resumen al grupo ──
   if (bot) {
     try {
       const winnerLine = winner
-        ? `🏆 *${winner.title}* — ${winner.totalPoints} pts → APROBADA`
+        ? winner.totalPoints > 0
+          ? `🏆 *${winner.title}* — ${winner.totalPoints} pts → APROBADA`
+          : winner.roundNumber >= 2
+            ? `❌ *${winner.title}* — 0 votos tras 2 rondas → RECHAZADA`
+            : `🔄 *${winner.title}* — 0 votos → pasa a ronda 2`
         : "📋 Sin ganadora este ciclo.";
 
       const parts = [winnerLine];
