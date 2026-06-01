@@ -33,6 +33,7 @@ import {
   patchTreeSandbox,
   quotaTreeSandbox,
   chatHistoryTreeSandbox,
+  sendFileTelegram,
 } from '../controllers/treeSandboxController';
 import { authenticateJWT } from '../middleware/authMiddleware';
 import { compactContext } from '../controllers/compactController';
@@ -72,6 +73,7 @@ router.post('/:id/sandbox/summarize-node', summarizeNode);
 router.post('/:id/sandbox/chat-history', chatHistoryTreeSandbox);
 router.post('/:id/sandbox/search', searchTreeSandbox);
 router.post('/:id/sandbox/patch', patchTreeSandbox);
+router.post('/:id/sandbox/send-file', sendFileTelegram);
 
 // ── Quota endpoint (API Key-protected) ────────────────────────────────────────
 router.get('/:id/sandbox/quota', quotaTreeSandbox);

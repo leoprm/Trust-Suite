@@ -1700,3 +1700,71 @@ export const chatHistoryTreeSandbox = async (req: Request, res: Response) => {
     res.status(500).json({ error: "Failed to fetch chat history" });
   }
 };
+
+// ── Send file from sandbox to Telegram ─────────────────────────────────────
+
+export const sendFileTelegram = async (req: Request, res: Response) => {
+  if (!checkApiKey(req, res)) return;
+
+  try {
+    const treeId = req.params.id as string;
+    const { filePath, caption, type } = req.body;
+
+    if (!filePath || typeof filePath !== "string") {
+      return res.status(400).json({ error: "filePath is required (string)" });
+    }
+
+    let sb = await TreeSandbox.get(treeId);
+    if (!sb) {
+      try {
+        sb = await TreeSandbox.create(treeId);
+      } catch (createErr: any) {
+        return res.status(500).json({ error: "Failed to create sandbox", detail: createErr?.message });
+      }
+    }
+
+    const safePath = resolveSafePath(sb.workspacePath, filePath);
+    if (!safePath) {
+      return res.status(403).json({ error: "Path escapes sandbox" });
+    }
+
+    if (!fs.existsSync(safePath)) {
+      return res.status(404).json({ error: "File not found in sandbox", path: filePath });
+    }
+
+    const tree = await prisma.tree.findUnique({
+      where: { id: treeId },
+      select: { telegramChatId: true, name: true },
+    });
+
+    if (!tree?.telegramChatId) {
+      return res.status(400).json({ error: "Tree has no Telegram group" });
+    }
+
+    const stream = fs.createReadStream(safePath);
+    const sendOpts: any = {
+      chat_id: tree.telegramChatId,
+      caption: caption || "",
+    };
+
+    let result: any;
+    if (type === "photo") {
+      result = await telegramBot.api.sendPhoto(tree.telegramChatId, stream, sendOpts);
+    } else {
+      result = await telegramBot.api.sendDocument(tree.telegramChatId, stream, sendOpts);
+    }
+
+    console.log(
+      `[sendFileTelegram] Sent "${filePath}" → ${tree.name} (msg_id=${result.message_id})`
+    );
+
+    res.json({
+      ok: true,
+      messageId: result.message_id,
+      chatId: tree.telegramChatId,
+    });
+  } catch (err: any) {
+    console.error("[sendFileTelegram]", err?.message || err);
+    res.status(500).json({ error: "Failed to send file", detail: err?.message });
+  }
+};
