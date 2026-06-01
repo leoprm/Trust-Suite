@@ -89,7 +89,7 @@ async function closeCycleForTree(
       cyclePhase: "vote",
       votingEndsAt: { lte: now },
     },
-    select: { id: true, title: true, roundNumber: true, description: true, telegramMessageId: true },
+    select: { id: true, title: true, roundNumber: true, description: true, telegramMessageId: true, dailyVotes: true },
   });
 
   if (votingNeeds.length === 0) {
@@ -104,9 +104,10 @@ async function closeCycleForTree(
   }
 
   // ── Calcular puntos reales de cada necesidad ──
-  const scored: { id: string; title: string; roundNumber: number; description: string | null; telegramMessageId: number | null; totalPoints: number }[] = [];
+  const scored: { id: string; title: string; roundNumber: number; description: string | null; telegramMessageId: number | null; dailyVotes: number; totalPoints: number }[] = [];
   for (const need of votingNeeds) {
-    const totalPoints = await getNeedTotalPoints(prisma, need.id);
+    const needVotePoints = await getNeedTotalPoints(prisma, need.id);
+    const totalPoints = needVotePoints + (need.dailyVotes ?? 0);
     scored.push({ ...need, totalPoints });
   }
   scored.sort((a, b) => b.totalPoints - a.totalPoints);
