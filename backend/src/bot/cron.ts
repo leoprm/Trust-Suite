@@ -19,6 +19,8 @@
 import { PrismaClient } from "@prisma/client";
 import type { Bot } from "grammy";
 import type { BotContext } from "./types";
+import { generateSolutionsForNeed } from "./voting";
+import { exec } from "child_process";
 
 // ── Tipos ──────────────────────────────────────────────────────────────────
 
@@ -87,7 +89,7 @@ async function closeCycleForTree(
       cyclePhase: "vote",
       votingEndsAt: { lte: now },
     },
-    select: { id: true, title: true, roundNumber: true },
+    select: { id: true, title: true, roundNumber: true, description: true, telegramMessageId: true },
   });
 
   if (votingNeeds.length === 0) {
@@ -102,7 +104,7 @@ async function closeCycleForTree(
   }
 
   // ── Calcular puntos reales de cada necesidad ──
-  const scored: { id: string; title: string; roundNumber: number; totalPoints: number }[] = [];
+  const scored: { id: string; title: string; roundNumber: number; description: string | null; telegramMessageId: number | null; totalPoints: number }[] = [];
   for (const need of votingNeeds) {
     const totalPoints = await getNeedTotalPoints(prisma, need.id);
     scored.push({ ...need, totalPoints });
@@ -124,6 +126,64 @@ async function closeCycleForTree(
         totalPoints: winner.totalPoints,
       },
     });
+
+    // ── Notificar al grupo que la necesidad fue aprobada ──
+    const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || "";
+    if (BOT_TOKEN) {
+      const escHtml = (s: string) =>
+        s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+      const text =
+        `<b>✅ Necesidad aprobada en ${escHtml(tree.name)}</b> — ` +
+        `<b>${escHtml(winner.title)}</b> — ${winner.totalPoints} pts\n\n` +
+        `${winner.description ? escHtml(winner.description) + "\n\n" : ""}` +
+        `<b>¡Propongan soluciones!</b> Respondan a este mensaje con sus ideas.`;
+
+      const payload: Record<string, unknown> = {
+        chat_id: chatId,
+        text,
+        parse_mode: "HTML",
+      };
+      if (winner.telegramMessageId) {
+        payload.reply_to_message_id = winner.telegramMessageId;
+      }
+
+      const escapeShell = (s: string) => s.replace(/'/g, "'\\''");
+
+      exec(
+        `curl -s --max-time 10 -X POST https://api.telegram.org/bot${BOT_TOKEN}/sendMessage ` +
+          `-H 'Content-Type: application/json' -d '${escapeShell(JSON.stringify(payload))}'`,
+        { timeout: 12000 },
+        (err, stdout) => {
+          if (err) {
+            console.error(`[CycleCron] curl error notificando aprobación:`, err.message);
+            return;
+          }
+          try {
+            const data = JSON.parse(stdout);
+            if (data.ok) {
+              console.log(
+                `[CycleCron] ✅ Notificación de aprobación enviada para "${winner.title}" en ${tree.name}`,
+              );
+            } else {
+              console.error("[CycleCron] Telegram API error:", stdout.slice(0, 200));
+            }
+          } catch {
+            /* ignore parse errors */
+          }
+        },
+      );
+    }
+
+    // ── Generar soluciones vía Ari (Hermes Agent) ──
+    generateSolutionsForNeed(
+      winner.id,
+      tree.id,
+      tree.name,
+      winner.title,
+      winner.description || "",
+      chatId,
+      winner.telegramMessageId,
+    );
   }
 
   // ── 2do lugar + resto: roundNumber=2 o REJECTED ──
