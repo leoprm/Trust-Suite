@@ -7,6 +7,7 @@ import crypto from 'crypto';
 import https from 'https';
 import http from 'http';
 import multer from 'multer';
+import { InputFile } from 'grammy';
 import TurndownService from 'turndown';
 import { loadChatHistory } from '../lib/chatHistory';
 import { JSDOM } from 'jsdom';
@@ -1741,17 +1742,25 @@ export const sendFileTelegram = async (req: Request, res: Response) => {
       return res.status(400).json({ error: "Tree has no Telegram group" });
     }
 
-    const stream = fs.createReadStream(safePath);
+    const fileBuffer = fs.readFileSync(safePath);
+    const fileName = path.basename(safePath);
     const sendOpts: any = {
-      chat_id: tree.telegramChatId,
       caption: caption || "",
     };
 
     let result: any;
     if (type === "photo") {
-      result = await telegramBot.api.sendPhoto(tree.telegramChatId, stream, sendOpts);
+      result = await telegramBot.api.sendPhoto(
+        tree.telegramChatId,
+        new InputFile(fileBuffer, fileName),
+        sendOpts,
+      );
     } else {
-      result = await telegramBot.api.sendDocument(tree.telegramChatId, stream, sendOpts);
+      result = await telegramBot.api.sendDocument(
+        tree.telegramChatId,
+        new InputFile(fileBuffer, fileName),
+        sendOpts,
+      );
     }
 
     console.log(
