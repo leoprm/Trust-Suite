@@ -5,6 +5,55 @@ import type { BotContext } from "./types";
 
 const prisma = new PrismaClient();
 
+// ── HTTP / Telegram helpers ───────────────────────────────────────────────
+
+/** Escape HTML special chars for Telegram parse_mode=HTML */
+function escHtml(s: string): string {
+  return s
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+}
+
+/** Shell-escape a single-quoted string for use in curl -d '...' */
+function sq(s: string): string {
+  return s.replace(/'/g, "'\\''");
+}
+
+/** Promisified curl POST */
+function curlPost(
+  url: string,
+  body: string,
+  headers: Record<string, string>,
+  timeout = 60000,
+): Promise<string> {
+  const hdrArgs = Object.entries(headers)
+    .map(([k, v]) => `-H '${sq(k)}: ${sq(v)}'`)
+    .join(" ");
+  const cmd =
+    `curl -s --max-time ${Math.ceil(timeout / 1000)} -X POST ${url} ${hdrArgs} -d '${sq(body)}'`;
+  return new Promise((resolve, reject) => {
+    exec(cmd, { timeout }, (err, stdout) => {
+      if (err) reject(err);
+      else resolve(stdout);
+    });
+  });
+}
+
+/** Send a Telegram message and return the parsed API response */
+async function sendTgMessage(
+  token: string,
+  payload: Record<string, unknown>,
+): Promise<{ ok: boolean; result?: { message_id: number } }> {
+  const resp = await curlPost(
+    `https://api.telegram.org/bot${token}/sendMessage`,
+    JSON.stringify(payload),
+    { "Content-Type": "application/json" },
+    12000,
+  );
+  return JSON.parse(resp);
+}
+
 // ── Reaction weight mapping ──────────────────────────────────────────────
 const REACTION_WEIGHT: Record<string, number> = {
   "👍": 1, // thumbs up = 1 voto (like)
@@ -52,6 +101,13 @@ async function resolveOrCreateUser(tgId: string): Promise<any | null> {
 }
 
 // ── Solution generator (Hermes Agent) ────────────────────────────────────
+//
+// Flow:
+//   1. Ask Hermes for solutions in structured JSON: { solutions: [{title, description}, …] }
+//   2. Send an intro message to the group
+//   3. Send each solution as a SEPARATE Telegram message
+//   4. Create an Idea record for each message with its real telegramMessageId
+//   → The reaction handler can now match telegramMessageId → Idea → vote.
 
 export async function generateSolutionsForNeed(
   needId: string,
@@ -70,97 +126,184 @@ export async function generateSolutionsForNeed(
     return;
   }
 
-  const escapeShell = (s: string) => s.replace(/'/g, "'\\''");
+  try {
+    // ── 1. Ask Hermes for structured JSON solutions ────────────────────
+    const prompt =
+      `Eres Ari, asistente de Trust Maker. Una necesidad acaba de ser aprobada ` +
+      `en el árbol "${treeName}":\n\n` +
+      `Necesidad: ${needTitle}\n` +
+      `Descripción: ${needDescription}\n\n` +
+      `Generá 2-3 soluciones concretas, viables y orientadas a resultados. ` +
+      `Respondé ESTRICTAMENTE en este formato JSON (sin markdown ni texto extra):\n` +
+      `{"solutions": [{"title": "Título corto de la solución", "description": "Qué implica y cómo se haría"}, ...]}`;
 
-  // 1. Build prompt for Hermes Agent (conversational, free-form output)
-  const prompt =
-    `Eres Ari, asistente de Trust Maker. Una necesidad acaba de ser aprobada ` +
-    `en el árbol "${treeName}":\n\n` +
-    `Necesidad: ${needTitle}\n` +
-    `Descripción: ${needDescription}\n\n` +
-    `Saluda al grupo, anuncia que esta necesidad fue aprobada y propón 2-3 ` +
-    `soluciones concretas y accionables. Luego pregunta si alguien tiene otra ` +
-    `idea y recuerda que las soluciones se pueden votar con reacciones ` +
-    `(👍 ❤️ ⭐). Sé natural y conversacional. Responde en HTML apto para Telegram.`;
+    const hermesBody = JSON.stringify({
+      messages: [{ role: "user", content: prompt }],
+      stream: false,
+      tool_choice: "none",
+      response_format: { type: "json_object" },
+    });
 
-  const hermesBody = JSON.stringify({
-    messages: [{ role: "user", content: prompt }],
-    stream: false,
-    tool_choice: "none",
-  });
+    console.log(
+      `[generateSolutions] Calling Hermes for need ${needId}…`,
+    );
 
-  // 2. Call Hermes Agent API
-  exec(
-    `curl -s --max-time 60 -X POST http://127.0.0.1:8642/v1/chat/completions ` +
-      `-H 'Content-Type: application/json' ` +
-      `-H 'Authorization: Bearer ${escapeShell(HERMES_KEY)}' ` +
-      `-H 'X-Hermes-Session-Key: tree-agent-${escapeShell(treeId)}' ` +
-      `-d '${escapeShell(hermesBody)}'`,
-    { timeout: 65000 },
-    async (err, stdout) => {
-      if (err) {
-        console.error("[generateSolutions] Hermes call failed:", err.message);
-        return;
+    const raw = await curlPost(
+      "http://127.0.0.1:8642/v1/chat/completions",
+      hermesBody,
+      {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${HERMES_KEY}`,
+        "X-Hermes-Session-Key": `tree-agent-${treeId}`,
+      },
+      65000,
+    );
+
+    const resp = JSON.parse(raw);
+    const content: string = resp?.choices?.[0]?.message?.content || "";
+
+    if (!content.trim()) {
+      console.error("[generateSolutions] Hermes returned empty response");
+      return;
+    }
+
+    console.log(
+      `[generateSolutions] Hermes response: ${content.length} chars for need ${needId}`,
+    );
+
+    // ── 2. Parse JSON (handle both {solutions:[…]} and direct […]) ─────
+    let solutions: { title: string; description: string }[] = [];
+
+    try {
+      const parsed = JSON.parse(content);
+      if (Array.isArray(parsed)) {
+        solutions = parsed;
+      } else if (parsed.solutions && Array.isArray(parsed.solutions)) {
+        solutions = parsed.solutions;
+      } else if (parsed.soluciones && Array.isArray(parsed.soluciones)) {
+        solutions = parsed.soluciones;
+      } else {
+        // Try to find any array property
+        const arrProp = Object.values(parsed).find(Array.isArray);
+        if (arrProp) solutions = arrProp as any[];
       }
-      try {
-        const resp = JSON.parse(stdout);
-        const content: string = resp?.choices?.[0]?.message?.content || "";
-
-        if (!content.trim()) {
-          console.error("[generateSolutions] Hermes returned empty response");
-          return;
+    } catch {
+      // Fallback: try to extract JSON array from code-fenced or raw text
+      const jsonMatch =
+        content.match(/```(?:json)?\s*\n?([\s\S]*?)```/) ||
+        content.match(/\[[\s\S]*\]/);
+      if (jsonMatch) {
+        try {
+          const extracted = JSON.parse(jsonMatch[1] || jsonMatch[0]);
+          solutions = Array.isArray(extracted) ? extracted : [];
+        } catch {
+          console.error("[generateSolutions] Could not parse JSON from Hermes response");
         }
+      }
+    }
+
+    if (!Array.isArray(solutions) || solutions.length === 0) {
+      console.error(
+        "[generateSolutions] No solutions parsed from response:",
+        content.slice(0, 300),
+      );
+      return;
+    }
+
+    console.log(
+      `[generateSolutions] Parsed ${solutions.length} solutions for need ${needId}`,
+    );
+
+    // ── 3. Send intro message ──────────────────────────────────────────
+    const introText =
+      `<b>✅ Necesidad aprobada: ${escHtml(needTitle)}</b>\n\n` +
+      `${escHtml(needDescription)}\n\n` +
+      `<b>💡 Soluciones propuestas por Ari:</b>`;
+
+    const introPayload: Record<string, unknown> = {
+      chat_id: telegramChatId,
+      text: introText,
+      parse_mode: "HTML",
+    };
+    if (replyToMessageId) {
+      introPayload.reply_to_message_id = replyToMessageId;
+    }
+
+    await sendTgMessage(BOT_TOKEN, introPayload);
+
+    // ── 4. Send each solution individually + create Idea record ────────
+    for (let i = 0; i < solutions.length; i++) {
+      const sol = solutions[i];
+      if (!sol.title || !sol.description) continue;
+
+      const solText =
+        `<b>💡 Solución ${i + 1}: ${escHtml(sol.title)}</b>\n\n` +
+        `${escHtml(sol.description)}\n\n` +
+        `<i>Votá con 👍 ❤️ ⭐</i>`;
+
+      const solPayload: Record<string, unknown> = {
+        chat_id: telegramChatId,
+        text: solText,
+        parse_mode: "HTML",
+      };
+      if (replyToMessageId) {
+        solPayload.reply_to_message_id = replyToMessageId;
+      }
+
+      // Small delay to avoid Telegram rate limits
+      if (i > 0) {
+        await new Promise((r) => setTimeout(r, 400));
+      }
+
+      const tgResult = await sendTgMessage(BOT_TOKEN, solPayload);
+
+      if (tgResult?.ok && tgResult.result?.message_id) {
+        const msgId = tgResult.result.message_id;
+
+        // Create Idea record so reaction handler can find it
+        await prisma.idea.create({
+          data: {
+            content: `${sol.title}\n\n${sol.description}`,
+            creatorId: "system",
+            needId,
+            telegramMessageId: msgId,
+            totalLikes: 0,
+          },
+        });
 
         console.log(
-          `[generateSolutions] Got response from Hermes for need ${needId} (${content.length} chars)`,
+          `[generateSolutions] Idea created: "${sol.title.slice(0, 40)}" → msg_id=${msgId}, need ${needId}`,
         );
-
-        // 3. Send the entire conversational response as one Telegram message
-        const payload: Record<string, unknown> = {
-          chat_id: telegramChatId,
-          text: content,
-          parse_mode: "HTML",
-        };
-        if (replyToMessageId) {
-          payload.reply_to_message_id = replyToMessageId;
-        }
-
-        exec(
-          `curl -s --max-time 10 -X POST ` +
-            `https://api.telegram.org/bot${BOT_TOKEN}/sendMessage ` +
-            `-H 'Content-Type: application/json' ` +
-            `-d '${escapeShell(JSON.stringify(payload))}'`,
-          { timeout: 12000 },
-          (err2, stdout2) => {
-            if (err2) {
-              console.error(
-                "[generateSolutions] Telegram send failed:",
-                err2.message,
-              );
-              return;
-            }
-            try {
-              const tgResp = JSON.parse(stdout2);
-              if (tgResp.ok) {
-                console.log(
-                  `[generateSolutions] Ari response sent (msg_id=${tgResp.result?.message_id}) for need ${needId}`,
-                );
-              } else {
-                console.error(
-                  "[generateSolutions] Telegram API error:",
-                  stdout2.slice(0, 200),
-                );
-              }
-            } catch {
-              /* ignore parse errors */
-            }
-          },
+      } else {
+        console.error(
+          `[generateSolutions] Telegram send failed for solution ${i + 1}:`,
+          JSON.stringify(tgResult).slice(0, 200),
         );
-      } catch {
-        console.error("[generateSolutions] Failed to parse Hermes response");
       }
-    },
-  );
+    }
+
+    // ── 5. Send closing message ────────────────────────────────────────
+    const closeText =
+      `<i>¿Tenés otra idea? Respondé a este mensaje con tu propuesta. ` +
+      `Las soluciones se votan con 👍 ❤️ ⭐</i>`;
+
+    const closePayload: Record<string, unknown> = {
+      chat_id: telegramChatId,
+      text: closeText,
+      parse_mode: "HTML",
+    };
+    if (replyToMessageId) {
+      closePayload.reply_to_message_id = replyToMessageId;
+    }
+
+    await sendTgMessage(BOT_TOKEN, closePayload);
+
+    console.log(
+      `[generateSolutions] Done — ${solutions.length} ideas created for need ${needId}`,
+    );
+  } catch (err: any) {
+    console.error("[generateSolutions] Error:", err?.message || err);
+  }
 }
 
 // ── Reaction handler ─────────────────────────────────────────────────────
