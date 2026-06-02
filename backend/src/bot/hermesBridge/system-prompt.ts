@@ -270,6 +270,33 @@ export async function buildSystemPrompt(
   lines.push(`- Output language: ${treeLanguage} (${treeLanguageCode}). ALWAYS respond in ${treeLanguage}.`);
   lines.push("");
 
+  // ── Proactive messaging (CRITICAL — must be read before anything else) ──
+  lines.push("═══ PROACTIVE MESSAGING — YOU CAN INITIATE CONVERSATIONS ═══");
+  lines.push("🔔 YOU ARE NOT REACTIVE-ONLY. You CAN and SHOULD send messages to this tree's");
+  lines.push("Telegram group WITHOUT anyone talking to you first. Two ways:");
+  lines.push("");
+  lines.push("1) IMMEDIATE — Send a message NOW:");
+  lines.push(`   POST http://127.0.0.1:3100/api/bot/proactive-message`);
+  lines.push(`   Auth: Bearer ${sandboxApiKey}`);
+  lines.push(`   Body: {"treeId":"${treeId}","chatId":"<telegramChatId>","instruction":"<what to say>"}`);
+  lines.push("");
+  lines.push("2) SCHEDULED — Create a reminder for later:");
+  lines.push(`   POST http://127.0.0.1:3100/api/bot/send-reminder`);
+  lines.push(`   Auth: Bearer ${sandboxApiKey}`);
+  lines.push(`   Body: {"chatId":"<telegramChatId>","text":"<message>","scheduleAt":"2026-06-02T15:00:00Z"}`);
+  lines.push("   Also: write proactive-tasks.json to sandbox for the 30-min cron to pick up");
+  lines.push("");
+  lines.push("WHEN TO SEND PROACTIVE MESSAGES:");
+  lines.push("- Someone asks 'recuérdame X a las Y' → schedule it with send-reminder");
+  lines.push("- Voting closing soon, 0 votes → remind the group");
+  lines.push("- Need just approved → announce it and ask for solutions");
+  lines.push("- Deadline approaching (cuota, tarea, encuesta) → schedule a heads-up");
+  lines.push("- Something the group should know (milestone, new member, trending idea)");
+  lines.push("");
+  lines.push("⚠️ NEVER say 'no puedo enviar recordatorios' — you CAN. Use the endpoints.");
+  lines.push("⚠️ After scheduling, CONFIRM: 'Listo, te avisaré a las 15:00'");
+  lines.push("");
+
   // Tree metadata (compact)
   lines.push(`Tree: ${tree.name} (${tree.description || "No description"})`);
   lines.push(`Admission: ${tree.admissionPolicy}`);
@@ -499,39 +526,6 @@ export async function buildSystemPrompt(
   lines.push("Load skill_view('trust-maker') for ALL sandbox APIs, security rules,");
   lines.push("tools, memory KV, conversation history, media search, kanban delegation,");
   lines.push("Obsidian vault, and office skills. This prompt only carries dynamic tree state.");
-  lines.push("");
-
-  // ── Proactive messaging capability ─────────────────────────────────────
-  lines.push("═══ PROACTIVE MESSAGING ═══");
-  lines.push("You CAN send messages to this tree's Telegram group WITHOUT being asked first.");
-  lines.push("");
-  lines.push("**When to send proactive messages:**");
-  lines.push("- A deadline is approaching (votación cierra pronto, necesidad por cerrar)");
-  lines.push("- You want to remind members about pending tasks or cuotas");
-  lines.push("- You notice something important the group should know (new idea proposed, milestone reached)");
-  lines.push("- A member asked you to remind them of something later");
-  lines.push("");
-  lines.push("**How to self-schedule a future message:**");
-  lines.push("Write a JSON file to your sandbox at proactive-tasks.json:");
-  lines.push("```json");
-  lines.push(`{`);
-  lines.push(`  "tasks": [`);
-  lines.push(`    {`);
-  lines.push(`      "scheduledAt": "2026-06-02T15:00:00Z",`);
-  lines.push(`      "chatId": "<telegramChatId>",`);
-  lines.push(`      "instruction": "Recuérdale al grupo que la votación cierra en 1 hora"`);
-  lines.push(`    }`);
-  lines.push(`  ]`);
-  lines.push(`}`);
-  lines.push("```");
-  lines.push(`Use the sandbox write API: POST /api/trees/${treeId}/sandbox/write`);
-  lines.push(`File path: proactive-tasks.json`);
-  lines.push("The system checks this file every 30 minutes and will invoke you with the instruction.");
-  lines.push("");
-  lines.push("**How to send an immediate proactive message:**");
-  lines.push(`POST http://127.0.0.1:3100/api/bot/proactive-message`);
-  lines.push(`Headers: { "Authorization": "Bearer ${sandboxApiKey}" }`);
-  lines.push(`Body: { "treeId": "${treeId}", "chatId": "<telegramChatId>", "instruction": "..." }`);
   lines.push("");
 
   // ── Response guidelines ───────────────────────────────────────────────
