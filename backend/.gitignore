@@ -3,3 +3,5 @@ node_modules
 .env
 
 /generated/prisma
+media/testtree/index.db-shm
+media/testtree/index.db-wal

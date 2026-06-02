@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { sendDocument, sendMessage, sendToTree, triggerCommentReview } from "../controllers/botController";
+import { sendDocument, sendMessage, sendToTree, triggerCommentReview, proactiveMessage, sendReminder } from "../controllers/botController";
 
 const router = Router();
 
@@ -14,5 +14,11 @@ router.post("/send-to-tree", sendToTree);
 
 // POST /api/bot/trigger-comment-review — trigger Ari to review comments.md (cron job)
 router.post("/trigger-comment-review", triggerCommentReview);
+
+// POST /api/bot/proactive-message — invoke Hermes Agent + send proactive message to Telegram
+router.post("/proactive-message", proactiveMessage);
+
+// POST /api/bot/send-reminder — schedule or immediately send a reminder message
+router.post("/send-reminder", sendReminder);
 
 export default router;

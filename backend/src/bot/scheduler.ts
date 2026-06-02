@@ -30,6 +30,7 @@ import { runCandidateAnnouncementCron } from "../cron/candidateAnnouncementCron"
 import { runXpDecay } from "../cron/xpDecayCron";
 import { runNightlyResearch } from "../cron/nightlyResearchCron";
 import { runSurveyReminders } from "../cron/surveyReminderCron";
+import { runProactiveAgent } from "../cron/proactiveAgentCron";
 import { nightlyScan } from "../services/skillEvolution";
 import { startHiringBridge, stopHiringBridge } from "../services/hiringBridge";
 import { prisma } from "../index";
@@ -126,6 +127,7 @@ let externalTaskOrchestratorTask: ScheduledTask | null = null;
 let candidateAnnouncementTask: ScheduledTask | null = null;
 let nightlyResearchTask: ScheduledTask | null = null;
 let surveyReminderTask: ScheduledTask | null = null;
+let proactiveAgentTask: ScheduledTask | null = null;
 let kanbanWatchdogInterval: NodeJS.Timeout | null = null;
 
 /**
@@ -309,6 +311,22 @@ export function startScheduler(
   });
   console.log("[Scheduler] 📋 Survey Reminder programado cada 6 horas");
 
+  // ── Cron: */30 * * * * (cada 30 min) — Proactive Agent ──
+  proactiveAgentTask = cron.schedule("*/30 * * * *", async () => {
+    try {
+      const results = await runProactiveAgent(prismaClient);
+      const triggered = results.filter((r) => r.status === "triggered").length;
+      if (results.length > 0) {
+        console.log(
+          `[Scheduler] 🔔 Proactive Agent: ${triggered}/${results.length} árboles notificados.`,
+        );
+      }
+    } catch (err) {
+      console.error("[Scheduler] Error en Proactive Agent:", err);
+    }
+  });
+  console.log("[Scheduler] 🔔 Proactive Agent programado cada 30 minutos");
+
   // ── Cron: */5 * * * * (cada 5 min) — ExternalTask Orchestrator ──
   externalTaskOrchestratorTask = cron.schedule("*/5 * * * *", async () => {
     try {
@@ -399,7 +417,7 @@ export async function triggerCycleClose(
  */
 export function stopScheduler(): void {
   let stopped = false;
-  for (const task of [cycleManagerTask, needDetectorTask, decayTask, rotationTask, autoScaleTask, monthlyFeeTask, disputeResolutionTask, skillPricingTask, talentMigrationTask, healthCheckTask, proposalResolverTask, cleanupConversationsTask, monthlyRetroTask, skillEvolutionTask, externalTaskOrchestratorTask, candidateAnnouncementTask, nightlyResearchTask, surveyReminderTask]) {
+  for (const task of [cycleManagerTask, needDetectorTask, decayTask, rotationTask, autoScaleTask, monthlyFeeTask, disputeResolutionTask, skillPricingTask, talentMigrationTask, healthCheckTask, proposalResolverTask, cleanupConversationsTask, monthlyRetroTask, skillEvolutionTask, externalTaskOrchestratorTask, candidateAnnouncementTask, nightlyResearchTask, surveyReminderTask, proactiveAgentTask]) {
     if (task) {
       task.stop();
       stopped = true;
@@ -425,6 +443,7 @@ export function stopScheduler(): void {
   candidateAnnouncementTask = null;
   nightlyResearchTask = null;
   surveyReminderTask = null;
+  proactiveAgentTask = null;
   kanbanWatchdogInterval = null;
   if (stopped) {
     console.log("[Scheduler] ⏹️ Todos los schedulers detenidos.");

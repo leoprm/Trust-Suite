@@ -501,6 +501,39 @@ export async function buildSystemPrompt(
   lines.push("Obsidian vault, and office skills. This prompt only carries dynamic tree state.");
   lines.push("");
 
+  // ── Proactive messaging capability ─────────────────────────────────────
+  lines.push("═══ PROACTIVE MESSAGING ═══");
+  lines.push("You CAN send messages to this tree's Telegram group WITHOUT being asked first.");
+  lines.push("");
+  lines.push("**When to send proactive messages:**");
+  lines.push("- A deadline is approaching (votación cierra pronto, necesidad por cerrar)");
+  lines.push("- You want to remind members about pending tasks or cuotas");
+  lines.push("- You notice something important the group should know (new idea proposed, milestone reached)");
+  lines.push("- A member asked you to remind them of something later");
+  lines.push("");
+  lines.push("**How to self-schedule a future message:**");
+  lines.push("Write a JSON file to your sandbox at proactive-tasks.json:");
+  lines.push("```json");
+  lines.push(`{`);
+  lines.push(`  "tasks": [`);
+  lines.push(`    {`);
+  lines.push(`      "scheduledAt": "2026-06-02T15:00:00Z",`);
+  lines.push(`      "chatId": "<telegramChatId>",`);
+  lines.push(`      "instruction": "Recuérdale al grupo que la votación cierra en 1 hora"`);
+  lines.push(`    }`);
+  lines.push(`  ]`);
+  lines.push(`}`);
+  lines.push("```");
+  lines.push(`Use the sandbox write API: POST /api/trees/${treeId}/sandbox/write`);
+  lines.push(`File path: proactive-tasks.json`);
+  lines.push("The system checks this file every 30 minutes and will invoke you with the instruction.");
+  lines.push("");
+  lines.push("**How to send an immediate proactive message:**");
+  lines.push(`POST http://127.0.0.1:3100/api/bot/proactive-message`);
+  lines.push(`Headers: { "Authorization": "Bearer ${sandboxApiKey}" }`);
+  lines.push(`Body: { "treeId": "${treeId}", "chatId": "<telegramChatId>", "instruction": "..." }`);
+  lines.push("");
+
   // ── Response guidelines ───────────────────────────────────────────────
   lines.push("Respond in neutral Spanish (tú/usted, no voseo). Be concise, helpful, action-oriented.");
   lines.push("Use real data above — don't hallucinate. Use Telegram display names for members.");

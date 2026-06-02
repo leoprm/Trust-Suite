@@ -279,6 +279,250 @@ export const sendToTree = async (req: Request, res: Response) => {
   }
 };
 
+// ── POST /api/bot/proactive-message ──────────────────────────────────────────
+// Body: { treeId: string, chatId: string, instruction: string }
+// Invokes Hermes Agent with the instruction in the tree's system prompt context,
+// then sends Ari's response to the tree's Telegram chat.
+// Used by the proactiveAgentCron and by Ari's self-scheduling tool.
+export const proactiveMessage = async (req: Request, res: Response) => {
+  if (!checkApiKey(req, res)) return;
+
+  try {
+    const { treeId, chatId, instruction } = req.body;
+
+    if (!treeId || typeof treeId !== "string") {
+      return res.status(400).json({ error: "treeId is required (string)" });
+    }
+    if (!chatId || typeof chatId !== "string") {
+      return res.status(400).json({ error: "chatId is required (string)" });
+    }
+    if (!instruction || typeof instruction !== "string") {
+      return res.status(400).json({ error: "instruction is required (string)" });
+    }
+
+    // Resolve tree
+    const { prisma } = await import("../index");
+    const tree = await prisma.tree.findUnique({
+      where: { id: treeId },
+      select: { id: true, name: true, telegramChatId: true },
+    });
+
+    if (!tree) {
+      return res.status(404).json({ error: "Tree not found" });
+    }
+    if (!tree.telegramChatId) {
+      return res.status(400).json({ error: "Tree has no linked Telegram chat" });
+    }
+
+    // Get bot instance
+    const { telegramBot } = await import("../index");
+    if (!telegramBot) {
+      return res.status(503).json({ error: "Telegram bot not available" });
+    }
+
+    // Build system prompt for the tree
+    const { buildSystemPrompt } = await import("../bot/hermesBridge/system-prompt");
+    const systemPrompt = await buildSystemPrompt(prisma, treeId, "0", "Ari");
+
+    // Call Hermes Agent API
+    const { getHermesApiKey } = await import("../bot/hermesBridge/getHermesApiKey");
+    const apiKey = getHermesApiKey(treeId);
+
+    const llmDispatcher = await (async () => {
+      const { Agent } = await import("undici");
+      return new Agent({
+        bodyTimeout: 120_000,
+        headersTimeout: 30_000,
+        keepAliveTimeout: 120_000,
+        keepAliveMaxTimeout: 300_000,
+      });
+    })();
+
+    const HERMES_API = "http://127.0.0.1:8643/v1/chat/completions";
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 120_000);
+
+    let aiResponse: string;
+
+    try {
+      const headers: Record<string, string> = {
+        "Content-Type": "application/json",
+        "X-Hermes-Session-Key": `proactive-agent-${treeId}`,
+      };
+      if (apiKey) {
+        headers["Authorization"] = `Bearer ${apiKey}`;
+      }
+
+      const response = await fetch(HERMES_API, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({
+          messages: [
+            { role: "system", content: systemPrompt },
+            {
+              role: "user",
+              content: `INSTRUCCIÓN PROACTIVA: ${instruction}\n\n` +
+                `Genera un mensaje NATURAL y CONCISO para enviar al grupo de Telegram. ` +
+                `No digas "Hola" ni uses saludos genéricos — ve directo al punto. ` +
+                `Usa el tono y lenguaje configurados para este árbol. ` +
+                `Máximo 3-4 frases. NO uses markdown complejo — solo negritas simples con **.`,
+            },
+          ],
+          max_tokens: 512,
+          stream: false,
+        }),
+        signal: controller.signal,
+        // @ts-ignore
+        dispatcher: llmDispatcher,
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text().catch(() => "");
+        console.error(
+          `[proactiveMessage] Hermes API returned ${response.status}: ${errorText.slice(0, 300)}`,
+        );
+        return res.status(502).json({
+          error: "Hermes Agent API error",
+          status: response.status,
+        });
+      }
+
+      const data = (await response.json()) as any;
+      aiResponse = data?.choices?.[0]?.message?.content?.trim();
+
+      if (!aiResponse) {
+        return res.status(502).json({ error: "Empty response from Hermes Agent" });
+      }
+    } finally {
+      clearTimeout(timeoutId);
+    }
+
+    // Send to Telegram
+    const sent = await telegramBot.api.sendMessage(chatId, aiResponse, {
+      parse_mode: "Markdown",
+    });
+
+    // Log event
+    const { logEvent, getRequestContext } = await import("../services/eventLogService");
+    void logEvent({
+      ...getRequestContext(req),
+      treeId,
+      action: "BOT_PROACTIVE_MESSAGE",
+      entityType: "Tree",
+      entityId: treeId,
+      source: "AUTOMATION",
+      metadataJson: {
+        chatId,
+        messageId: sent.message_id,
+        instruction: instruction.slice(0, 200),
+        responseLength: aiResponse.length,
+      },
+    });
+
+    res.json({
+      success: true,
+      messageId: sent.message_id,
+      chatId,
+      text: aiResponse,
+    });
+  } catch (error: any) {
+    console.error("[proactiveMessage] ERROR:", error?.message || error);
+    res.status(500).json({ error: "Failed to send proactive message", detail: error?.message });
+  }
+};
+
+// ── POST /api/bot/send-reminder ──────────────────────────────────────────────
+// Body: { chatId: string, text: string, scheduleAt?: string }
+// Schedules a message to be sent at a specific time.
+// If scheduleAt is omitted or in the past, sends immediately.
+export const sendReminder = async (req: Request, res: Response) => {
+  if (!checkApiKey(req, res)) return;
+
+  try {
+    const { chatId, text, scheduleAt } = req.body;
+
+    if (!chatId || typeof chatId !== "string") {
+      return res.status(400).json({ error: "chatId is required (string)" });
+    }
+    if (!text || typeof text !== "string") {
+      return res.status(400).json({ error: "text is required (string)" });
+    }
+
+    const { telegramBot } = await import("../index");
+    if (!telegramBot) {
+      return res.status(503).json({ error: "Telegram bot not available" });
+    }
+
+    if (scheduleAt && typeof scheduleAt === "string") {
+      const scheduledDate = new Date(scheduleAt);
+      const now = new Date();
+
+      if (isNaN(scheduledDate.getTime())) {
+        return res.status(400).json({ error: "scheduleAt is not a valid date" });
+      }
+
+      const delayMs = scheduledDate.getTime() - now.getTime();
+
+      if (delayMs <= 0) {
+        // Already past — send immediately
+        const sent = await telegramBot.api.sendMessage(chatId, text, {
+          parse_mode: "Markdown",
+        });
+
+        return res.json({
+          success: true,
+          messageId: sent.message_id,
+          chatId,
+          scheduled: false,
+          reason: "scheduleAt is in the past — sent immediately",
+        });
+      }
+
+      // Schedule for future
+      const maxDelay = 24 * 60 * 60 * 1000; // 24h max
+      const cappedDelay = Math.min(delayMs, maxDelay);
+
+      setTimeout(async () => {
+        try {
+          await telegramBot.api.sendMessage(chatId, text, {
+            parse_mode: "Markdown",
+          });
+          console.log(
+            `[sendReminder] Scheduled message sent to ${chatId} (${Math.round(cappedDelay / 1000)}s delay)`,
+          );
+        } catch (err: any) {
+          console.error(`[sendReminder] Failed to send scheduled message: ${err.message}`);
+        }
+      }, cappedDelay);
+
+      return res.json({
+        success: true,
+        chatId,
+        scheduled: true,
+        scheduledAt: scheduleAt,
+        delaySeconds: Math.round(cappedDelay / 1000),
+        capped: delayMs > maxDelay,
+      });
+    }
+
+    // No scheduleAt — send immediately
+    const sent = await telegramBot.api.sendMessage(chatId, text, {
+      parse_mode: "Markdown",
+    });
+
+    res.json({
+      success: true,
+      messageId: sent.message_id,
+      chatId,
+      scheduled: false,
+    });
+  } catch (error: any) {
+    console.error("[sendReminder] ERROR:", error?.message || error);
+    res.status(500).json({ error: "Failed to send reminder", detail: error?.message });
+  }
+};
+
 // ── POST /api/bot/trigger-comment-review ──────────────────────────────────────
 // Body: { treeId?: string }
 // Triggers Ari to review pendientes in comments.md. If treeId is omitted,
