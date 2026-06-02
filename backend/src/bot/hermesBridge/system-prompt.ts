@@ -325,6 +325,7 @@ export async function buildSystemPrompt(
   // ── SYSTEM.md del árbol ───────────────────────────────────────────────
   const systemMdPath = path.join(sandboxDir, "SYSTEM.md");
   if (fs.existsSync(systemMdPath)) {
+    try {
       const systemMdContent = fs.readFileSync(systemMdPath, "utf-8").trim();
       if (systemMdContent.length > 0) {
         const truncated = systemMdContent.length > 1500
