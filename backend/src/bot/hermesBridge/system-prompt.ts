@@ -315,9 +315,16 @@ export async function buildSystemPrompt(
   const sandboxBase = process.env.SANDBOX_BASE_DIR || "/home/trustmaker/trees";
   validateTreeId(treeId);
   const sandboxDir = path.join(sandboxBase, treeId);
+
+  // Derive per-tree API key — must be computed early (proactive section needs it)
+  const masterKey = getHermesApiKey(treeId);
+  const sandboxApiKey = masterKey && treeId
+    ? crypto.createHmac("sha256", masterKey).update(treeId).digest("hex")
+    : "";
+
+  // ── SYSTEM.md del árbol ───────────────────────────────────────────────
   const systemMdPath = path.join(sandboxDir, "SYSTEM.md");
   if (fs.existsSync(systemMdPath)) {
-    try {
       const systemMdContent = fs.readFileSync(systemMdPath, "utf-8").trim();
       if (systemMdContent.length > 0) {
         const truncated = systemMdContent.length > 1500
@@ -376,12 +383,6 @@ export async function buildSystemPrompt(
 
   // ── Sandbox memory (tree-level memory.json) ───────────────────────────
   const memoryPath = path.join(sandboxDir, "memory", "memory.json");
-
-  // Derive per-tree API key — Ari should NEVER receive the global master key.
-  const masterKey = getHermesApiKey(treeId);
-  const sandboxApiKey = masterKey && treeId
-    ? crypto.createHmac("sha256", masterKey).update(treeId).digest("hex")
-    : "";
 
   let memoryData: Record<string, string> = {};
   if (fs.existsSync(memoryPath)) {
