@@ -270,6 +270,12 @@ export async function buildSystemPrompt(
   lines.push(`- Output language: ${treeLanguage} (${treeLanguageCode}). ALWAYS respond in ${treeLanguage}.`);
   lines.push("");
 
+  // Derive per-tree API key — must be computed early (proactive section needs it)
+  const masterKey = getHermesApiKey(treeId);
+  const sandboxApiKey = masterKey && treeId
+    ? crypto.createHmac("sha256", masterKey).update(treeId).digest("hex")
+    : "";
+
   // ── Proactive messaging (CRITICAL — must be read before anything else) ──
   lines.push("═══ PROACTIVE MESSAGING — YOU CAN INITIATE CONVERSATIONS ═══");
   lines.push("🔔 YOU ARE NOT REACTIVE-ONLY. You CAN and SHOULD send messages to this tree's");
@@ -315,12 +321,6 @@ export async function buildSystemPrompt(
   const sandboxBase = process.env.SANDBOX_BASE_DIR || "/home/trustmaker/trees";
   validateTreeId(treeId);
   const sandboxDir = path.join(sandboxBase, treeId);
-
-  // Derive per-tree API key — must be computed early (proactive section needs it)
-  const masterKey = getHermesApiKey(treeId);
-  const sandboxApiKey = masterKey && treeId
-    ? crypto.createHmac("sha256", masterKey).update(treeId).digest("hex")
-    : "";
 
   // ── SYSTEM.md del árbol ───────────────────────────────────────────────
   const systemMdPath = path.join(sandboxDir, "SYSTEM.md");
