@@ -335,19 +335,29 @@ async function startCycleForTree(
     });
   }
 
-  // ── Notificar al grupo ──
+  // ── Notificar al grupo con botones de votación ──
   if (bot && collectedNeeds.length > 0) {
     try {
       const needList = collectedNeeds
-        .map((n) => `• ${n.title}`)
+        .map((n, i) => `${i + 1}. ${n.title}`)
         .join("\n");
+
+      // Inline keyboard: one button per need (one per row for clarity)
+      const keyboard = collectedNeeds.map((n, i) => [{
+        text: `${i + 1}. ${n.title.slice(0, 50)}`,
+        callback_data: `vote_need:${n.id}`,
+      }]);
 
       await bot.api.sendMessage(
         chatId,
-        `🗳️ *Inicia votación — ${tree.name}*\n\n` +
+        `🗳️ *Votación abierta — ${tree.name}*\n\n` +
           `📋 ${collectedNeeds.length} necesidad(es) a votación:\n${needList}\n\n` +
-          `⏰ Votación abierta hasta: ${votingEndsAt.toLocaleTimeString("es-CL", { hour: "2-digit", minute: "2-digit" })}`,
-        { parse_mode: "Markdown" }
+          `⏰ Votación abierta hasta: ${votingEndsAt.toLocaleTimeString("es-CL", { hour: "2-digit", minute: "2-digit" })}\n\n` +
+          `_Toca un botón para votar. Solo puedes votar una vez por necesidad._`,
+        {
+          parse_mode: "Markdown",
+          reply_markup: { inline_keyboard: keyboard },
+        }
       );
     } catch (err) {
       console.error(`[CycleCron] Error notificando inicio de votación a ${chatId}:`, err);

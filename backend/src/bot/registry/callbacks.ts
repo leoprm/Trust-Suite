@@ -1264,6 +1264,87 @@ export function register(bot: Bot<BotContext>, prisma: PrismaClient): void {
       return;
     }
 
+    // ── Need voting: inline keyboard buttons ──────────────────────────
+    if (data.startsWith("vote_need:")) {
+      const needId = data.slice(10); // remove "vote_need:"
+      const tgUser = ctx.from;
+      if (!tgUser) {
+        await ctx.answerCallbackQuery({ text: "⚠️ No se pudo identificar tu cuenta" });
+        return;
+      }
+
+      try {
+        // Resolve user
+        const user = await prisma.user.findUnique({
+          where: { telegramUserId: BigInt(tgUser.id) },
+          select: { id: true },
+        });
+        if (!user) {
+          await ctx.answerCallbackQuery({ text: "⚠️ No tienes cuenta vinculada. Usa /start en DM." });
+          return;
+        }
+
+        // Verify need exists and is in voting phase
+        const need = await prisma.need.findUnique({
+          where: { id: needId },
+          select: { id: true, title: true, treeId: true, cyclePhase: true },
+        });
+        if (!need) {
+          await ctx.answerCallbackQuery({ text: "⚠️ Necesidad no encontrada" });
+          return;
+        }
+        if (need.cyclePhase !== "vote") {
+          await ctx.answerCallbackQuery({ text: "⚠️ La votación ya cerró para esta necesidad" });
+          return;
+        }
+
+        // Verify membership in the need's tree
+        const member = await prisma.treeMember.findUnique({
+          where: {
+            userId_treeId: { userId: user.id, treeId: need.treeId },
+          },
+          select: { status: true },
+        });
+        if (!member || member.status !== "ACTIVE") {
+          await ctx.answerCallbackQuery({ text: "⚠️ No eres miembro activo de este árbol" });
+          return;
+        }
+
+        // Check for existing vote (prevent double-voting)
+        const existing = await prisma.needVote.findUnique({
+          where: {
+            needId_userId: { needId, userId: user.id },
+          },
+        });
+        if (existing) {
+          await ctx.answerCallbackQuery({ text: "⚠️ Ya votaste por esta necesidad" });
+          return;
+        }
+
+        // Register the vote
+        await prisma.needVote.create({
+          data: { needId, userId: user.id, points: 1 },
+        });
+
+        // Count total votes for this need
+        const totalVotes = await prisma.needVote.count({
+          where: { needId },
+        });
+
+        await ctx.answerCallbackQuery({
+          text: `✅ Voto registrado para \"${need.title.slice(0, 40)}\" — ${totalVotes} voto(s) total(es)`,
+        });
+      } catch (err: any) {
+        if (err?.code === "P2002") {
+          await ctx.answerCallbackQuery({ text: "⚠️ Ya votaste por esta necesidad" });
+          return;
+        }
+        console.error("[vote_need] Error:", err.message);
+        await ctx.answerCallbackQuery({ text: "⚠️ Error al registrar voto" });
+      }
+      return;
+    }
+
     // ── Encuesta callbacks (target selection, survey selector, voting) ──
     let handled = await handleEncuestaCallback(prisma, bot, ctx as BotContext);
     if (handled) return;
