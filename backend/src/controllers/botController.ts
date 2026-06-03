@@ -284,6 +284,10 @@ export const sendToTree = async (req: Request, res: Response) => {
 // Invokes Hermes Agent with the instruction in the tree's system prompt context,
 // then sends Ari's response to the tree's Telegram chat.
 // Used by the proactiveAgentCron and by Ari's self-scheduling tool.
+
+const proactiveCooldown = new Map<string, number>();
+const PROACTIVE_COOLDOWN_MS = 24 * 60 * 60 * 1000; // 24h
+
 export const proactiveMessage = async (req: Request, res: Response) => {
   if (!checkApiKey(req, res)) return;
 
@@ -298,6 +302,17 @@ export const proactiveMessage = async (req: Request, res: Response) => {
     }
     if (!instruction || typeof instruction !== "string") {
       return res.status(400).json({ error: "instruction is required (string)" });
+    }
+
+    // Rate limit: max 1 proactive message per tree per 24h
+    const lastProactive = proactiveCooldown.get(treeId);
+    if (lastProactive && Date.now() - lastProactive < PROACTIVE_COOLDOWN_MS) {
+      const hoursLeft = Math.ceil((PROACTIVE_COOLDOWN_MS - (Date.now() - lastProactive)) / (60 * 60 * 1000));
+      console.log(`[proactiveMessage] ⏭️ Tree ${treeId.slice(0, 8)}: en cooldown (${hoursLeft}h restantes)`);
+      return res.status(429).json({
+        error: "Rate limited",
+        retryAfterHours: hoursLeft,
+      });
     }
 
     // Resolve tree
@@ -402,6 +417,9 @@ export const proactiveMessage = async (req: Request, res: Response) => {
     const sent = await telegramBot.api.sendMessage(chatId, aiResponse, {
       parse_mode: "Markdown",
     });
+
+    // Mark cooldown after successful send
+    proactiveCooldown.set(treeId, Date.now());
 
     // Log event
     const { logEvent, getRequestContext } = await import("../services/eventLogService");
