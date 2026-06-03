@@ -454,6 +454,10 @@ export const proactiveMessage = async (req: Request, res: Response) => {
 // Body: { chatId: string, text: string, scheduleAt?: string }
 // Schedules a message to be sent at a specific time.
 // If scheduleAt is omitted or in the past, sends immediately.
+
+const reminderCooldown = new Map<string, number>();
+const REMINDER_COOLDOWN_MS = 24 * 60 * 60 * 1000; // 24h
+
 export const sendReminder = async (req: Request, res: Response) => {
   if (!checkApiKey(req, res)) return;
 
@@ -465,6 +469,17 @@ export const sendReminder = async (req: Request, res: Response) => {
     }
     if (!text || typeof text !== "string") {
       return res.status(400).json({ error: "text is required (string)" });
+    }
+
+    // Rate limit: max 1 scheduled/reminder message per chat per 24h
+    const lastReminder = reminderCooldown.get(chatId);
+    if (lastReminder && Date.now() - lastReminder < REMINDER_COOLDOWN_MS) {
+      const hoursLeft = Math.ceil((REMINDER_COOLDOWN_MS - (Date.now() - lastReminder)) / (60 * 60 * 1000));
+      console.log(`[sendReminder] ⏭️ Chat ${chatId}: en cooldown (${hoursLeft}h restantes)`);
+      return res.status(429).json({
+        error: "Rate limited",
+        retryAfterHours: hoursLeft,
+      });
     }
 
     const { telegramBot } = await import("../index");
@@ -487,6 +502,8 @@ export const sendReminder = async (req: Request, res: Response) => {
         const sent = await telegramBot.api.sendMessage(chatId, text, {
           parse_mode: "Markdown",
         });
+
+        reminderCooldown.set(chatId, Date.now());
 
         return res.json({
           success: true,
@@ -514,6 +531,8 @@ export const sendReminder = async (req: Request, res: Response) => {
         }
       }, cappedDelay);
 
+      reminderCooldown.set(chatId, Date.now());
+
       return res.json({
         success: true,
         chatId,
@@ -528,6 +547,8 @@ export const sendReminder = async (req: Request, res: Response) => {
     const sent = await telegramBot.api.sendMessage(chatId, text, {
       parse_mode: "Markdown",
     });
+
+    reminderCooldown.set(chatId, Date.now());
 
     res.json({
       success: true,
