@@ -259,6 +259,18 @@ function deduplicateByTree(checks: DeadlineCheck[]): DeadlineCheck[] {
   });
 }
 
+// ── Rate limiting ────────────────────────────────────────────────────────
+
+/** In-memory cooldown: treeId → last proactive message timestamp */
+const cooldownMap = new Map<string, number>();
+const PROACTIVE_COOLDOWN_MS = 24 * 60 * 60 * 1000; // 24 hours
+
+function isInCooldown(treeId: string): boolean {
+  const last = cooldownMap.get(treeId);
+  if (!last) return false;
+  return Date.now() - last < PROACTIVE_COOLDOWN_MS;
+}
+
 // ── Public API ───────────────────────────────────────────────────────────
 
 /**
@@ -290,8 +302,25 @@ export async function runProactiveAgent(
   const results: ProactiveAgentResult[] = [];
 
   for (const check of allChecks) {
+    // Rate limit: skip trees that received a proactive message within the cooldown
+    if (isInCooldown(check.treeId)) {
+      console.log(
+        `[ProactiveAgent] ⏭️ ${check.treeName}: en cooldown (24h), saltado.`,
+      );
+      results.push({
+        treeName: check.treeName,
+        treeId: check.treeId,
+        status: "skipped",
+        instruction: "cooldown",
+      });
+      continue;
+    }
+
     try {
       await invokeProactiveMessage(check.treeId, check.chatId, check.instruction);
+
+      // Mark cooldown after successful send
+      cooldownMap.set(check.treeId, Date.now());
 
       // Cleanup processed tasks from proactive-tasks.json
       cleanupProcessedTasks(check.treeId, 1);
