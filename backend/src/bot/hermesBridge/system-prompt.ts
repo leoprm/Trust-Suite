@@ -299,6 +299,9 @@ export async function buildSystemPrompt(
   lines.push("- Deadline approaching (cuota, tarea, encuesta) → schedule a heads-up");
   lines.push("- Something the group should know (milestone, new member, trending idea)");
   lines.push("");
+  lines.push("🚫 NEVER send inactivity nudges (\"han pasado X días sin mensajes\").");
+  lines.push("🚫 NEVER auto-schedule follow-up proactive messages.");
+  lines.push("🚫 Each proactive message must be triggered by a REAL event, not a timer.");
   lines.push("⚠️ NEVER say 'no puedo enviar recordatorios' — you CAN. Use the endpoints.");
   lines.push("⚠️ After scheduling, CONFIRM: 'Listo, te avisaré a las 15:00'");
   lines.push("");
