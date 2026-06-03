@@ -1287,6 +1287,10 @@ export const conciergeHandler = async (req: Request, res: Response) => {
 // Authenticated via HERMES_API_SERVER_KEY header (no JWT required).
 // Body: { type, message, treeId, priority }
 // Sends the message to the tree's linked Telegram group if one exists.
+
+const suggestCooldown = new Map<string, number>();
+const SUGGEST_COOLDOWN_MS = 24 * 60 * 60 * 1000; // 24h
+
 export const suggestHandler = async (req: Request, res: Response) => {
   try {
     // ── Auth: require HERMES_API_SERVER_KEY ───────────────────────────────
@@ -1304,6 +1308,17 @@ export const suggestHandler = async (req: Request, res: Response) => {
     }
     if (!treeId || typeof treeId !== 'string') {
       return res.status(400).json({ error: 'treeId (string) is required' });
+    }
+
+    // Rate limit: max 1 suggest per tree per 24h
+    const lastSuggest = suggestCooldown.get(treeId);
+    if (lastSuggest && Date.now() - lastSuggest < SUGGEST_COOLDOWN_MS) {
+      const hoursLeft = Math.ceil((SUGGEST_COOLDOWN_MS - (Date.now() - lastSuggest)) / (60 * 60 * 1000));
+      console.log(`[concierge:suggest] ⏭️ Tree ${treeId.slice(0, 8)}: en cooldown (${hoursLeft}h restantes, type=${type})`);
+      return res.status(429).json({
+        error: "Rate limited",
+        retryAfterHours: hoursLeft,
+      });
     }
 
     // ── Find tree and its Telegram chat ────────────────────────────────────
@@ -1332,6 +1347,7 @@ export const suggestHandler = async (req: Request, res: Response) => {
           
         });
         telegramSent = true;
+        suggestCooldown.set(treeId, Date.now());
         console.log(`[concierge:suggest] Sent to Telegram chat ${tree.telegramChatId}: ${type}`);
       } catch (tgErr: any) {
         console.error(`[concierge:suggest] Telegram send failed for ${tree.telegramChatId}:`, tgErr.message);
